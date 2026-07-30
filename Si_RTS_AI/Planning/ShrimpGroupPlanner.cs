@@ -147,6 +147,7 @@ namespace Si_RTS_AI.Planning
         static readonly Dictionary<Unit, Assignment> _assign = new Dictionary<Unit, Assignment>();
         static float _lastTickAt;
         static float _lastDiagAt;
+        static float _lastHintLogAt;
 
         internal static int MigratedThisRound;
         internal static int ReissuedThisRound;
@@ -178,6 +179,38 @@ namespace Si_RTS_AI.Planning
         /// </summary>
         public static int TeamCapacity { get; private set; } = -1;
 
+        // ---- Bridge to the eco planner --------------------------------------
+        //
+        // When a patch drains, its group's capacity collapses and every shrimp
+        // on it becomes surplus at once. Our waterfill — like vanilla — then
+        // sends them to the NEXT NEAREST patch, which is usually already worked
+        // or already has shrimps walking to it. Observed at ~12:30 on
+        // NarakaCity: northern shrimps all relocating onto one northern patch
+        // while the patch EAST of it sat free.
+        //
+        // The better destination is often ground we have not expanded to yet,
+        // which shrimp management cannot use on its own — there is no Bio Cache
+        // to deposit at. So it ASKS: the best uncovered patch near the displaced
+        // shrimps is published here and EcoPlanner biases expansion toward it.
+        // The chain gets built while the shrimps are still walking.
+        //
+        // User rule 5.5a, and the bridge between shrimp management and Phase 2
+        // expansion they asked for.
+        public struct ExpansionHint
+        {
+            public Vector3 Pos;        // patch the displaced shrimps want
+            public int     Shrimps;    // how many are looking for a home
+            public float   AtTime;     // Time.time when published
+        }
+        static ExpansionHint _hint;
+        const float HINT_TTL_S = 60f;
+
+        public static bool TryGetExpansionHint(out ExpansionHint hint)
+        {
+            hint = _hint;
+            return hint.Shrimps > 0 && Time.time - hint.AtTime < HINT_TTL_S;
+        }
+
         /// <summary>
         /// Capacity of the group anchored at the BC nearest to <paramref name="pos"/>.
         /// Returns HARD_CAP when no snapshot exists yet (round start), so
@@ -203,6 +236,7 @@ namespace Si_RTS_AI.Planning
             _lastTickAt = 0f;
             _capSnapshot = new BcCap[0];
             TeamCapacity = -1;
+            _hint = default;
             MigratedThisRound = 0;
             ReissuedThisRound = 0;
         }
@@ -413,10 +447,39 @@ namespace Si_RTS_AI.Planning
             order.Sort((a, b) => groups[b].Value.CompareTo(groups[a].Value));
 
             int pool = shrimps.Count;
+
+            // ---- INCUMBENCY FIRST ----
+            //
+            // A shrimp already harvesting a live patch stays there. Only the
+            // genuinely free ones — newly produced, or sitting on a patch that
+            // is depleted or over capacity — get allocated by value below.
+            //
+            // Without this the waterfill is a pure greedy fill by value: the
+            // highest-value group takes SOFT_TARGET (8) before any other group
+            // gets a single shrimp, so with fewer than 8 shrimps the second
+            // group is allotted NONE. A freshly built Bio Cache on a full patch
+            // always has the highest value, which is why every southern
+            // expansion triggered a wholesale migration. Measured NarakaCity
+            // 2026-07-30 at t=3min: "[2410,1430 cur=5/des=0] [2315,705
+            // cur=0/des=6]" — five shrimps working a healthy northern patch
+            // were all reassigned south the instant its Bio Cache appeared, and
+            // reissued climbed 4 -> 22 -> 38 -> 41 as they thrashed.
+            //
+            // Relocation for real reasons still works: a depleted patch sets
+            // Capacity 0, so its shrimps fall into the pool and are reassigned.
+            for (int gi = 0; gi < groups.Count; gi++)
+            {
+                var g = groups[gi];
+                int keep = Mathf.Min(g.Current, g.Capacity);
+                g.Desired += keep; pool -= keep;
+            }
+            if (pool < 0) pool = 0;
+
             for (int oi = 0; oi < order.Count && pool > 0; oi++)
             {
                 var g = groups[order[oi]];
-                int give = Mathf.Min(Mathf.Min(SOFT_TARGET, g.Capacity), pool);
+                int give = Mathf.Min(Mathf.Min(SOFT_TARGET, g.Capacity) - g.Desired, pool);
+                if (give <= 0) continue;
                 g.Desired += give; pool -= give;
             }
             for (int oi = 0; oi < order.Count && pool > 0; oi++)
@@ -434,6 +497,7 @@ namespace Si_RTS_AI.Planning
             for (int lap = 0; pool > 0 && viable.Count > 0; lap++)
                 for (int vi = 0; vi < viable.Count && pool > 0; vi++) { groups[viable[vi]].Desired++; pool--; }
 
+            TeamShrimps = shrimps.Count;
             PublishCapacities(groups);
 
             // ---- Sticky re-issue: pull drifters back to their assignment ----
@@ -509,6 +573,57 @@ namespace Si_RTS_AI.Planning
                 MigratedThisRound++;
             }
 
+            // ---- Publish an expansion hint if shrimps have nowhere good to go ----
+            //
+            // "Nowhere good" = more surplus shrimps than the deficits of every
+            // group put together. That is the signal that our WORKED ground is
+            // full and the answer is more ground, not more shuffling.
+            int surplusTotal = 0, deficitTotal = 0;
+            Vector3 from = Vector3.zero; bool haveFrom = false;
+            for (int gi = 0; gi < groups.Count; gi++)
+            {
+                int d = groups[gi].Current - groups[gi].Desired;
+                if (d > 0)
+                {
+                    surplusTotal += d;
+                    if (!haveFrom) { from = groups[gi].Anchor; haveFrom = true; }
+                }
+                else deficitTotal += -d;
+            }
+            int homeless = surplusTotal - deficitTotal;
+            if (homeless > 0 && haveFrom)
+            {
+                int best = -1; float bestScore = 0f;
+                float groupRadSq = GROUP_PATCH_RADIUS_M * GROUP_PATCH_RADIUS_M;
+                for (int pi = 0; pi < patches.Count; pi++)
+                {
+                    bool covered = false;
+                    for (int gi = 0; gi < groups.Count && !covered; gi++)
+                    {
+                        float gx = groups[gi].Anchor.x - patches[pi].pos.x;
+                        float gz = groups[gi].Anchor.z - patches[pi].pos.z;
+                        if (gx * gx + gz * gz <= groupRadSq) covered = true;
+                    }
+                    if (covered) continue;           // a Bio Cache already serves it
+                    float dx = patches[pi].pos.x - from.x, dz = patches[pi].pos.z - from.z;
+                    float dist = Mathf.Sqrt(dx * dx + dz * dz);
+                    if (dist < 1f) continue;
+                    // Close AND rich; distance dominates since they must walk.
+                    float score = patches[pi].remaining / dist;
+                    if (score > bestScore) { bestScore = score; best = pi; }
+                }
+                if (best >= 0)
+                {
+                    _hint = new ExpansionHint { Pos = patches[best].pos, Shrimps = homeless, AtTime = now };
+                    if (now - _lastHintLogAt > 20f)
+                    {
+                        _lastHintLogAt = now;
+                        MelonLogger.Msg($"[SHRIMP-GRP] {homeless} shrimps have no home — " +
+                                        $"want expansion at ({patches[best].pos.x:F0},{patches[best].pos.z:F0})");
+                    }
+                }
+            }
+
             if (now - _lastDiagAt > 30f)
             {
                 _lastDiagAt = now;
@@ -527,6 +642,35 @@ namespace Si_RTS_AI.Planning
             }
             _capSnapshot = snap;
             TeamCapacity = total;
+        }
+
+        /// <summary>Shrimps alive at the last group pass — the other half of the
+        /// capacity picture.</summary>
+        internal static int TeamShrimps { get; private set; }
+
+        /// <summary>
+        /// Is another harvesting site worth building yet?
+        ///
+        /// A Bio Cache only earns through shrimps standing on it. While the
+        /// patches we already hold have unfilled slots, a further site adds
+        /// capacity nobody can staff and takes 500 that shrimps needed.
+        /// NarakaCity 2026-07-30: a fifth Bio Cache went up at 16:25:53 with
+        /// shrimps=40 against totalCap=56 — sixteen slots already empty. User:
+        /// "a fifth bio cache placed despite it isnt used early on. That draws
+        /// money important to build shrimps."
+        ///
+        /// Deliberately a FILL FRACTION rather than "completely full": waiting
+        /// for the last slot would stall expansion permanently, since the final
+        /// slots on a patch are the least worth filling.
+        /// </summary>
+        const float EXPANSION_FILL_FRACTION = 0.85f;
+
+        internal static bool ExpansionWarranted(out int shrimps, out int capacity)
+        {
+            shrimps = TeamShrimps;
+            capacity = TeamCapacity;
+            if (capacity <= 0) return true;              // nothing held yet
+            return shrimps >= capacity * EXPANSION_FILL_FRACTION;
         }
 
         static void LogDiag(List<Group> groups, List<int> order, int shrimps, int totalCap, int moved)

@@ -333,6 +333,13 @@ namespace Si_RTS_AI.Planning
         // be wildly over- or under-weighted the moment the setting changes.
         // A fraction auto-scales: it is always worth the same relative to the
         // income those patches will actually produce.
+        // A displaced shrimp is worth roughly its idle time: it earns nothing
+        // until it has somewhere to work, so each one asking for a home adds
+        // this much to a nearby BC candidate. Radius is generous — the point is
+        // "expand in that direction", not an exact tile.
+        const float SHRIMP_HINT_PER_SHRIMP = 900f;
+        const float SHRIMP_HINT_RADIUS_M   = 250f;
+
         const float PHASE2_UNLOCK_VALUE_FRACTION = 0.25f;
         const int   PHASE2_UNLOCK_MAX_COUNT = 5;      // don't let one candidate run away
 
@@ -605,6 +612,10 @@ namespace Si_RTS_AI.Planning
         // 45s gives the placement 20s build + 20s buffer to appear in
         // team.Structures + 5s slack, so the beam sees it and stops proposing
         // duplicates.
+        // How close counts as "a Cyst is already ordered here". Generous: the
+        // Opener aims beside the patch while the beam aims near the Bio Cache,
+        // so for one and the same site the two targets differ by tens of metres.
+        const float CYST_ORDERED_RADIUS_M = 130f;
         const float REPEAT_SUPPRESS_CYST_S = 6f;
         const float REPEAT_SUPPRESS_S = 45f;
         struct FiredAction { public ActionKind kind; public Vector3 pos; public float at; }
@@ -702,6 +713,9 @@ namespace Si_RTS_AI.Planning
             // first time. NarakaCity is why this exists — see
             // PHASE2_UNLOCK_VALUE_FRACTION.
             public int        unlocks;
+            // Score bonus because displaced shrimps want a home here — the
+            // bridge from shrimp management to expansion (rule 5.5a).
+            public float      shrimpPull;
         }
 
         // Beam search node: a partial sequence with its resulting state.
@@ -1075,10 +1089,34 @@ namespace Si_RTS_AI.Planning
                     // ~1s after construction starts — so the snapshot alone lets
                     // a Cyst fire 30s early, the game silently refuses it, and
                     // the 45s dedup window then blocks the retry.
+                    // Already ORDERED here? Enumeration ran on a snapshot that
+                    // may predate the Opener's order, and the Opener fires
+                    // directly at the game so its orders never reach this
+                    // planner's own dedup log. Construct's Success result is
+                    // recorded centrally — consult it, or the beam builds a
+                    // second Cyst 42m from the first, 20s later.
+                    // A NEW SITE NEEDS SHRIMPS TO STAND ON IT.
+                    //
+                    // Opener steps are exempt: the opening is costed as a whole
+                    // and its sites are the ones the shrimps are being built
+                    // FOR. This gates the beam's Phase 2 expansion, which starts
+                    // the moment the opener's queue empties and does not ask
+                    // whether the patches already held are staffed. NarakaCity
+                    // 2026-07-30: a fifth Bio Cache at 16:25:53, 24s after the
+                    // opener finished, with shrimps=40 against totalCap=56.
+                    if (!openerFiring && c.kind == ActionKind.PlaceBc
+                        && !ShrimpGroupPlanner.ExpansionWarranted(out int shrN, out int capN))
+                    { Skip("understaffed" + shrN + "/" + capN); return true; }
+
+                    if (c.kind == ActionKind.PlaceCyst && CystAlreadyComing(c.target))
+                    { Skip("cystOrdered"); return true; }
+
+                    // Global unlock: one finished Bio Cache anywhere allows
+                    // Cysts everywhere. The old test demanded a finished Bio
+                    // Cache within 90m of THIS Cyst, which from the second site
+                    // on delayed every Cyst by that site's own Bio Cache build.
                     if (c.kind == ActionKind.PlaceCyst
-                        && !(HasFinishedBcNear(state, c.target)
-                             && Perception.BuildTimeline.BcCompleteNear(
-                                    c.target, 90f, Perception.MapLayers.LayerReplay.CurrentRoundTime)))
+                        && !Perception.BuildTimeline.AnyComplete("Bio Cache"))
                     { Skip("cystNoBc"); return true; }
                     // Hold a Bio Cache until its anchor is actually built —
                     // see CanPlaceBcTightNow. Returns true (skip, keep going)
@@ -1161,6 +1199,46 @@ namespace Si_RTS_AI.Planning
                         // here as well would just re-add dedup entries.
                         if (st.Kind == OpenerPlanner.StepKind.Cyst) continue;
 
+                        // NODE STEPS ARE BUDGET, NOT PLACEMENT.
+                        //
+                        // The plan enumerates a fixed number of node steps at
+                        // fixed points, computed from ASSUMED structure
+                        // positions and a 135m hop. Neither survives contact:
+                        // the placement search moves every structure by tens of
+                        // metres, and the safe hop is shorter than 135m, so the
+                        // chain needs MORE hops than the plan has steps. Firing
+                        // them as placements failed two different ways in one
+                        // round (v0.8.37): every pending step for a goal
+                        // computed hop #1 and collapsed onto the same point
+                        // (steps 5 and 6 both -> (2474,1375), the second refused
+                        // as a duplicate; steps 9 and 10 likewise, which is the
+                        // stray double node by the Nest), and once the four
+                        // steps were spent the chain stopped 370m short with the
+                        // Bio Cache refused for the rest of the round.
+                        //
+                        // So the chain is driven by what needs it: a Bio Cache
+                        // step that cannot reach places the next node toward
+                        // itself, as many times as it takes.
+                        if (st.Kind == OpenerPlanner.StepKind.Node)
+                        {
+                            OpenerPlanner.MarkDone(si);
+                            continue;
+                        }
+
+                        // A Bio Cache that cannot reach yet just waits. The
+                        // node chain that gets it there is built by
+                        // OpenerPlanner.TickChain at 1 Hz — on this 8s tick a
+                        // chain cost 24s per hop against a 12s Node build,
+                        // because after each Node it held two ticks waiting for
+                        // that Node to finish. Not a stall: the queue must not
+                        // abandon the step.
+                        if (st.Kind == OpenerPlanner.StepKind.Bc
+                            && !CanPlaceBcTightNow(st.Target, state))
+                        {
+                            openerWaiting = true;
+                            continue;
+                        }
+
                         var c = new Candidate
                         {
                             kind = st.Kind == OpenerPlanner.StepKind.Node ? ActionKind.PlaceNode
@@ -1242,7 +1320,17 @@ namespace Si_RTS_AI.Planning
                 //    (Previous version gated on `cash >= cap - 500`; that meant
                 //    cash grew from 200 to 12k over 3 minutes without a single
                 //    fire because the threshold was never reached mid-cash.)
-                if (fired == 0)
+                //    NOT DURING THE OPENING. This block was guarded only by
+                //    `fired == 0`, so every tick the Opener deliberately WAITED
+                //    — for a Bio Cache to finish, for a better chain anchor —
+                //    it counted as "nothing fired" and the beam's own expansion
+                //    was fired instead. NarakaCity 2026-07-30: the Opener logged
+                //    "step 8 holding node" and in the SAME millisecond this
+                //    block placed a beam node at (2236,1523), then two more
+                //    west to (2100,1510) and (1965,1500) toward a site the
+                //    opening never chose. The opening was being overridden by
+                //    Phase 2 expansion while it was still running.
+                if (fired == 0 && !openerDrove)
                 {
                     if (topSequences != null)
                     {
@@ -1552,6 +1640,27 @@ namespace Si_RTS_AI.Planning
             return false;
         }
 
+        /// <summary>
+        /// Is a Cyst already on its way here — ordered, or standing as a
+        /// construction site?
+        ///
+        /// Two signals because neither alone spans the whole window. The order
+        /// record covers Construct-returned-Success up to the site actually
+        /// existing (the placement is resolved asynchronously). The site record
+        /// covers construction itself, and outlives the order memory.
+        ///
+        /// Without this the beam duplicated the Opener's work: the Opener fires
+        /// straight at the game so its orders never entered this planner's own
+        /// dedup log, and 20s after the Opener's Cyst at (2620,1080) the beam
+        /// added a second one 42m away on the same biotics.
+        /// </summary>
+        static bool CystAlreadyComing(Vector3 pos)
+        {
+            const string CYST = "Lesser Spawning Cyst";
+            return Faction.AlienConstruction.WasOrderedNear(CYST, pos, CYST_ORDERED_RADIUS_M)
+                || Perception.BuildTimeline.IsBuildingNear(CYST, pos, CYST_ORDERED_RADIUS_M);
+        }
+
         static bool HasFinishedBcNear(EcoState s, Vector3 target)
         {
             // Cyst target sits ~25m off the BC, so this radius covers that
@@ -1786,12 +1895,17 @@ namespace Si_RTS_AI.Planning
                 }
                 if (_beamPhase == PlanPhase.Phase2_Expand)
                 {
-                    int unlockSum = 0;
-                    for (int i = 0; i < n.sequence.Count; i++) unlockSum += n.sequence[i].unlocks;
+                    int unlockSum = 0; float pullSum = 0f;
+                    for (int i = 0; i < n.sequence.Count; i++)
+                    {
+                        unlockSum += n.sequence[i].unlocks;
+                        pullSum   += n.sequence[i].shrimpPull;
+                    }
                     n.score += nodeCount * PHASE2_NODE_BONUS
                              + cystBonusSum
                              + bcCount   * PHASE2_BC_BONUS
-                             + unlockSum * PHASE2_UNLOCK_VALUE_FRACTION;
+                             + unlockSum * PHASE2_UNLOCK_VALUE_FRACTION
+                             + pullSum;
                 }
                 else if (_beamUnderTapped)
                 {
@@ -2081,9 +2195,23 @@ namespace Si_RTS_AI.Planning
                     // towards a biotics, in particular at Phase 1."
                     Vector3 bcTarget = OffsetTargetTowardAnchor(
                         patch.pos, s, EcoSimulator.BC_RADIUS_M);
+                    // Shrimp management can ASK for expansion. When a patch
+                    // drains, its shrimps are displaced and the best home for
+                    // them is often ground we have not taken yet — expanding
+                    // there while they walk beats crowding them onto the next
+                    // nearest worked patch. See ShrimpGroupPlanner.ExpansionHint.
+                    float shrimpPull = 0f;
+                    if (ShrimpGroupPlanner.TryGetExpansionHint(out var hint))
+                    {
+                        float hx = hint.Pos.x - patch.pos.x, hz = hint.Pos.z - patch.pos.z;
+                        if (hx * hx + hz * hz < SHRIMP_HINT_RADIUS_M * SHRIMP_HINT_RADIUS_M)
+                            shrimpPull = hint.Shrimps * SHRIMP_HINT_PER_SHRIMP;
+                    }
+
                     var cand = new Candidate
                     {
                         kind = ActionKind.PlaceBc, target = bcTarget,
+                        shrimpPull = shrimpPull,
                         cost = EcoSimulator.BC_COST, patchIdx = p,
                         unlocks = CountUnlockedPatches(s, patch.pos),
                     };
@@ -2145,6 +2273,13 @@ namespace Si_RTS_AI.Planning
                         if (d.x * d.x + d.z * d.z < cystCoverageSq) { nearbyCyst = true; break; }
                     }
                     if (nearbyCyst) continue;
+                    // A Cyst may be ORDERED here and simply not exist yet. The
+                    // Opener fires straight at the game, so its orders never
+                    // enter this planner's dedup log — the beam saw a Bio Cache
+                    // with no Cyst structure and added a second one 20s later,
+                    // 42m from the first. Construct's Success result is recorded
+                    // centrally; consult that instead.
+                    if (CystAlreadyComing(bc.pos)) continue;
                     // The opening owns its own Cyst placements — don't let the
                     // beam propose a second one at the same Bio Cache while the
                     // opener still has that step outstanding.
@@ -2649,6 +2784,89 @@ namespace Si_RTS_AI.Planning
         /// spaced ~130m. At a 20s build time that is only possible if a Node
         /// under construction already anchors the next one.
         /// </summary>
+        /// <summary>
+        /// Where the next chain node toward <paramref name="goal"/> should go,
+        /// measured from the nearest FINISHED structure. False when the goal is
+        /// already inside Bio Cache build range and no node is needed.
+        ///
+        /// The hop is deliberately shorter than the node reach. A node lands up
+        /// to ~40m from where it was requested, so hopping the full reach leaves
+        /// the next link unplaceable — which is exactly how a planned 135m hop
+        /// became a real 175m gap. Re-deriving from live positions each time
+        /// also stops that error compounding along the chain.
+        /// </summary>
+        const float NODE_DRIFT_MARGIN_M = 40f;
+
+        /// <summary>
+        /// Is a structure already under construction going to be a better place
+        /// to start this chain than anything finished right now?
+        ///
+        /// At t=0 the Nest is the only finished structure, so every far site
+        /// looks unreachable and each one buys a node ~110m out from the Nest —
+        /// two of them, 60m apart, before the opening's own Bio Caches exist.
+        /// Those Bio Caches then land much further along the way and the nodes
+        /// are worse than useless: measured on NarakaCity, the node toward the
+        /// 3rd site sat 570m from the goal while the pending Bio Cache sat 496m.
+        /// User 2026-07-30: "not needed so early because they can anchor from
+        /// biocache later".
+        ///
+        /// A coverage test is not enough — neither goal was inside the pending
+        /// Bio Caches' 277m reach (496m and 724m away), yet both were closer
+        /// than the Nest by more than a hop. So compare the two distances and
+        /// wait whenever waiting saves at least one node.
+        /// </summary>
+        static float _lastAnchorWaitLog;
+
+        static bool WaitForBetterAnchor(EcoState s, Vector3 goal, out float savingM)
+        {
+            savingM = 0f;
+            float now = float.MaxValue, soon = float.MaxValue;
+            void consider(Vector3 q, bool finished)
+            {
+                float dx = q.x - goal.x, dz = q.z - goal.z;
+                float d = Mathf.Sqrt(dx * dx + dz * dz);
+                if (finished && d < now) now = d;
+                if (d < soon) soon = d;
+            }
+            if (s.nestPos != Vector3.zero) consider(s.nestPos, true);
+            for (int i = 0; i < s.bcs.Count; i++)   consider(s.bcs[i].pos,   s.bcs[i].finished);
+            for (int i = 0; i < s.cysts.Count; i++) consider(s.cysts[i].pos, s.cysts[i].finished);
+            for (int i = 0; i < s.nodes.Count; i++) consider(s.nodes[i].pos, s.nodes[i].finished);
+            if (now == float.MaxValue) return false;
+
+            savingM = now - soon;
+            return savingM >= Mathf.Max(1f, EcoSimulator.NODE_REACH_M - NODE_DRIFT_MARGIN_M);
+        }
+
+        static bool NextNodeTowards(EcoState s, Vector3 goal, out Vector3 pos)
+        {
+            pos = goal;
+            if (goal == Vector3.zero) return false;
+
+            Vector3 from = Vector3.zero; float best = float.MaxValue;
+            void consider(Vector3 q)
+            {
+                float dx = q.x - goal.x, dz = q.z - goal.z;
+                float d = dx * dx + dz * dz;
+                if (d < best) { best = d; from = q; }
+            }
+            if (s.nestPos != Vector3.zero) consider(s.nestPos);
+            for (int i = 0; i < s.bcs.Count; i++)   if (s.bcs[i].finished)   consider(s.bcs[i].pos);
+            for (int i = 0; i < s.cysts.Count; i++) if (s.cysts[i].finished) consider(s.cysts[i].pos);
+            for (int i = 0; i < s.nodes.Count; i++) if (s.nodes[i].finished) consider(s.nodes[i].pos);
+            if (best == float.MaxValue) return false;
+
+            float gap = Mathf.Sqrt(best);
+            if (gap <= EcoSimulator.BcPlaceReachM + BC_TIGHT_GAP_M) return false;
+
+            float hop = Mathf.Max(1f, EcoSimulator.NODE_REACH_M - NODE_DRIFT_MARGIN_M);
+            Vector3 dir = goal - from;
+            float len = Mathf.Sqrt(dir.x * dir.x + dir.z * dir.z);
+            if (len < 1f) return false;
+            pos = from + dir * (Mathf.Min(hop, len) / len);
+            return true;
+        }
+
         static bool IsChainReachable(Vector3 pos, EcoState s, float reachM = -1f,
                                     bool unfinishedNodesAnchor = false)
         {

@@ -43,6 +43,55 @@ namespace Si_RTS_AI.Planning
         const int CANDIDATE_SITES = 8;
         const int MIN_SITES = 3;
         const int MAX_SITES = 5;
+        /// <summary>How many candidate openings to log alongside the winner.</summary>
+        const int RUNNERS_UP = 6;
+
+        /// <summary>
+        /// Score cost of one chain Node, derived rather than guessed.
+        ///
+        /// From the same round's candidates: the 4-cyst opening earned 49,368 by
+        /// the handoff against 46,473 for an otherwise similar 3-cyst one, so
+        /// 1,500 cash of Cyst bought ~2,895 score — about 1.93 score per cash.
+        /// A Node costs 200, hence ~386. Rounded to 400.
+        ///
+        /// Nodes earn nothing themselves; they only buy reach. Charging for them
+        /// is what stops the planner treating an 8-node chain as free.
+        /// </summary>
+        const float NODE_SCORE_COST = 400f;
+
+        /// <summary>
+        /// Two sites within this bearing of each other (degrees, measured from
+        /// the Nest) count as facing the same direction. A quadrant — the
+        /// natural unit of "the same side of the base".
+        ///
+        /// 40 degrees was too narrow to discriminate. Measured NarakaCity: the
+        /// dominant pair under a 40 degree window was the 216m and 682m sites
+        /// at 11.7 degrees apart, and those two appear in EVERY competitive
+        /// opening — so the term scored nearly the same for all of them and the
+        /// only differentiating pair contributed 0.165. At 90 degrees the
+        /// northern set reads 2.00 against 1.18 for the set that includes the
+        /// southern tap, which is the distinction that was wanted.
+        /// </summary>
+        const float REDUNDANT_ANGLE_DEG = 90f;
+
+        /// <summary>
+        /// Score charged for a fully redundant pair of sites — two taps on the
+        /// same bearing from the Nest — tapering to zero at REDUNDANT_ANGLE_DEG.
+        ///
+        /// This replaces a mean-pairwise-DISTANCE bonus, which was actively
+        /// harmful: deleting a nearby site RAISES the mean distance, so the term
+        /// paid 9,880 to drop the closest 213m biotics and take two distant ones
+        /// with no Cyst at all. Income fell from 49,368 to 46,417 and the plan
+        /// still won. Any spread term expressed as a REWARD has that failure
+        /// mode. Expressed as a PENALTY it cannot: adding a site can never
+        /// improve this term, only its income can.
+        ///
+        /// Sized against the measured value of a Cyst — 1,500 cash of Cyst
+        /// bought ~2,895 score — so two sites sharing a direction are worth
+        /// appreciably less than two that do not, but never less than having
+        /// one fewer site.
+        /// </summary>
+        const float REDUNDANT_DIR_PENALTY = 2000f;
         // Scored to the HANDOFF, not to some arbitrary later point.
         //
         // The Opener's job ends when Phase 2 takes over — around 3-4 minutes on
@@ -118,6 +167,13 @@ namespace Si_RTS_AI.Planning
             public Vector3  Target;
             public int      Cost;
             /// <summary>
+            /// The site this step is chaining toward. Node targets are re-derived
+            /// from live structure positions at fire time, and that needs to know
+            /// where the chain is headed — Target alone is a plan-time guess that
+            /// the placement search invalidates.
+            /// </summary>
+            public Vector3  Goal;
+            /// <summary>
             /// Hold this step until a Cyst near it is FINISHED — the gap build
             /// order for the 3rd+ biotics:
             ///
@@ -137,6 +193,7 @@ namespace Si_RTS_AI.Planning
         static readonly List<Step> _queue = new List<Step>();
         static bool[]  _stepDone = new bool[0];
         static float   _queueStalledSince;
+        static float   _lastWaitLogAt;
         static int     _skipped;
 
         /// <summary>Any step of the opening still outstanding.</summary>
@@ -171,6 +228,24 @@ namespace Si_RTS_AI.Planning
         internal static Step StepAt(int i) => _queue[i];
 
         /// <summary>
+        /// Move a step's target. Node steps plan a straight hop chain from
+        /// ASSUMED structure positions, but the game's placement search relocates
+        /// every structure by tens of metres, so by the second hop the planned
+        /// point can be out of reach of anything real. NarakaCity 2026-07-30:
+        /// node planned at (2388,1972), the Bio Cache it chained from actually
+        /// landed at (2250,1865) — a 175m gap against a 150m node reach, so the
+        /// step was refused every tick for 4.5 minutes and the site's Bio Cache
+        /// stalled out behind it.
+        /// </summary>
+        internal static void RetargetStep(int i, Vector3 pos)
+        {
+            if (i < 0 || i >= _queue.Count) return;
+            var st = _queue[i];
+            st.Target = pos;
+            _queue[i] = st;
+        }
+
+        /// <summary>
         /// 1 Hz Cyst pipeline. Retries each pending Cyst every RETRY_S until a
         /// Cyst structure actually EXISTS near its target, and only then marks
         /// the step done.
@@ -196,6 +271,8 @@ namespace Si_RTS_AI.Planning
             if (ShadowOnly || team == null || _queue.Count == 0) return;
             if (!global::Si_RTS_AI.TestHarnessNs.TestHarness.IsRoundActive) return;
             float now = Time.time;
+            try { TickChain(team); }
+            catch (Exception ex) { MelonLogger.Warning("[OPENER] chain threw: " + ex.Message); }
             try
             {
                 foreach (int i in System.Linq.Enumerable.ToList(PendingSteps()))
@@ -214,9 +291,18 @@ namespace Si_RTS_AI.Planning
                     // one attempt, a wait longer than the Cyst build, then at
                     // most one more. Log what is nearby for diagnosis, but do
                     // not decide on it.
-                    if (StructureNear(team, "Lesser Spawning Cyst", _queue[i].Target, 60f))
+                    // Already ORDERED? Construct returns Success the moment the
+                    // order is accepted, well before a structure appears — that
+                    // is ground truth and ends the duplicate problem. The old
+                    // check looked for a finished structure by name, missed the
+                    // gap, and let a second Cyst be built 30s later.
+                    if (Faction.AlienConstruction.WasOrderedNear(
+                            "Lesser Spawning Cyst", _queue[i].Target, CYST_DEDUP_M)
+                        || Perception.BuildTimeline.IsBuildingNear(
+                            "Lesser Spawning Cyst", _queue[i].Target, CYST_DEDUP_M)
+                        || StructureNear(team, "Lesser Spawning Cyst", _queue[i].Target, 60f))
                     {
-                        MelonLogger.Msg($"[OPENER] Cyst step {i + 1}/{_queue.Count} confirmed built");
+                        MelonLogger.Msg($"[OPENER] Cyst step {i + 1}/{_queue.Count} confirmed ordered");
                         MarkDone(i);
                         continue;
                     }
@@ -235,13 +321,101 @@ namespace Si_RTS_AI.Planning
                     // Cyst is already pending anywhere on the team, wait for it.
                     if (CystPending(team, out string whereQueued))
                     {
+                        // If this never logs, the production-queue reflection is
+                        // not matching and duplicate protection rests entirely
+                        // on the one-per-tick rule and the retry interval.
                         MelonLogger.Msg($"[OPENER] Cyst step {i + 1}/{_queue.Count} waiting — " +
                                         $"a Cyst is already queued at {whereQueued}");
                         break;   // one Cyst in flight at a time
                     }
 
+                    // Don't spend an attempt before Cysts are even UNLOCKED.
+                    //
+                    // The unlock is "the team has a finished Bio Cache" — any
+                    // one, anywhere. Cysts anchor to the Nest (every placement
+                    // log says anchor=Nest), so proximity to a particular BC is
+                    // not the requirement; that was my mistake, and it is also
+                    // what makes rule 3.2 possible at all.
+                    //
+                    // Previously both attempts were burned at t~26s before any
+                    // BC existed, the cap gave up, and the Cyst only arrived
+                    // when the beam re-proposed it — 49s after its Bio Cache was
+                    // ready.
+                    // Wait for THIS site's own Bio Cache, not merely any BC.
+                    //
+                    // A Cyst is placed against the nearest structure that can
+                    // build one. Fire it while only the Nest qualifies and it
+                    // anchors there — the logs show anchor=Nest, anchorDist=149m,
+                    // pinned at the Nest's 150m reach and therefore unable to sit
+                    // near biotics 213m out. Once this site's Bio Cache is up it
+                    // becomes the nearest valid anchor and the Cyst lands beside
+                    // its own patch, which is what the user is asking for.
+                    // THE CYST UNLOCK IS GLOBAL, NOT PER SITE.
+                    //
+                    // One finished Bio Cache anywhere on the map allows Cysts
+                    // (user, 2026-07-30). Gating each Cyst on a completed Bio
+                    // Cache within 140m of its own target therefore bought
+                    // nothing from the second site on — the first Bio Caches had
+                    // been up for minutes — and cost the full ~30s of the local
+                    // Bio Cache's construction at every later site.
+                    //
+                    // The Cyst still goes exactly where it went before, beside
+                    // its patch, so no walk distance is traded away. Only the
+                    // wait is dropped. If the spot is not yet in build range the
+                    // game refuses it and the 1Hz pipeline retries, which is the
+                    // same arbitration that fixed the original Cyst delay.
+                    // THIS SITE'S BIO CACHE GOES FIRST — rule 3.2b.
+                    //
+                    // The plan already queues Bc before Cyst at every site, but
+                    // ordering in the queue does not decide who fires: Cysts run
+                    // here at 1 Hz while Bc steps fire on the beam's 8s tick, so
+                    // whenever both become legal the Cyst wins by up to 8
+                    // seconds. NarakaCity 2026-07-30 v0.8.52: the 3rd Cyst went
+                    // up at (2375,820) with its Bio Cache still unbuilt, which is
+                    // exactly the 1,500-before-500 spend 3.2b exists to stop.
+                    if (!SiteBcDone(team, _queue[i].Goal))
+                    {
+                        if (now - _lastWaitLogAt > 5f)
+                        {
+                            _lastWaitLogAt = now;
+                            MelonLogger.Msg($"[OPENER] Cyst step {i + 1}/{_queue.Count} waiting: " +
+                                            $"this site's Bio Cache is not placed yet");
+                        }
+                        continue;
+                    }
+
+                    if (!AnyBcReadyCached(team, out string bcVia))
+                    {
+                        // Name the gate. A Cyst arrived 29s after its Bio Cache
+                        // was ready with nothing in the log to say why, and I am
+                        // not guessing at it again.
+                        if (now - _lastWaitLogAt > 5f)
+                        {
+                            _lastWaitLogAt = now;
+                            float rt = 0f;
+                            try { rt = Perception.MapLayers.LayerReplay.CurrentRoundTime; } catch { }
+                            MelonLogger.Msg($"[OPENER] Cyst step {i + 1}/{_queue.Count} waiting: " +
+                                            $"no finished BC anywhere yet; target ({_queue[i].Target.x:F0}," +
+                                            $"{_queue[i].Target.z:F0}) at roundT={rt:F0}s " +
+                                            $"(usable {Perception.BuildTimeline.MeasuredBuildUpS("Bio Cache"):F0}s after start)");
+                        }
+                        continue;
+                    }
                     if (_lastCystTry.TryGetValue(i, out float last) && now - last < RETRY_S) continue;
-                    if (team.TotalResources < _queue[i].Cost) continue;
+
+                    // Keep enough behind to feed the producers we already have.
+                    int floor = ShrimpFloor(team);
+                    if (team.TotalResources < _queue[i].Cost + floor)
+                    {
+                        if (now - _lastWaitLogAt > 5f)
+                        {
+                            _lastWaitLogAt = now;
+                            MelonLogger.Msg($"[OPENER] Cyst step {i + 1}/{_queue.Count} waiting: " +
+                                            $"cash={team.TotalResources} < {_queue[i].Cost}+{floor} " +
+                                            $"(keeping shrimp production funded)");
+                        }
+                        continue;
+                    }
 
                     // HARD ATTEMPT CAP.
                     //
@@ -260,16 +434,30 @@ namespace Si_RTS_AI.Planning
                         MarkDone(i);
                         continue;
                     }
+                    // A queued search is still resolving — waiting is not an
+                    // attempt. Counting it would spend the attempt budget on
+                    // requests that were never issued.
+                    if (Faction.AlienConstruction.SearchInFlightNear(
+                            "Lesser Spawning Cyst", _queue[i].Target)) continue;
+
                     _cystAttempts[i] = tries + 1;
                     _lastCystTry[i] = now;
 
                     AnythingNear(team, _queue[i].Target, 60f, out string nearby);
+                    MelonLogger.Msg($"[OPENER] Cyst step {i + 1}/{_queue.Count} BC ready via={bcVia}");
                     MelonLogger.Msg($"[OPENER] Cyst step {i + 1}/{_queue.Count} attempt {tries + 1}" +
                                     $"/{MAX_CYST_ATTEMPTS} at ({_queue[i].Target.x:F0},{_queue[i].Target.z:F0}) " +
                                     $"cash={team.TotalResources} nearby='{nearby}'");
                     // Straight at the game, bypassing the planner dedup.
                     Faction.AlienConstruction.TryBuildStructureForPlanner(
                         team, EcoPlanner.ActionKind.PlaceCyst, _queue[i].Target);
+
+                    // ONE PER TICK. Every pending Cyst becomes legal at the same
+                    // instant — when the first Bio Cache finishes and the unlock
+                    // fires — so without this the whole queue goes out in one
+                    // frame and several Cysts get built at once. At 1Hz they now
+                    // go down consecutively, a second apart.
+                    return;
                 }
             }
             catch (Exception ex) { MelonLogger.Warning("[OPENER] TickFast threw: " + ex.Message); }
@@ -281,8 +469,19 @@ namespace Si_RTS_AI.Planning
         // both numbers are now conservative.
         // Longer than a Cyst's build time, so a legitimate build is never
         // interrupted by our own retry.
-        const float RETRY_S = 30f;
-        const int   MAX_CYST_ATTEMPTS = 2;
+        // Back to the conservative values that produced good first-Cyst timing.
+        //
+        // 5s/8 attempts was tried on the theory that CystPending() would stop
+        // duplicates. It did not — that check reflects over production-queue
+        // entries whose shape is unverified, so it may simply never match. With
+        // the unlock gate in place an attempt is only made when it can actually
+        // succeed, so one try is normally enough and a slow retry is pure
+        // insurance rather than the mechanism.
+        // Quick retry is safe now that WasOrderedNear() gives ground truth on
+        // whether the order was accepted — a refusal costs a second, a success
+        // can never be repeated.
+        const float RETRY_S = 3f;
+        const int   MAX_CYST_ATTEMPTS = 10;
         static readonly Dictionary<int, int> _cystAttempts = new Dictionary<int, int>();
         static readonly Dictionary<int, float> _lastCystTry = new Dictionary<int, float>();
 
@@ -292,6 +491,122 @@ namespace Si_RTS_AI.Planning
         /// construction-site display name shows up in the log — it is not
         /// "Lesser Spawning Cyst", which is why the previous check missed it.
         /// </summary>
+        /// <summary>
+        /// Extend the node chain toward the next Bio Cache that cannot reach —
+        /// at 1 Hz, for the same reason the Cyst pipeline runs here.
+        ///
+        /// On the beam's 8s tick a chain cost 24s per hop against a 12s Node
+        /// build: place, hold the next tick because the Node is still building,
+        /// hold again, place. NarakaCity 2026-07-30, the southern chain took
+        /// 113s for four hops (14:21:34, 14:22:15, 14:22:39, 14:23:03, then the
+        /// Bio Cache at 14:23:27), which threw away the whole timing advantage
+        /// of picking the southern site in the first place.
+        ///
+        /// No explicit wait is needed here. The hop is measured from the nearest
+        /// FINISHED structure, and team.Structures only lists finished ones, so
+        /// while the previous Node is still building the computed point does not
+        /// move and the already-ordered check suppresses it. The moment it
+        /// finishes the point advances and the next hop goes out within a
+        /// second.
+        /// </summary>
+        static void TickChain(Team team)
+        {
+            _hopsThisTick.Clear();
+            foreach (int i in PendingSteps())
+            {
+                if (_queue[i].Kind != StepKind.Bc) continue;
+                Vector3 goal = _queue[i].Target;
+
+                float reach = EcoSimulator.BcPlaceReachM + 40f;
+                if (!NearestFinished(team, goal, out Vector3 from, out float gap)) return;
+                if (gap <= reach) continue;          // this one can build; try the next
+
+                float hop = Mathf.Max(1f, EcoSimulator.NODE_REACH_M - 40f);
+                Vector3 dir = goal - from;
+                float len = Mathf.Sqrt(dir.x * dir.x + dir.z * dir.z);
+                if (len < 1f) return;
+                Vector3 np = from + dir * (Mathf.Min(hop, len) / len);
+
+                // Already on the way? While the previous hop builds, `from` has
+                // not moved, so np is that same point and this holds.
+                if (Faction.AlienConstruction.WasOrderedNear("Node", np, 70f)) continue;
+                if (team.TotalResources < EcoSimulator.NODE_COST) return;
+
+                // SEPARATE CHAINS MAY RUN TOGETHER; PARALLEL ONES MAY NOT.
+                //
+                // Serving strictly one chain per tick made the northern site
+                // wait for the southern chain to finish. But letting every goal
+                // hop freely is what produced two chains running side by side
+                // 60-75m apart, because both far sites lay north and hopped off
+                // the same anchor. The distinction is whether the hops actually
+                // diverge: goals in genuinely different directions produce hops
+                // far apart and can proceed at once.
+                bool tooClose = false;
+                for (int h = 0; h < _hopsThisTick.Count; h++)
+                {
+                    float dx = _hopsThisTick[h].x - np.x, dz = _hopsThisTick[h].z - np.z;
+                    if (dx * dx + dz * dz < CHAIN_SEPARATION_M * CHAIN_SEPARATION_M)
+                    { tooClose = true; break; }
+                }
+                if (tooClose) continue;
+
+                MelonLogger.Msg($"[OPENER] step {i + 1}/{_queue.Count} chain node at " +
+                                $"({np.x:F0},{np.z:F0}) toward ({goal.x:F0},{goal.z:F0}) " +
+                                $"gap={gap:F0}m cash={team.TotalResources}");
+                Faction.AlienConstruction.TryBuildStructureForPlanner(
+                    team, EcoPlanner.ActionKind.PlaceNode, np);
+                _hopsThisTick.Add(np);
+                if (_hopsThisTick.Count >= MAX_CHAINS_AT_ONCE) return;
+            }
+        }
+
+        /// <summary>Two chain hops closer than this are the same chain drawn
+        /// twice, not two chains.</summary>
+        const float CHAIN_SEPARATION_M = 200f;
+        const int   MAX_CHAINS_AT_ONCE = 2;
+        static readonly List<Vector3> _hopsThisTick = new List<Vector3>(4);
+
+        /// <summary>
+        /// Nearest FINISHED alien structure to a point. team.Structures carries
+        /// a structure only once construction has ended, so membership alone
+        /// means finished — see BuildTimeline.
+        /// </summary>
+        static bool NearestFinished(Team team, Vector3 to, out Vector3 pos, out float dist)
+        {
+            pos = Vector3.zero; dist = float.MaxValue;
+            var structs = team.Structures;
+            if (structs == null) return false;
+            for (int i = 0; i < structs.Count; i++)
+            {
+                var st = structs[i];
+                if (st == null || st.ObjectInfo == null || st.IsDestroyed) continue;
+                string n = st.ObjectInfo.DisplayName ?? "";
+                if (n != "Nest" && n != "Bio Cache" && n != "Node" && n != "Lesser Spawning Cyst") continue;
+                Vector3 q = st.transform.position;
+                float dx = q.x - to.x, dz = q.z - to.z;
+                float d = Mathf.Sqrt(dx * dx + dz * dz);
+                if (d < dist) { dist = d; pos = q; }
+            }
+            // Structures that are ordered and far enough along to anchor, but
+            // not yet listed as complete. A Node measured 20s to completion
+            // against a 12s build-up, so waiting for the list costs ~8s a hop.
+            _anchorScratch.Clear();
+            Faction.AlienConstruction.CollectOrdersOlderThan(
+                "Node", EcoSimulator.NODE_BUILD_S, _anchorScratch);
+            Faction.AlienConstruction.CollectOrdersOlderThan(
+                "Bio Cache", EcoSimulator.BC_BUILD_S, _anchorScratch);
+            for (int i = 0; i < _anchorScratch.Count; i++)
+            {
+                float dx = _anchorScratch[i].x - to.x, dz = _anchorScratch[i].z - to.z;
+                float d = Mathf.Sqrt(dx * dx + dz * dz);
+                if (d < dist) { dist = d; pos = _anchorScratch[i]; }
+            }
+
+            return dist < float.MaxValue;
+        }
+
+        static readonly List<Vector3> _anchorScratch = new List<Vector3>(16);
+
         static bool AnythingNear(Team team, Vector3 target, float radiusM, out string what)
         {
             what = "";
@@ -371,6 +686,103 @@ namespace Si_RTS_AI.Planning
             catch { return ""; }
         }
 
+        /// <summary>
+        /// Does the team have at least one Bio Cache that has finished? That is
+        /// the Cyst unlock. Judged by elapsed time since the structure appeared,
+        /// against BuildUpTime read from the game — no property on Structure
+        /// reports completion reliably (IsFunctional flips ~1s after start).
+        /// </summary>
+        /// <summary>A finished Bio Cache within radius of this spot.</summary>
+        static bool BcReadyNear(Team team, Vector3 pos, float radiusM)
+        {
+            float roundT;
+            try { roundT = Perception.MapLayers.LayerReplay.CurrentRoundTime; } catch { return false; }
+            return Perception.BuildTimeline.BcCompleteNear(pos, radiusM, roundT);
+        }
+
+        /// <summary>
+        /// Has the Bio Cache step for this site already been placed? Steps carry
+        /// the site centroid in Goal, so the pair can be matched without extra
+        /// bookkeeping. True when no Bc step exists for the site, so a stray
+        /// Cyst is never deadlocked by a missing partner.
+        /// </summary>
+        static bool SiteBcDone(Team team, Vector3 goal)
+        {
+            bool hasBcStep = false;
+            for (int j = 0; j < _queue.Count; j++)
+            {
+                if (_queue[j].Kind != StepKind.Bc) continue;
+                float dx = _queue[j].Goal.x - goal.x, dz = _queue[j].Goal.z - goal.z;
+                if (dx * dx + dz * dz > 1f) continue;
+                hasBcStep = true;
+            }
+            if (!hasBcStep) return true;   // nothing to wait for
+
+            // GROUND TRUTH, NOT STEP STATE. _stepDone means REQUESTED, not
+            // placed: the Bio Cache step is marked done the moment its request
+            // goes out, which released the Cyst while the Bio Cache's own
+            // placement search was still running. NarakaCity 2026-07-30 v0.8.53:
+            // the 4th Cyst went up at 15:39:13 and its Bio Cache only landed at
+            // 15:41:05, 112s later.
+            return Faction.AlienConstruction.WasOrderedNear("Bio Cache", goal, 200f)
+                || StructureNear(team, "Bio Cache", goal, 200f);
+        }
+
+        /// <summary>
+        /// Cash that must survive placing a Cyst, so buying one never halts
+        /// shrimp production at the Cysts already running.
+        ///
+        /// A Cyst costs 1,500 against a shrimp's 160. Spending down to zero for
+        /// a fourth producer stops the three that are already earning — measured
+        /// NarakaCity 2026-07-30: the 4th Cyst took cash 1,500 -> 0 and the
+        /// site's own Bio Cache could not be afforded for another 112s. The
+        /// floor scales with how many Cysts are actually producing, since that
+        /// is what the reserve has to feed.
+        /// </summary>
+        static int ShrimpFloor(Team team)
+        {
+            int producers = 0;
+            try
+            {
+                var structs = team?.Structures;
+                if (structs != null)
+                    for (int i = 0; i < structs.Count; i++)
+                    {
+                        var st = structs[i];
+                        if (st == null || st.ObjectInfo == null || st.IsDestroyed) continue;
+                        if ((st.ObjectInfo.DisplayName ?? "") == "Lesser Spawning Cyst") producers++;
+                    }
+            }
+            catch { }
+            return producers * EcoSimulator.SHRIMP_COST;
+        }
+
+        /// <summary>Any finished Bio Cache on the team — the actual Cyst
+        /// prerequisite. Reports which signal answered, for the log.</summary>
+        static bool AnyBcReadyCached(Team team, out string via)
+        {
+            if (AnyBcReady(team)) { via = "anyBc"; return true; }
+            via = "none";
+            return false;
+        }
+
+        static bool AnyBcReady(Team team)
+        {
+            float roundT;
+            try { roundT = Perception.MapLayers.LayerReplay.CurrentRoundTime; } catch { return false; }
+            var structs = team.Structures;
+            if (structs == null) return false;
+            for (int i = 0; i < structs.Count; i++)
+            {
+                var st = structs[i];
+                if (st == null || st.ObjectInfo == null || st.IsDestroyed) continue;
+                if (st.ObjectInfo.DisplayName != "Bio Cache") continue;
+                if (Perception.BuildTimeline.BcCompleteNear(st.transform.position, 30f, roundT))
+                    return true;
+            }
+            return false;
+        }
+
         static bool StructureNear(Team team, string name, Vector3 target, float radiusM)
         {
             var structs = team.Structures;
@@ -444,6 +856,9 @@ namespace Si_RTS_AI.Planning
             public float RateAtHandoff;      // income/sec as Phase 2 takes over
             public int   CashAtHorizon;
             public float CompleteAtS;        // when the last piece is placed
+            public float SpreadM;            // mean pairwise distance between sites
+            public float NodePenalty;        // score cost of the chain
+            public float SpreadBonus;
             public readonly List<Step> Steps = new List<Step>();
 
             public string Describe()
@@ -455,6 +870,9 @@ namespace Si_RTS_AI.Planning
                   .Append(" cost=").Append(CostCash)
                   .Append(" income@").Append((int)SCORE_HORIZON_S).Append("s=").Append(IncomeToHandoff)
                   .Append(" rate=").Append(RateAtHandoff.ToString("F0")).Append("/s")
+                  .Append(" sameDir=").Append(SpreadM.ToString("F2"))
+                  .Append(" -nodes=").Append((int)NodePenalty)
+                  .Append(" -sameDir=").Append((int)(-SpreadBonus))
                   .Append(" score=").Append((int)Score)
                   .Append(" cashLeft=").Append(CashAtHorizon)
                   .Append(" done@").Append((int)CompleteAtS).Append('s')
@@ -470,6 +888,60 @@ namespace Si_RTS_AI.Planning
             }
         }
 
+        /// <summary>
+        /// How much of the opening is aimed the same way. Sums, over every pair
+        /// of chosen sites, how close their bearings from the Nest are — 1.0 for
+        /// an identical bearing, tapering to 0 at REDUNDANT_ANGLE_DEG apart.
+        ///
+        /// Bearings, not distances. Distance-based spread rewarded abandoning
+        /// close biotics; bearing redundancy cannot, and it is the thing that
+        /// actually costs us — two sites in one quadrant share a shrimp pool and
+        /// produce the relocation churn seen when 682m NW and 802m W were both
+        /// tapped, while a southern tap opens ground nothing else covers.
+        /// </summary>
+        /// <summary>
+        /// The direction penalty, softened on cluster maps.
+        ///
+        /// On a map with no directional choice at all the term is harmless —
+        /// every candidate carries the same redundancy, so it becomes a constant
+        /// offset and cancels out of a purely relative comparison. The case that
+        /// does need care is a map where clustering is genuinely BETTER: packed
+        /// patches share a node chain and give shrimps short walks, and pushing
+        /// the opener apart there costs income for nothing.
+        ///
+        /// IndustrialQuarter is that map — the only one measured with real
+        /// clusters (MeanClusterSize 2.10 against 1.61 next). There a Site
+        /// already aggregates several patches, so two Sites in one quadrant is a
+        /// rich cluster rather than a redundant direction, and the penalty is
+        /// scaled down by how clustered the map actually is.
+        /// </summary>
+        static float RedundancyPenalty()
+        {
+            if (!MapProfile.ClusterMode) return REDUNDANT_DIR_PENALTY;
+            float size = Mathf.Max(1f, MapProfile.MeanClusterSize);
+            return REDUNDANT_DIR_PENALTY / size;
+        }
+
+        static float DirectionRedundancy(List<int> siteIdx, Vector3 nest)
+        {
+            if (siteIdx.Count < 2) return 0f;
+            var bearing = new float[siteIdx.Count];
+            for (int i = 0; i < siteIdx.Count; i++)
+            {
+                Vector3 c = MapProfile.Sites[siteIdx[i]].Centroid;
+                bearing[i] = Mathf.Atan2(c.x - nest.x, c.z - nest.z) * Mathf.Rad2Deg;
+            }
+            float total = 0f;
+            for (int i = 0; i < siteIdx.Count; i++)
+                for (int j = i + 1; j < siteIdx.Count; j++)
+                {
+                    float d = Mathf.Abs(Mathf.DeltaAngle(bearing[i], bearing[j]));
+                    if (d < REDUNDANT_ANGLE_DEG)
+                        total += 1f - d / REDUNDANT_ANGLE_DEG;
+                }
+            return total;
+        }
+
         static Plan Search(EcoState root, out int evaluated)
         {
             var sites = MapProfile.Sites;
@@ -479,6 +951,22 @@ namespace Si_RTS_AI.Planning
 
             int n = Mathf.Min(CANDIDATE_SITES, sites.Count);
             Plan best = null;
+
+            // Keep the runners-up. Two candidate sets can be identical in cost
+            // and node count and still score apart — NarakaCity 2026-07-30,
+            // {214m,216m,682m,848m} beat {214m,216m,601m,682m} with both at
+            // 4 nodes / 2800, so the margin is entirely in the rollout and was
+            // invisible. Ties go to whichever is enumerated first, so a win
+            // means a strictly higher score; this shows by how much.
+            var top = new List<Plan>(RUNNERS_UP + 1);
+            void Consider(Plan p)
+            {
+                int at = top.Count;
+                while (at > 0 && top[at - 1].Score < p.Score) at--;
+                if (at >= RUNNERS_UP) return;
+                top.Insert(at, p);
+                if (top.Count > RUNNERS_UP) top.RemoveAt(top.Count - 1);
+            }
 
             // Combinations of sites, taken in distance order — the order a
             // chain is actually built in, so no need to permute.
@@ -491,7 +979,9 @@ namespace Si_RTS_AI.Planning
                     {
                         var p = Evaluate(root, chosen, cysts);
                         evalCount++;
-                        if (p != null && (best == null || p.Score > best.Score)) best = p;
+                        if (p == null) continue;
+                        Consider(p);
+                        if (best == null || p.Score > best.Score) best = p;
                     }
                     return;
                 }
@@ -508,6 +998,28 @@ namespace Si_RTS_AI.Planning
                 Recurse(0, want);
             }
             evaluated = evalCount;
+
+            for (int i = 0; i < top.Count; i++)
+                MelonLogger.Msg($"[OPENER/ALT] #{i + 1} {top[i].Describe()}");
+
+            // The best opening that taps a site the winner ignored. This is the
+            // "why not that patch?" question in one line, rather than a guess.
+            for (int sIdx = 0; sIdx < n; sIdx++)
+            {
+                if (best != null && best.SiteIdx.Contains(sIdx)) continue;
+                Plan bestWith = null;
+                for (int i = 0; i < top.Count; i++)
+                    if (top[i].SiteIdx.Contains(sIdx)
+                        && (bestWith == null || top[i].Score > bestWith.Score)) bestWith = top[i];
+                var site = sites[sIdx];
+                if (bestWith != null)
+                    MelonLogger.Msg($"[OPENER/SKIP] site@{(int)site.DistFromNest}m best-with-it " +
+                                    $"score={(int)bestWith.Score} vs winner {(int)(best?.Score ?? 0)} " +
+                                    $"({(int)(bestWith.Score - (best?.Score ?? 0))})");
+                else
+                    MelonLogger.Msg($"[OPENER/SKIP] site@{(int)site.DistFromNest}m not in any " +
+                                    $"top-{RUNNERS_UP} opening");
+            }
             return best;
         }
 
@@ -543,7 +1055,8 @@ namespace Si_RTS_AI.Planning
                     Vector3 np = from + dir * (hop / len);
                     s.nodes.Add(new EcoState.Node { pos = np, finished = false,
                                                     readyAt = s.t + EcoSimulator.NODE_BUILD_S });
-                    plan.Steps.Add(new Step { Kind = StepKind.Node, Target = np, Cost = EcoSimulator.NODE_COST });
+                    plan.Steps.Add(new Step { Kind = StepKind.Node, Target = np,
+                                              Goal = site.Centroid, Cost = EcoSimulator.NODE_COST });
                     s.cash -= EcoSimulator.NODE_COST;
                     cost += EcoSimulator.NODE_COST;
                     nodes++;
@@ -567,6 +1080,36 @@ namespace Si_RTS_AI.Planning
                 // until shrimps exist, so deferring it leaves cash free to keep
                 // Cysts queueing shrimps through the gap. User 2026-07-29 —
                 // this matters most for the 3rd+ Cyst at the end of Phase 1.
+                // Rule 3.2: from the THIRD site on, the Cyst is queued BEFORE
+                // its Bio Cache.
+                //
+                // Legal because the Cyst unlock is "any finished BC on the
+                // team", not "a BC at this site" — by the third site the first
+                // two are long since up. The BC costs 500 and earns nothing
+                // until shrimps exist, so ordering the Cyst first gets shrimp
+                // production started earlier at that site.
+                //
+                // Only the ORDER changes. The queue is unordered at fire time,
+                // so this cannot serialise the opening the way the old
+                // wait-for-Cyst GATE did.
+                //
+                // Open question the user raised: the Cyst may end up slightly
+                // further from the biotics this way. Whether the extra walk
+                // outweighs earlier shrimps is untested — worth measuring.
+                bool cystFirstHere = k >= CYST_FIRST_FROM_SITE;
+                if (cystFirstHere && k < cystCount)
+                {
+                    if (!Afford(s, EcoSimulator.CYST_COST)) return null;
+                    Vector3 ct = OffsetCystBeside(site.Centroid, bcPos, CYST_BESIDE_M);
+                    s.cysts.Add(new EcoState.Cyst { pos = ct, finished = false,
+                        readyAt = s.t + EcoSimulator.CYST_BUILD_S,
+                        nextSpawnAt = s.t + EcoSimulator.CYST_BUILD_S + EcoSimulator.SHRIMP_BUILD_S });
+                    plan.Steps.Add(new Step { Kind = StepKind.Cyst, Target = ct,
+                                              Goal = site.Centroid, Cost = EcoSimulator.CYST_COST });
+                    s.cash -= EcoSimulator.CYST_COST;
+                    cost += EcoSimulator.CYST_COST;
+                }
+
                 // BC then Cyst, EVERY site, no waiting.
                 //
                 // Two mechanisms are deliberately gone: Cyst-before-BC on later
@@ -583,7 +1126,7 @@ namespace Si_RTS_AI.Planning
                 // timing is solid.
                 if (!PlaceBcStep(s, plan, site, bcPos, ref cost)) return null;
 
-                if (k < cystCount)
+                if (k < cystCount && !cystFirstHere)
                 {
                     if (!Afford(s, EcoSimulator.CYST_COST)) return null;
                     s.cysts.Add(new EcoState.Cyst { pos = bcPos, finished = false,
@@ -612,8 +1155,9 @@ namespace Si_RTS_AI.Planning
                     // had to work around an occupied spot and took 54s (BC start
                     // t=53s, Cyst start t=106s) even though both were requested
                     // in the same millisecond.
-                    Vector3 cystTarget = OffsetCystBehind(site.Centroid, bcPos, CYST_BEHIND_M);
-                    plan.Steps.Add(new Step { Kind = StepKind.Cyst, Target = cystTarget, Cost = EcoSimulator.CYST_COST });
+                    Vector3 cystTarget = OffsetCystBeside(site.Centroid, bcPos, CYST_BESIDE_M);
+                    plan.Steps.Add(new Step { Kind = StepKind.Cyst, Target = cystTarget,
+                                              Goal = site.Centroid, Cost = EcoSimulator.CYST_COST });
                     s.cash -= EcoSimulator.CYST_COST;
                     cost += EcoSimulator.CYST_COST;
                 }
@@ -650,7 +1194,29 @@ namespace Si_RTS_AI.Planning
 
             plan.IncomeToHandoff = earnedBeforeWindow + s.grossEarned;
             plan.RateAtHandoff   = rateAtHandoff;
-            plan.Score = plan.IncomeToHandoff + rateAtHandoff * TERMINAL_TAIL_S;
+
+            // WHY income+rate ALONE CANNOT CHOOSE.
+            //
+            // Measured NarakaCity 2026-07-30: all 546 candidate openings scored
+            // within 59 points of each other on 130,848 — 0.045%. The winner was
+            // therefore noise. Two reasons, both fixed below:
+            //
+            //  * rate * TERMINAL_TAIL_S is ~81,600 of the score, 62% of the
+            //    total, and every opening converges to nearly the same rate by
+            //    the handoff. Most of the objective was a constant.
+            //  * Nodes and cash had ZERO weight. An 8-node plan scored the same
+            //    as a 4-node one, because the income model over-predicts ~3.5x
+            //    and leaves ~38,000 in the modelled bank — so the simulator
+            //    never feels the scarcity that produced real InsufficientResource
+            //    refusals in the same round.
+            plan.SpreadM     = DirectionRedundancy(siteIdx, root.nestPos);
+            plan.NodePenalty = NODE_SCORE_COST * plan.TotalNodes;
+            plan.SpreadBonus = -RedundancyPenalty() * plan.SpreadM;
+
+            plan.Score = plan.IncomeToHandoff
+                       + rateAtHandoff * TERMINAL_TAIL_S
+                       - plan.NodePenalty
+                       + plan.SpreadBonus;
             plan.CashAtHorizon = s.cash;
             return plan;
         }
@@ -663,7 +1229,7 @@ namespace Si_RTS_AI.Planning
                                         readyAt = s.t + EcoSimulator.BC_BUILD_S,
                                         storage = 0, storageCap = 4000 });
             plan.Steps.Add(new Step { Kind = StepKind.Bc, Target = site.Centroid,
-                                      Cost = EcoSimulator.BC_COST });
+                                      Goal = site.Centroid, Cost = EcoSimulator.BC_COST });
             s.cash -= EcoSimulator.BC_COST;
             cost += EcoSimulator.BC_COST;
             return true;
@@ -672,6 +1238,32 @@ namespace Si_RTS_AI.Planning
         // How many opening sites lead with the Bio Cache. At least 1 is
         // mandatory — the first BC is what unlocks Cyst construction.
         const int BC_FIRST_SITES = 1;
+
+        /// <summary>
+        /// Site index from which the Cyst is queued BEFORE its Bio Cache.
+        ///
+        /// Now never: EVERY site leads with its Bio Cache.
+        ///
+        /// This does not make rule 3.2 wrong. Considered at one site on its own
+        /// it holds — a Bio Cache costs money and earns nothing until shrimps
+        /// exist, so deferring it does free cash there. What it was weighed
+        /// without is two other mechanisms:
+        ///
+        ///  * PRICE. A Cyst is 1,500 against the Bio Cache's 500. Ordering it
+        ///    first at the 3rd or 4th site takes cash away from shrimp
+        ///    production at the Cysts ALREADY running, which is where the money
+        ///    was earning. NarakaCity 2026-07-30: cash fell 3,800 -> 1,700 ->
+        ///    200 and stayed there for the rest of Phase 1.
+        ///  * PLACEMENT REACH. Placement needs a FINISHED anchor. At a new site
+        ///    the only finished structure is the node chain, which stops short
+        ///    of the patch — the southern Cyst landed at (2375,820) against a
+        ///    patch at (2307,714). The Bio Cache stands beside the patch, so
+        ///    anchoring the Cyst off it puts the Cyst nearer the biotics.
+        ///
+        /// So Bio-Cache-first is both cheaper at the moment it matters and
+        /// better placed. The cost is the Cyst arriving ~30s later.
+        /// </summary>
+        const int CYST_FIRST_FROM_SITE = int.MaxValue;
 
         /// <summary>
         /// Advance the rollout until <paramref name="cost"/> is affordable.
@@ -693,7 +1285,9 @@ namespace Si_RTS_AI.Planning
             return true;
         }
 
-        // How far behind the Bio Cache the Cyst goes.
+        // Lateral offset from the PATCH, perpendicular to the BC direction —
+        // far enough to clear the Bio Cache footprint, close enough that the
+        // Cyst ends up level with it rather than behind it.
         //
         // 40m, down from 60m, for two reasons that point the same way:
         //
@@ -707,27 +1301,39 @@ namespace Si_RTS_AI.Planning
         // The game's placement search slides it clear of the BC footprint, so
         // aiming inside the nominal radius is safe — observed landings were
         // 18-27m from the Bio Cache.
-        const float CYST_BEHIND_M = 40f;
+        const float CYST_BESIDE_M = 35f;
+        /// <summary>Radius for "a Cyst is already coming here". Wide because the
+        /// placement search relocates a request by up to ~100m, so the order
+        /// that lands is not at the point we asked for.</summary>
+        const float CYST_DEDUP_M = 130f;
 
         /// <summary>
-        /// Cyst position: pushed AWAY FROM THE PATCH, directly behind the Bio
-        /// Cache.
+        /// Cyst position: BESIDE THE PATCH, level with the Bio Cache.
         ///
-        /// A perpendicular offset was tried first and Cyst placements simply
-        /// stopped resolving — requested at 23:14:45 with no construction start
-        /// inside the next 90s, while Nodes requested 24s later began building
-        /// in 2s. Perpendicular keeps the same distance from the biotics, so it
-        /// lands inside the patch's no-build zone and the search has nowhere to
-        /// go. Moving directly away from the patch is clear ground by
-        /// construction: the Bio Cache already found legal ground at the zone
-        /// boundary, and anything further out is further from the obstruction.
+        /// Aimed at the patch and offset perpendicular to the BC-to-patch line,
+        /// so the placement search slides it out to the no-build boundary on
+        /// that side — landing about as close to the biotics as the Bio Cache
+        /// is, rather than behind it.
+        ///
+        /// It was previously pushed 40m AWAY from the patch, which put the Bio
+        /// Cache between the Cyst and the biotics. That offset was guarding
+        /// against a reach limit that does not exist: a Cyst was observed
+        /// placed 618m from its anchor with result=Success, because only the
+        /// NEST can build Cysts and the placement is validated against the whole
+        /// base network, not against that one anchor. An earlier perpendicular
+        /// attempt did fail, but that was the unlock problem (no finished Bio
+        /// Cache yet), not the position — I mis-attributed it at the time.
+        ///
+        /// User 2026-07-30: "the first 2 starter cysts can be placed closer to
+        /// biotics because they anchor to the already finished biocache."
         /// </summary>
-        static Vector3 OffsetCystBehind(Vector3 patch, Vector3 bcPos, float d)
+        static Vector3 OffsetCystBeside(Vector3 patch, Vector3 bcPos, float d)
         {
             float dx = bcPos.x - patch.x, dz = bcPos.z - patch.z;
             float len = Mathf.Sqrt(dx * dx + dz * dz);
-            if (len < 1f) return bcPos + new Vector3(d, 0f, 0f);
-            return bcPos + new Vector3(dx / len, 0f, dz / len) * d;
+            if (len < 1f) return patch + new Vector3(d, 0f, 0f);
+            Vector3 perp = new Vector3(-dz / len, 0f, dx / len);   // 90 deg in XZ
+            return patch + perp * d;
         }
 
         /// <summary>Push the build spot off the patch toward the chain, the way

@@ -676,6 +676,136 @@ namespace Si_RTS_AI.Faction
         // Kept in this file so it shares the _bcCd/_cystCd/_nodeCd cache and the
         // FirePlacement + FindClosestStructureThatCanBuild helpers — no reason
         // to duplicate them in the planner.
+        // ---- Accepted construction orders ---------------------------------
+        // (name, position, Time.time) for every Construct that returned Success.
+        // The structure itself may not exist for some seconds afterwards, so
+        // this is the only reliable "already ordered" signal.
+        /// <summary>
+        /// Pos is where the structure actually went; Want is where we asked for
+        /// it. The placement search relocates a request by up to ~100m, so a
+        /// radius match against the requested point alone misses its own order:
+        /// NarakaCity v0.8.34, Cyst requested at (2269,1907) landed at
+        /// (2310,1825) — 92m away, just outside the 90m guard — so a second
+        /// Cyst went down 21m from the first.
+        /// </summary>
+        struct Ordered { public string Name; public Vector3 Pos; public Vector3 Want; public float At; }
+        static readonly List<Ordered> _ordered = new List<Ordered>();
+        const float ORDER_MEMORY_S = 240f;
+
+        static void NoteConstructed(string name, Vector3 pos) { NoteConstructed(name, pos, pos); }
+
+        static void NoteConstructed(string name, Vector3 pos, Vector3 want)
+        {
+            _ordered.Add(new Ordered { Name = name, Pos = pos, Want = want, At = Time.time });
+        }
+
+        /// <summary>
+        /// Seconds since a structure of this name was ordered near here, or -1
+        /// if none was. This is the only trustworthy build-START signal we have:
+        /// a structure does not appear in team.Structures under its finished
+        /// DisplayName until construction COMPLETES, so anything derived from
+        /// the team's structure list is a completion time wearing a start's
+        /// name. Measured on NarakaCity: Bio Caches ordered at roundT=21s first
+        /// showed up in the list at 52s (= order + TotalConstructionTime 30s),
+        /// Cysts ordered at 72s showed up at 108s.
+        /// </summary>
+        internal static float SecondsSinceOrderedNear(string name, Vector3 pos, float radiusM)
+        {
+            float now = Time.time;
+            float best = -1f;
+            float r2 = radiusM * radiusM;
+            for (int i = 0; i < _ordered.Count; i++)
+            {
+                if (!string.Equals(_ordered[i].Name, name, StringComparison.OrdinalIgnoreCase)) continue;
+                float wx = _ordered[i].Want.x - pos.x, wz = _ordered[i].Want.z - pos.z;
+                float dx = _ordered[i].Pos.x - pos.x, dz = _ordered[i].Pos.z - pos.z;
+                if (wx * wx + wz * wz > r2 && dx * dx + dz * dz > r2) continue;
+                float age = now - _ordered[i].At;
+                if (age > best) best = age;   // oldest match = the one most likely done
+            }
+            return best;
+        }
+
+        /// <summary>
+        /// Positions of accepted orders of this name that are at least
+        /// <paramref name="minAgeS"/> old — i.e. far enough along to be worth
+        /// treating as a chain anchor before they finish outright.
+        ///
+        /// team.Structures only lists COMPLETED structures, so anchoring off it
+        /// waits the full construction time (a Node measured 20s on NarakaCity)
+        /// when the build-up that makes it usable is shorter (12s off the CDs).
+        /// If the game disagrees the placement is simply refused and retried a
+        /// second later, which costs a log line rather than a structure.
+        /// </summary>
+        internal static void CollectOrdersOlderThan(string name, float minAgeS, List<Vector3> into)
+        {
+            if (into == null) return;
+            float now = Time.time;
+            for (int i = 0; i < _ordered.Count; i++)
+            {
+                if (!string.Equals(_ordered[i].Name, name, StringComparison.OrdinalIgnoreCase)) continue;
+                if (now - _ordered[i].At < minAgeS) continue;
+                into.Add(_ordered[i].Pos);
+            }
+        }
+
+        /// <summary>
+        /// Radius within which a second structure of the same kind is a
+        /// duplicate rather than a deliberate neighbour. Cysts and Bio Caches
+        /// are one-per-patch; Nodes deliberately chain ~110m apart and are
+        /// excluded entirely.
+        /// </summary>
+        const float DUP_RADIUS_M = 90f;
+
+        static bool IsDuplicateNow(Team team, string name, Vector3 pos)
+        {
+            if (!string.Equals(name, "Lesser Spawning Cyst", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(name, "Bio Cache", StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            if (WasOrderedNear(name, pos, DUP_RADIUS_M)) return true;
+
+            try
+            {
+                var structs = team?.Structures;
+                if (structs == null) return false;
+                float r2 = DUP_RADIUS_M * DUP_RADIUS_M;
+                for (int i = 0; i < structs.Count; i++)
+                {
+                    var st = structs[i];
+                    if (st == null || st.ObjectInfo == null || st.IsDestroyed) continue;
+                    if (!string.Equals(st.ObjectInfo.DisplayName ?? "", name,
+                                       StringComparison.OrdinalIgnoreCase)) continue;
+                    Vector3 q = st.transform.position;
+                    float dx = q.x - pos.x, dz = q.z - pos.z;
+                    if (dx * dx + dz * dz <= r2) return true;
+                }
+            }
+            catch { }
+            return false;
+        }
+
+        /// <summary>Was a structure of this name ordered near here recently?</summary>
+        internal static bool WasOrderedNear(string name, Vector3 pos, float radiusM)
+        {
+            float now = Time.time;
+            for (int i = _ordered.Count - 1; i >= 0; i--)
+                if (now - _ordered[i].At > ORDER_MEMORY_S) _ordered.RemoveAt(i);
+
+            float r2 = radiusM * radiusM;
+            for (int i = 0; i < _ordered.Count; i++)
+            {
+                if (!string.Equals(_ordered[i].Name, name, StringComparison.OrdinalIgnoreCase)) continue;
+                float wx = _ordered[i].Want.x - pos.x, wz = _ordered[i].Want.z - pos.z;
+                if (wx * wx + wz * wz <= r2) return true;
+                float dx = _ordered[i].Pos.x - pos.x, dz = _ordered[i].Pos.z - pos.z;
+                if (dx * dx + dz * dz < r2) return true;
+            }
+            return false;
+        }
+
+        internal static void ClearOrderedForNewRound() { _ordered.Clear(); _inFlight.Clear(); }
+
         internal static bool TryBuildStructureForPlanner(
             Team team,
             Planning.EcoPlanner.ActionKind kind,
@@ -693,19 +823,102 @@ namespace Si_RTS_AI.Faction
         // Same as above but takes a raw ConstructionData — used by
         // TechPlanner (which discovers Cortex/tech-tier CDs at runtime
         // from ConstructionOptions.IsTechTier, not from the eco enum).
+        /// <summary>
+        /// One outstanding placement search PER SPOT — not one per team.
+        ///
+        /// QueueFirstValidPlacementAroundPoint resolves ASYNCHRONOUSLY, and the
+        /// retry loops re-fire every few seconds without waiting. When a target
+        /// is briefly out of reach the requests pile up, and the moment reach
+        /// opens they all resolve at once, each calling Construct. NarakaCity
+        /// 2026-07-30: ten queued Cyst searches for (2279,735) produced
+        /// structures at (2385,820), (2365,825) and an attempt at (2345,830) —
+        /// three Cysts 20m apart on one patch. The step's own "confirmed
+        /// ordered" landed between the first and second, far too late to matter.
+        ///
+        /// Keyed per spot rather than globally on purpose. A search that
+        /// SUCCEEDS resolves in 25-100ms, but one that FAILS took 1.6s in the
+        /// same log — a single team-wide lock would stall every other structure
+        /// for that long behind a doomed request. Same-spot serialisation kills
+        /// the duplicates without ever making an unrelated placement wait.
+        /// </summary>
+        const float INFLIGHT_TIMEOUT_S = 6f;
+        const float INFLIGHT_RADIUS_M  = 120f;
+
+        struct InFlight { public string Name; public Vector3 Want; public float At; }
+        static readonly List<InFlight> _inFlight = new List<InFlight>();
+
+        /// <summary>Is a placement search for this structure already resolving
+        /// at roughly this spot?</summary>
+        internal static bool SearchInFlightNear(string name, Vector3 want)
+        {
+            float now = Time.time;
+            for (int i = _inFlight.Count - 1; i >= 0; i--)
+                if (now - _inFlight[i].At > INFLIGHT_TIMEOUT_S) _inFlight.RemoveAt(i);
+
+            float r2 = INFLIGHT_RADIUS_M * INFLIGHT_RADIUS_M;
+            for (int i = 0; i < _inFlight.Count; i++)
+            {
+                if (!string.Equals(_inFlight[i].Name, name, StringComparison.OrdinalIgnoreCase)) continue;
+                float dx = _inFlight[i].Want.x - want.x, dz = _inFlight[i].Want.z - want.z;
+                if (dx * dx + dz * dz <= r2) return true;
+            }
+            return false;
+        }
+
+        static void SearchDone(string name, Vector3 want)
+        {
+            for (int i = _inFlight.Count - 1; i >= 0; i--)
+            {
+                if (!string.Equals(_inFlight[i].Name, name, StringComparison.OrdinalIgnoreCase)) continue;
+                float dx = _inFlight[i].Want.x - want.x, dz = _inFlight[i].Want.z - want.z;
+                if (dx * dx + dz * dz < 1f) { _inFlight.RemoveAt(i); return; }
+            }
+        }
+
         internal static bool TryBuildStructureByCd(
             Team team,
             ConstructionData cd,
             Vector3 targetPos)
         {
             if (cd == null) return false;
+            string cdName = cd.ObjectInfo?.DisplayName ?? "?";
+            if (SearchInFlightNear(cdName, targetPos)) return false;
             var anchor = FindClosestStructureThatCanBuild(team, cd, targetPos);
             if (anchor == null) return false;
+            _inFlight.Add(new InFlight { Name = cdName, Want = targetPos, At = Time.time });
             FirePlacement(cd, team, anchor, targetPos,
                 onSuccess: (thisCd, cbTeam, cbStruct, gotPos, gotRot) =>
                 {
+                    SearchDone(cdName, targetPos);
                     try
                     {
+                        // LAST-MOMENT DUPLICATE CHECK.
+                        //
+                        // This is the only place the duplicate can actually be
+                        // stopped. A queued placement search cannot be cancelled
+                        // and may resolve arbitrarily late — NarakaCity
+                        // 2026-07-30, a Cyst search issued at 14:54:08 came back
+                        // at 14:54:38, THIRTY seconds later, after its step had
+                        // already been satisfied by a different search at
+                        // 14:54:35 and marked confirmed. It built a second Cyst
+                        // 22m from the first.
+                        //
+                        // Every earlier guard asked "should I request this?",
+                        // which was legal at request time. This asks "is this
+                        // still worth building?" at the moment of building, and
+                        // against gotPos — where the search actually chose to
+                        // put it — rather than where we asked for it.
+                        string dupName = thisCd.ObjectInfo?.DisplayName ?? "?";
+                        if (IsDuplicateNow(cbTeam, dupName, gotPos))
+                        {
+                            MelonLogger.Msg("[PLAN/EXEC] team=" + cbTeam.name +
+                                            " SKIP stale " + dupName +
+                                            " at (" + gotPos.x.ToString("F0") + "," +
+                                            gotPos.z.ToString("F0") + ") — one is already " +
+                                            "ordered or standing there");
+                            return;
+                        }
+
                         // Structure.Construct is what the vanilla commander UI
                         // calls at click-time — it deducts cost, spawns a
                         // ConstructionSite, and enforces every game rule
@@ -720,6 +933,15 @@ namespace Si_RTS_AI.Faction
                         {
                             MelonLogger.Warning("[PLAN/EXEC] Construct threw: " + cex.Message);
                         }
+                        // GROUND TRUTH. Construct tells us plainly whether the
+                        // order was accepted; record it so callers stop guessing
+                        // from structure lists. Two days of duplicate Cysts came
+                        // from discarding this and trying to detect the result
+                        // by watching team.Structures, which does not show an
+                        // ordered-but-not-yet-built structure.
+                        if (res != null && res.ToString() == "Success")
+                            NoteConstructed(thisCd.ObjectInfo?.DisplayName ?? "?", gotPos, targetPos);
+
                         float anchorDist = cbStruct != null
                             ? Vector3.Distance(cbStruct.transform.position, gotPos) : -1f;
                         MelonLogger.Msg("[PLAN/EXEC] team=" + cbTeam.name +
@@ -734,6 +956,7 @@ namespace Si_RTS_AI.Faction
                 },
                 onFail: (thisCd, cbTeam, cbStruct) =>
                 {
+                    SearchDone(cdName, targetPos);
                     MelonLogger.Msg("[PLAN/EXEC] team=" + cbTeam.name +
                                     " placement search FAILED for " + (thisCd.ObjectInfo?.DisplayName ?? "?") +
                                     " near (" + targetPos.x.ToString("F0") + "," + targetPos.z.ToString("F0") + ")");

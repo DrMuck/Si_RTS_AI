@@ -8,7 +8,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 
-[assembly: MelonInfo(typeof(Si_RTS_AI.Si_RTS_AI), "Si_RTS_AI", "0.8.25-cyst-pending-check", "DrMuck")]
+[assembly: MelonInfo(typeof(Si_RTS_AI.Si_RTS_AI), "Si_RTS_AI", "0.8.55-staffed-before-expanding", "DrMuck")]
 [assembly: MelonGame("Bohemia Interactive", "Silica")]
 
 namespace Si_RTS_AI
@@ -375,7 +375,9 @@ namespace Si_RTS_AI
             Planning.ScoutPlanner.ResetForNewRound();
             Planning.MapProfile.ResetForNewRound();
             Planning.OpenerPlanner.ResetForNewRound();
+            Faction.AlienConstruction.ClearOrderedForNewRound();
             Perception.BuildTimeline.ResetForNewRound();
+            Perception.BuildTimeline.ReportHookState();
             Faction.SuppressCombat.ResetForNewRound();
             Faction.HumanConstruction.ResetForNewRound();
             Faction.HumanTechResearcher.ResetForNewRound();
