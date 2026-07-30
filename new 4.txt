@@ -1,0 +1,78 @@
+Rulebook:
+
+
+A: Base Expansion Model/Build Orders:
+
+All expansion models need to consider the max build range. Refineries, HQ2HQ, production buildings, Radar and not violate these as ai commander. 
+For humans, buildings can be only placed in the visible range. E.g. radar station gives a clearance of fog where it is build.
+
+#1 Eco and basic expansion Humans (modded server):
+- Human start with an HQ. Trying to spend starter cash on eco. Building a refinery close to balterium. Whereas ideally the ramp of the refinery is not cut off and faces the balterium. 
+Very important to get up quick to the tech level to Expand base with a new HQ and to build refineries there. The area needs to be scouted and visible first. Ideally close to the maximum HQ to HQ build radius is used to gain map control. 
+But the expansion HQs should be build close to balterium clusters to max out eco. Expansion via multiple HQs are feasible if the areas have valuable resources (e.g a HQ north and another south from the starter HQ). This can give like an exponential/linear eco as well
+
+
+#2 Eco and basic expansion Aliens:
+- Alien Expand via nodes. Close to biotics a biocache is build, what is used to deposit the biotics via shrimps. Often also a lesser spawner is build to the biotics to produce shrimps. Usually 3 biotics are aimed for first base setup.
+Then a balance between tech up, noding, eco, defense and military is build. Caution. Nodlines can be cut off and die off if they are not connected to a nest. A nest can be useful for an expansion here to avoid long chain node cut off and die off. Usually about 10 shrimps per biotics are aimed.
+nodes can be build to discovered area (but does not need to visible having a unit there compared to units). But other structures such as the nest need active visibility
+
+
+
+#3 Build orders
+- Usually eco, then tech (often it is tried to tech up as quick as possible), early production buildings such as lessers, light factory, barracks, greater are used to scout, defense eco and harras enemy eco early on. 
+
+
+#4 Weighting between eco, expansion and military
+- A certain weight needs to identified. E.g. when to save up money for an expansion. Does the expansion needs preliminary defense. when better to focus spending cash on military or how to balance all of them together.
+
+
+#5 Strategic building placement
+- When and where to place production building, eco building or defense (towers) strategical to have an immediate or later benefit from it.
+
+
+
+
+C: Scouting model:
+- Scout for resources? Scout for enemy expansions
+
+D: Sub-Strategies:
+
+#1 Eco Harrassment:
+- Killing enemy harvesters/refineries or respective shrimps/biotics can weaken the enemy significant
+
+
+#2 Base Expansion Suppression:
+- Suppress enemy expansion e.g. suppress early on and weak defendet base expansion (HQ, nests, nodlines)
+
+#3 Guerilla warfare
+- Send a small group of units behind enemy lines or spots that are high valuable but defendet bad
+
+#4 Base defense
+- build strategic line of defenses (mostly also active via units) to defense critical areas such as eco and so on. If enemy exhausted, this army can be later used to attack. 
+
+#5 HQ/Queen distruction.
+- go for endgame scenario and kill enemy queen or HQs
+
+#6 strategical offensive/defense manouvers
+- little missions compositions and ideas based on a combination of #1-5
+
+#7 Unit army placement: 
+- Think in battalions and not in single units. Think also in about strategical placement. E.g. top off a cliff, in a valley and so on. 
+
+
+E: Army Compositions
+
+
+#1 Early/Mid/Late game compositions
+- Build specific compositions. E.g. compositions that can also damage early on
+
+#2 Counter compositions
+- Unit compositions that do well against enemy composition. E.g. AA against air attack and so on. Crimson against siege tank
+
+D: Enemy Unit Detection
+- It can be only reacted to unit and structures that are visible or were scouted by the own team
+
+
+
+

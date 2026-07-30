@@ -1,0 +1,3 @@
+# Si_RTS_AI observability log — scene=NorthPolarCap startedAt=2026-07-03 21:46:44
+# categories: [AI] commander Think summary, [ORDER] unit order (attack/move/stop), [SPAWN_S] structure, [SPAWN_U] unit, [PILOT] player controlled-unit change, [TEAM] player team change
+# Phase 2 additions: AIConstructionHandler + AIUnitHandler observability rolled into the round-summary block at the end of this file.

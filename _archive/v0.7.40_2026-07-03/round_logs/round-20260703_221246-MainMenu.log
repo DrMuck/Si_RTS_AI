@@ -1,0 +1,3 @@
+# Si_RTS_AI observability log — scene=MainMenu startedAt=2026-07-03 22:12:46
+# categories: [AI] commander Think summary, [ORDER] unit order (attack/move/stop), [SPAWN_S] structure, [SPAWN_U] unit, [PILOT] player controlled-unit change, [TEAM] player team change
+# Phase 2 additions: AIConstructionHandler + AIUnitHandler observability rolled into the round-summary block at the end of this file.

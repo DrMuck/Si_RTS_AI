@@ -1,0 +1,1175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Si_RTS_AI Layers Viewer</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; padding: 0; background: #0f0f0f; color: #ddd; font-family: system-ui, sans-serif; height: 100%; overflow: hidden; }
+  #topbar { display: flex; gap: 12px; align-items: center; padding: 6px 12px; background: #1c1c1c; border-bottom: 1px solid #333; font-size: 12px; }
+  #topbar input, #topbar select, #topbar button { background: #2a2a2a; color: #ddd; border: 1px solid #444; padding: 3px 7px; border-radius: 3px; font-size: 12px; }
+  #topbar button { cursor: pointer; }
+  #status { margin-left: auto; color: #8a8; }
+  #stateLine { color: #aaa; margin-left: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 40%; }
+
+  #layout { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 6px; height: calc(100vh - 34px); box-sizing: border-box; }
+
+  /* ============ LEFT PANEL ============ */
+  #leftPanel { display: grid; grid-template-rows: auto 1fr 200px; gap: 6px; min-height: 0; }
+
+  /* stats table */
+  #statsPanel { background: #0a0a0a; border: 1px solid #333; border-radius: 6px; overflow: hidden; }
+  #statsPanel table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  #statsPanel th, #statsPanel td { padding: 4px 8px; text-align: right; border-bottom: 1px solid #222; }
+  #statsPanel th:first-child, #statsPanel td:first-child { text-align: left; font-weight: bold; }
+  #statsPanel thead { background: #181818; color: #888; }
+  .team-swatch { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 6px; vertical-align: middle; }
+
+  /* map */
+  #mapPanel { background: #0a0a0a; border: 1px solid #333; border-radius: 6px; display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
+  #mapHead { display: flex; gap: 8px; align-items: center; padding: 4px 8px; background: #181818; border-bottom: 1px solid #333; font-size: 11px; flex-wrap: wrap; }
+  #mapHead select, #mapHead input[type=range] { background: #2a2a2a; color: #ddd; border: 1px solid #444; padding: 1px 5px; font-size: 11px; border-radius: 3px; }
+  #mapHead label { color: #888; }
+  #mapInfo { margin-left: auto; color: #666; }
+  #mapHolder { flex: 1; position: relative; overflow: hidden; min-height: 0; display: flex; align-items: center; justify-content: center; }
+  #mapCanvas { display: block; background: #050505; max-width: 100%; max-height: 100%; }
+
+  /* eco graph */
+  #ecoPanel { background: #0a0a0a; border: 1px solid #333; border-radius: 6px; display: flex; flex-direction: column; overflow: hidden; }
+  #ecoHead { padding: 4px 8px; background: #181818; border-bottom: 1px solid #333; font-size: 11px; color: #888; }
+  #ecoHolder { flex: 1; position: relative; overflow: hidden; }
+  #ecoCanvas { display: block; width: 100%; height: 100%; }
+
+  /* ============ RIGHT PANEL ============ */
+  #grid { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 6px; min-height: 0; }
+  .cell { background: #0a0a0a; border: 1px solid #333; border-radius: 6px; display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
+  .cellhead { display: flex; gap: 6px; align-items: center; padding: 4px 8px; background: #181818; border-bottom: 1px solid #333; font-size: 11px; }
+  .cellhead select, .cellhead input { background: #2a2a2a; color: #ddd; border: 1px solid #444; padding: 1px 5px; font-size: 11px; border-radius: 3px; }
+  .cellhead label { color: #888; }
+  .cellinfo { font-size: 10px; color: #666; margin-left: auto; }
+  .canvasholder { flex: 1; position: relative; overflow: hidden; min-height: 0; display: flex; align-items: center; justify-content: center; }
+  canvas.layerCanvas { display: block; max-width: 100%; max-height: 100%; background: #050505; }
+
+  .legend { display: inline-flex; gap: 4px; align-items: center; font-size: 11px; color: #888; }
+  .legend .dot { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
+</style>
+</head>
+<body>
+<div id="topbar">
+  <label style="color:#888">server</label>
+  <input id="server" value="http://localhost:8765" size="24" />
+  <label style="color:#888">refresh</label>
+  <select id="refresh">
+    <option value="500">500 ms</option>
+    <option value="1000" selected>1 s</option>
+    <option value="2000">2 s</option>
+    <option value="5000">5 s</option>
+    <option value="0">off</option>
+  </select>
+  <button id="refreshNow">↻</button>
+  <span class="legend"><span class="dot" style="background:rgb(50,140,255)"></span>Sol</span>
+  <span class="legend"><span class="dot" style="background:rgb(235,70,70)"></span>Cent</span>
+  <span class="legend"><span class="dot" style="background:rgb(70,220,70)"></span>Alien</span>
+  <span class="legend"><span class="dot" style="background:rgb(180,140,80)"></span>Wildlife</span>
+  <span id="stateLine">state: —</span>
+  <span id="status">idle</span>
+</div>
+
+<div id="layout">
+  <!-- ================ LEFT ================ -->
+  <div id="leftPanel">
+    <div id="statsPanel">
+      <table id="statsTable">
+        <thead><tr><th>team</th><th>cash</th><th>cap</th><th>earned</th><th>base</th><th>eco</th><th>workers</th><th>cysts</th><th>combat</th><th>total</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <div id="mapPanel">
+      <div id="mapHead">
+        <label>bg layer</label>
+        <select id="mapBg">
+          <option value="">(none)</option>
+        </select>
+        <label>alpha</label>
+        <input type="range" id="mapBgAlpha" min="0" max="100" value="45" style="width:70px" />
+        <label><input type="checkbox" id="showIcons" checked /> icons</label>
+        <label><input type="checkbox" id="showGrid"  checked /> grid</label>
+        <button id="mapZoomReset" title="Reset zoom + pan">reset view</button>
+        <span id="mapZoomInfo" style="color:#888">1.00×</span>
+        <span id="mapInfo">—</span>
+      </div>
+      <div id="mapHolder"><canvas id="mapCanvas"></canvas></div>
+    </div>
+
+    <div id="ecoPanel">
+      <div id="ecoHead">eco — thick = cumulative income · thin = current cash · dotted = capacity · <span style="color:#facc15">yellow</span> = server fps (right axis 0–60)</div>
+      <div id="ecoHolder"><canvas id="ecoCanvas"></canvas></div>
+    </div>
+  </div>
+
+  <!-- ================ RIGHT ================ -->
+  <div id="grid">
+    <div class="cell" data-idx="0"><div class="cellhead"><label>1</label><select class="pick"></select><label>opa</label><input type="range" class="opa" min="0" max="100" value="90" style="width:70px"><span class="cellinfo"></span></div><div class="canvasholder"><canvas class="layerCanvas"></canvas></div></div>
+    <div class="cell" data-idx="1"><div class="cellhead"><label>2</label><select class="pick"></select><label>opa</label><input type="range" class="opa" min="0" max="100" value="90" style="width:70px"><span class="cellinfo"></span></div><div class="canvasholder"><canvas class="layerCanvas"></canvas></div></div>
+    <div class="cell" data-idx="2"><div class="cellhead"><label>3</label><select class="pick"></select><label>opa</label><input type="range" class="opa" min="0" max="100" value="90" style="width:70px"><span class="cellinfo"></span></div><div class="canvasholder"><canvas class="layerCanvas"></canvas></div></div>
+    <div class="cell" data-idx="3"><div class="cellhead"><label>4</label><select class="pick"></select><label>opa</label><input type="range" class="opa" min="0" max="100" value="90" style="width:70px"><span class="cellinfo"></span></div><div class="canvasholder"><canvas class="layerCanvas"></canvas></div></div>
+  </div>
+</div>
+
+<script>
+"use strict";
+const $ = (s, r=document) => r.querySelector(s);
+const $$ = (s, r=document) => Array.from(r.querySelectorAll(s));
+
+const serverInput   = $("#server");
+const refreshSelect = $("#refresh");
+const statusEl      = $("#status");
+const stateLine     = $("#stateLine");
+const mapBgSelect   = $("#mapBg");
+const mapBgAlpha    = $("#mapBgAlpha");
+const mapInfo       = $("#mapInfo");
+const mapCanvas     = $("#mapCanvas");
+
+// Interactive zoom + pan for the map panel. World -> screen projection uses
+// the letterboxed `box`; scaling `box` around the canvas center + adding pan
+// shifts everything (bg PNG, layer overlay, entity dots, grid) together.
+let mapZoom = 1.0, mapPanX = 0, mapPanY = 0;
+const ecoCanvas     = $("#ecoCanvas");
+const showIconsCk   = $("#showIcons");
+const showGridCk    = $("#showGrid");
+
+const cells = $$(".cell").map(cell => ({
+  el: cell,
+  pick: cell.querySelector(".pick"),
+  opa: cell.querySelector(".opa"),
+  info: cell.querySelector(".cellinfo"),
+  canvas: cell.querySelector("canvas.layerCanvas"),
+  holder: cell.querySelector(".canvasholder"),
+  lastRenderedTick: -1,
+}));
+
+let catalog = { map:"?", roundTime:0, layers:[] };
+let entitiesUnavailable = false;
+let iconsUnavailable    = false;
+
+// Rolling eco history: { team → [{t, cash, cap}] }
+const ecoHistory = new Map();
+const ECO_MAX_POINTS = 1200;   // 20 min at 1s poll — enough for a soak
+
+// Same table as MapReplay's config.MAP_WORLD_EXTENTS. Each entry is the half-
+// extent of the playable world in meters — world x, z ∈ [-extent, +extent].
+// The extracted map PNGs cover exactly that square.
+const MAP_WORLD_EXTENTS = {
+  Badlands: 3000, BlackIsle: 1000, Citadel: 1500, CombatDome: 500, CrimsonPeak: 2048,
+  CrystalChasm: 1500, GreatErg: 3000, IndustrialQuarter: 2000, MonumentValley: 3000,
+  NarakaCity: 3000, NorthPolarCap: 2048, PowerStation: 500, ProvingGrounds: 1500,
+  RiftBasin: 1500, RiftBasin_TD: 1500, SandboxTest: 500, SmallStrategyTest: 500,
+  TheMaw: 1500, WhisperingPlains: 2048,
+};
+const mapImgCache = new Map();   // mapName → Image | "err"
+function getMapImg(mapName) {
+  if (!mapName) return null;
+  let e = mapImgCache.get(mapName);
+  if (e === undefined) {
+    const img = new Image();
+    img.onload  = () => { mapImgCache.set(mapName, img); };
+    img.onerror = () => { mapImgCache.set(mapName, "err"); };
+    img.src = `maps/${encodeURIComponent(mapName)}.png`;
+    mapImgCache.set(mapName, "loading");
+    return null;
+  }
+  if (e === "loading" || e === "err") return null;
+  return e;
+}
+
+// ---- Team colors (exact RGB from MapReplay config.TEAM_COLORS) ----
+// Sol=blue, Centauri=red, Alien=green — do NOT swap these; they must match the
+// mod's own convention so replays stay legible across tools.
+const TEAM_RGB = {
+  sol:      [ 50, 140, 255],
+  centauri: [235,  70,  70],
+  alien:    [ 70, 220,  70],
+  wildlife: [180, 140,  80],
+};
+function teamRgb(name) {
+  if (!name) return [200,200,200];
+  const n = name.toLowerCase();
+  if (n.includes("sol"))      return TEAM_RGB.sol;
+  if (n.includes("centauri")) return TEAM_RGB.centauri;
+  if (n.includes("alien"))    return TEAM_RGB.alien;
+  if (n.includes("wildlife")) return TEAM_RGB.wildlife;
+  return [220,220,220];
+}
+function teamColor(name) {
+  const [r,g,b] = teamRgb(name);
+  return `rgb(${r},${g},${b})`;
+}
+function hexToRgb(hex) {
+  if (hex.startsWith("rgb(")) {
+    const m = hex.match(/rgb\((\d+),(\d+),(\d+)\)/); return [+m[1], +m[2], +m[3]];
+  }
+  const h = hex.replace("#","");
+  return [parseInt(h.slice(0,2),16), parseInt(h.slice(2,4),16), parseInt(h.slice(4,6),16)];
+}
+
+// ---- Icon map (verbatim from MapReplay modules/icon_config.py ICON_MAP) ----
+// DisplayName lookup is space-stripped, so "Light Quad", "Bio Cache", "Lesser
+// Spawning Cyst" all normalize into the keys below. Missing entries fall back
+// to a solid team-colored dot.
+const ICON_MAP = {
+  // Human structures
+  "Refinery": "Tac_Structure_Refinery.png",
+  "Barracks": "Tac_Structure_Barracks.png",
+  "ResearchFacility": "Tac_Structure_ResearchFacility.png",
+  "LightFactory": "Tac_Structure_LightVehicleFactory.png",
+  "HeavyFactory": "Tac_Structure_HeavyVehicleFactory.png",
+  "UltraHeavyFactory": "Tac_Structure_UltraHeavyVehicleFactory.png",
+  "AirFactory": "Tac_Structure_AirFactory.png",
+  "Headquarters": "Tac_Structure_Headquarters.png",
+  "RadarStation": "Tac_Structure_RadarStation.png",
+  "Bunker": "Tac_Structure_Bunker.png",
+  "Outpost": "Tac_Structure_Outpost.png",
+  "Silo": "Tac_Structure_Silo.png",
+  "Turret": "Tac_Structure_Turret.png",
+  "HeavyTurret": "Tac_Structure_Turret.png",
+  "AntiAirRocketTurret": "Tac_Structure_Turret.png",
+  // Alien structures
+  "BioCache": "Tac_AlienStructure_BioCache.png",
+  "LesserSpawningCyst": "Tac_AlienStructure_LesserSpawningCyst.png",
+  "GreaterSpawningCyst": "Tac_AlienStructure_GreaterSpawningCyst.png",
+  "GrandSpawningCyst": "Tac_AlienStructure_GrandSpawningCyst.png",
+  "ColossalSpawningCyst": "Tac_AlienStructure_ColossalSpawningCyst.png",
+  "ThornSpire": "Tac_AlienStructure_ThornSpire.png",
+  "HiveSpire": "Tac_AlienStructure_HiveSpire.png",
+  "Nest": "Tac_AlienStructure_Nest.png",
+  "Node": "Tac_AlienStructure_Node.png",
+  "QuantumCortex": "Tac_AlienStructure_QuantumCortex.png",
+  // Soldiers (Trooper/Militia/Templar/Juggernaut/Sniper share icons)
+  "Commando": "Tac_Soldier_Commando.png",
+  "Heavy": "Tac_Soldier_Heavy.png",
+  "Marksman": "Tac_Soldier_Marksman.png",
+  "Rifleman": "Tac_Soldier_Rifleman.png",
+  "Scout": "Tac_Soldier_Scout.png",
+  "Trooper": "Tac_Soldier_Rifleman.png",
+  "Militia": "Tac_Soldier_Rifleman.png",
+  "Templar": "Tac_Soldier_Commando.png",
+  "Juggernaut": "Tac_Soldier_Heavy.png",
+  "Sniper": "Tac_Soldier_Marksman.png",
+  // Creatures
+  "Behemoth": "Tac_Creature_Behemoth.png",
+  "Colossus": "Tac_Creature_Colossus.png",
+  "Crab": "Tac_Creature_Crab.png",
+  "CrabHorned": "Tac_Creature_CrabHorned.png",
+  "Defiler": "Tac_Creature_Defiler.png",
+  "Dragonfly": "Tac_Creature_Dragonfly.png",
+  "Firebug": "Tac_Creature_Firebug.png",
+  "Goliath": "Tac_Creature_Goliath.png",
+  "Hunter": "Tac_Creature_Hunter.png",
+  "Queen": "Tac_Creature_Queen.png",
+  "Scorpion": "Tac_Creature_Scorpion.png",
+  "Shocker": "Tac_Creature_Shocker.png",
+  "Shrimp": "Tac_Creature_Shrimp.png",
+  "Squid": "Tac_Creature_Squid.png",
+  "Wasp": "Tac_Creature_Wasp.png",
+  "Worm": "Tac_Creature_Worm.png",
+  "GreatWorm": "Tac_Creature_Worm.png",
+  // Vehicles + all MapReplay aliases
+  "AntiAirCar": "Tac_Vehicle_AntiAirCar.png",
+  "ArmedTransport": "Tac_Vehicle_ArmedTransport.png",
+  "BarrageTruck": "Tac_Vehicle_BarrageTruck.png",
+  "CombatTank": "Tac_Vehicle_CombatTank.png",
+  "CrimsonTank": "Tac_Vehicle_CrimsonTank.png",
+  "FlakTruck": "Tac_Vehicle_FlakTruck.png",
+  "Harvester": "Tac_Vehicle_Harvester.png",
+  "HeavyArmoredCar": "Tac_Vehicle_HeavyArmoredCar.png",
+  "HeavyQuad": "Tac_Vehicle_HeavyQuad.png",
+  "HeavyQuad2": "Tac_Vehicle_HeavyQuad2.png",
+  "HeavyTank": "Tac_Vehicle_HeavyTank.png",
+  "HoverBike": "Tac_Vehicle_HoverBike.png",
+  "HoverHarvester": "Tac_Vehicle_HoverHarvester.png",
+  "HoverTank": "Tac_Vehicle_HoverTank.png",
+  "LightArmoredCar": "Tac_Vehicle_LightArmoredCar.png",
+  "LightArmoredCar2": "Tac_Vehicle_LightArmoredCar2.png",
+  "LightQuad": "Tac_Vehicle_LightQuad.png",
+  "LightQuad2": "Tac_Vehicle_LightQuad2.png",
+  "PulseTruck": "Tac_Vehicle_PulseTruck.png",
+  "PyroTank": "Tac_Vehicle_PyroTank.png",
+  "RailgunTank": "Tac_Vehicle_RailgunTank.png",
+  "RetroHatchback": "Tac_Vehicle_RetroHatchback.png",
+  "RocketTank": "Tac_Vehicle_RocketTank.png",
+  "SiegeTank": "Tac_Vehicle_SiegeTank.png",
+  "StrikeTank": "Tac_Vehicle_StrikeTank.png",
+  "TroopHauler": "Tac_Vehicle_TroopHauler.png",
+  "TroopTransport": "Tac_Vehicle_TroopTransport.png",
+  "AssaultCar": "Tac_Vehicle_LightArmoredCar.png",
+  "FlakCar": "Tac_Vehicle_FlakTruck.png",
+  "HeavyRaider": "Tac_Vehicle_HeavyArmoredCar.png",
+  "LightRaider": "Tac_Vehicle_LightArmoredCar.png",
+  "HeavyHarvester": "Tac_Vehicle_Harvester.png",
+  "PlatoonHauler": "Tac_Vehicle_TroopTransport.png",
+  "AATruck": "Tac_Vehicle_FlakTruck.png",
+  "HeavyStriker": "Tac_Vehicle_HeavyArmoredCar.png",
+  "LightStriker": "Tac_Vehicle_LightArmoredCar2.png",
+  // Air
+  "Bomber": "Tac_AirVehicle_Bomber.png",
+  "CrimsonFreighter": "Tac_AirVehicle_CrimsonFreighter.png",
+  "Freighter": "Tac_AirVehicle_CrimsonFreighter.png",
+  "Dreadnought": "Tac_AirVehicle_Dreadnought.png",
+  "Dropship": "Tac_AirVehicle_Dropship.png",
+  "Fighter": "Tac_AirVehicle_Fighter.png",
+  "Gunship": "Tac_AirVehicle_Gunship.png",
+  "Interceptor": "Tac_AirVehicle_Interceptor.png",
+  "Shuttle": "Tac_AirVehicle_Shuttle.png",
+  // Resources
+  "BalteriumField": "Tac_Resource_BalteriumField.png",
+  "Balterium":      "Tac_Resource_BalteriumField.png",
+  "Organics":       "Tac_Resource_Organics.png",
+  "Biotics":        "Tac_Resource_Organics.png",
+  "DropPod":        "Tac_DropPod.png",
+  "CampSite":       "Tac_CampSite.png",
+};
+
+// Categorization for the stats table. Match on space-stripped name so
+// "Light Quad" / "Bio Cache" / "Lesser Cyst" all normalize cleanly.
+// WORKER_NAMES groups every resource-gathering unit — harvesters for humans,
+// shrimps for aliens — so the "workers" column reads as "eco earners" for
+// both factions (was counting shrimps as combat, which they aren't).
+const WORKER_NAMES = new Set(["Harvester","HoverHarvester","HeavyHarvester","Shrimp"]);
+const BREEDER_NAMES = new Set(["Queen","Crab","CrabHorned"]);   // spawn other units, not combat
+const CYST_NAMES    = new Set(["LesserSpawningCyst","LesserCyst","GreaterSpawningCyst","GrandSpawningCyst","ColossalSpawningCyst"]);
+const BASE_NAMES    = new Set(["Headquarters","Nest"]);
+const ECO_BUILDINGS = new Set(["Refinery","BioCache","BioticsCache"]);
+const norm = s => (s || "").replace(/\s+/g, "");
+
+// Icon caches — raw PNGs and per-team-tinted canvases.
+// crossOrigin="anonymous" makes the CORS-enabled response usable in a canvas
+// without tainting (server sends Access-Control-Allow-Origin: *), so we can
+// call getImageData for the MapReplay-style white-pixel-replacement tint.
+const iconRawCache  = new Map();  // filename → HTMLImageElement | "loading" | "err"
+const iconTintCache = new Map();  // `${filename}|${team}` → HTMLCanvasElement
+
+function loadRawIcon(fname) {
+  let e = iconRawCache.get(fname);
+  if (e === undefined) {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload  = () => { iconRawCache.set(fname, img); };
+    img.onerror = () => {
+      iconRawCache.set(fname, "err");
+      if (iconRawCache.size <= 3 && Array.from(iconRawCache.values()).every(v => v === "err")) {
+        iconsUnavailable = true;
+      }
+    };
+    img.src = `${base()}/icon/${fname}`;
+    iconRawCache.set(fname, "loading");
+    return null;
+  }
+  if (e === "loading" || e === "err") return null;
+  return e;
+}
+
+// MapReplay's tint_icon: replace near-white pixels with team color, preserve alpha.
+function tintCanvas(img, teamRgbArr) {
+  const canvas = document.createElement("canvas");
+  canvas.width = img.width; canvas.height = img.height;
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(img, 0, 0);
+  let data;
+  try { data = ctx.getImageData(0, 0, canvas.width, canvas.height); }
+  catch { return null; }   // canvas tainted — fall back to raw
+  const d = data.data;
+  const [tr, tg, tb] = teamRgbArr;
+  for (let i = 0; i < d.length; i += 4) {
+    const r = d[i], g = d[i+1], b = d[i+2], a = d[i+3];
+    if (a === 0) continue;
+    const avg = (r + g + b) / 3;
+    const near = Math.abs(r - g) < 30 && Math.abs(r - b) < 30 && Math.abs(g - b) < 30;
+    const isWhite = ((r > 180 && g > 180 && b > 180) || avg > 200);
+    if (isWhite && near) { d[i] = tr; d[i+1] = tg; d[i+2] = tb; }
+  }
+  ctx.putImageData(data, 0, 0);
+  return canvas;
+}
+
+function getIconImg(displayName, team) {
+  if (iconsUnavailable) return null;
+  const fname = ICON_MAP[displayName] || ICON_MAP[displayName.replace(/\s+/g, "")];
+  if (!fname) return null;
+  const key = `${fname}|${team || ""}`;
+  const cached = iconTintCache.get(key);
+  if (cached) return cached;
+  const raw = loadRawIcon(fname);
+  if (!raw) return null;
+  const tinted = team ? tintCanvas(raw, teamRgb(team)) : raw;
+  if (tinted && tinted.tagName === "CANVAS") iconTintCache.set(key, tinted);
+  return tinted || raw;
+}
+
+// ---- Frame parsing ----
+// uint32 magic 'RTLF'(0x52544C46 LE) | uint8 type | int32 tick | float32 roundTime | int32 w | int32 h | T[w*h]
+function parseFrame(buf) {
+  const dv = new DataView(buf);
+  const magic = dv.getUint32(0, true);
+  if (magic !== 0x52544C46) throw new Error("bad magic 0x" + magic.toString(16));
+  const type = dv.getUint8(4);
+  const tick = dv.getInt32(5, true);
+  const t = dv.getFloat32(9, true);
+  const w = dv.getInt32(13, true);
+  const h = dv.getInt32(17, true);
+  return { type, tick, roundTime: t, w, h, headerLen: 21, buf };
+}
+function paintByteToImageData(img, w, h, bytes, alphaPct, rgb) {
+  const a = Math.round(alphaPct * 2.55);
+  const [r,g,b] = rgb;
+  for (let i = 0; i < bytes.length; i++) {
+    if (bytes[i] === 0) continue;
+    const px = i * 4;
+    img.data[px]=r; img.data[px+1]=g; img.data[px+2]=b; img.data[px+3]=a;
+  }
+}
+function paintIntToImageData(img, w, h, ints, alphaPct) {
+  const a = Math.round(alphaPct * 2.55);
+  let max = 0;
+  for (let i = 0; i < ints.length; i++) { const v = ints[i]; if (v > max) max = v; }
+  if (max <= 0) return;
+  for (let i = 0; i < ints.length; i++) {
+    const v = ints[i]; if (v <= 0) continue;
+    const t = Math.min(1, v / max);
+    let r,g,b;
+    if (t < 0.5)      { r = Math.round(255*(t/0.5));                   g = 0; b = 0; }
+    else if (t < 0.85){ r = 255; g = Math.round(255*((t-0.5)/0.35));   b = 0; }
+    else              { r = 255; g = 255; b = Math.round(255*((t-0.85)/0.15)); }
+    const px = i * 4;
+    img.data[px]=r; img.data[px+1]=g; img.data[px+2]=b; img.data[px+3]=a;
+  }
+}
+function bitmapFromFrame(f, alphaPct, byteRgb) {
+  const off = document.createElement("canvas");
+  off.width = f.w; off.height = f.h;
+  const ctx = off.getContext("2d");
+  const img = ctx.createImageData(f.w, f.h);
+  if (f.type === 1) {
+    const bytes = new Uint8Array(f.buf, f.headerLen, f.w * f.h);
+    paintByteToImageData(img, f.w, f.h, bytes, alphaPct, byteRgb || [60,220,200]);
+  } else if (f.type === 4) {
+    const sliced = f.buf.slice(f.headerLen, f.headerLen + f.w * f.h * 4);
+    const ints = new Int32Array(sliced);
+    paintIntToImageData(img, f.w, f.h, ints, alphaPct);
+  } else {
+    throw new Error("unknown frame type " + f.type);
+  }
+  ctx.putImageData(img, 0, 0);
+  return off;
+}
+
+// ---- HTTP ----
+const base = () => serverInput.value.replace(/\/$/,"");
+async function fetchCatalog()  { const r = await fetch(base()+"/catalog");  if (!r.ok) throw new Error("catalog HTTP "+r.status); return r.json(); }
+async function fetchState()    { const r = await fetch(base()+"/state");    if (!r.ok) throw new Error("state HTTP "+r.status);   return r.json(); }
+async function fetchEntities() { const r = await fetch(base()+"/entities"); if (!r.ok) throw new Error("entities HTTP "+r.status); return r.json(); }
+async function fetchLayer(team,name) {
+  const r = await fetch(base()+`/layer/${encodeURIComponent(team)}/${encodeURIComponent(name)}`);
+  if (!r.ok) throw new Error("layer HTTP "+r.status);
+  return r.arrayBuffer();
+}
+
+// ---- Pickers ----
+function populatePickers() {
+  const opts = catalog.layers.map(l => ({ v: `${l.team}/${l.name}`, t: `${l.team.replace(/^Team_/,'')} · ${l.name} (${l.type})` }));
+  for (const c of cells) {
+    const prev = c.pick.value;
+    c.pick.innerHTML = "";
+    const empty = document.createElement("option"); empty.value = ""; empty.textContent = "(pick layer)";
+    c.pick.appendChild(empty);
+    for (const o of opts) { const opt = document.createElement("option"); opt.value = o.v; opt.textContent = o.t; c.pick.appendChild(opt); }
+    if (prev) c.pick.value = prev;
+  }
+  {
+    const prev = mapBgSelect.value;
+    mapBgSelect.innerHTML = "";
+    const none = document.createElement("option"); none.value = ""; none.textContent = "(none)";
+    mapBgSelect.appendChild(none);
+    for (const l of catalog.layers) {
+      if (l.type !== "byte") continue;
+      const opt = document.createElement("option");
+      opt.value = `${l.team}/${l.name}`; opt.textContent = `${l.team.replace(/^Team_/,'')} · ${l.name}`;
+      mapBgSelect.appendChild(opt);
+    }
+    if (prev) mapBgSelect.value = prev;
+  }
+}
+function setDefaultsIfEmpty() {
+  const defaults = [
+    "Team_Human_Sol/refinery_pressure",
+    "Team_Human_Sol/eco_hq_expansion_value",
+    "Team_Human_Sol/fow_explored",
+    "Team_Alien/fow_explored",
+  ];
+  for (let i = 0; i < cells.length; i++) {
+    if (!cells[i].pick.value) {
+      const opts = Array.from(cells[i].pick.options).map(o=>o.value);
+      cells[i].pick.value = opts.includes(defaults[i]) ? defaults[i] : (opts[i+1] || opts[1] || "");
+    }
+  }
+  // Default bg is "(none)" — user asked for MapReplay terrain to be the default
+  // view; the layer dropdown is an OPTIONAL overlay on top.
+}
+
+// ---- Coord frame from a layer's metadata ----
+// world (x,z) → canvas (px,py) in the fit box, z flipped so +z is up on screen.
+function fitBox(worldW, worldH, canvasW, canvasH) {
+  const worldAspect = worldW / worldH;
+  const canvasAspect = canvasW / canvasH;
+  let w, h, ox, oy;
+  if (worldAspect > canvasAspect) { w = canvasW; h = canvasW / worldAspect; ox = 0; oy = (canvasH - h)/2; }
+  else                             { h = canvasH; w = canvasH * worldAspect; oy = 0; ox = (canvasW - w)/2; }
+  return { w, h, ox, oy };
+}
+function projector(frame, canvasW, canvasH) {
+  const worldW = frame.w * frame.cellSize;
+  const worldH = frame.h * frame.cellSize;
+  const box = fitBox(worldW, worldH, canvasW, canvasH);
+  return {
+    box, worldW, worldH,
+    project(x, z) {
+      const nx = (x - frame.originX) / worldW;
+      const nz = (z - frame.originZ) / worldH;
+      return [box.ox + nx * box.w, box.oy + (1 - nz) * box.h];
+    }
+  };
+}
+
+// ---- Grid + axis overlay ----
+function drawGridOverlay(ctx, box, worldW, worldH, originX, originZ, showLabels) {
+  const cw = ctx.canvas.width, ch = ctx.canvas.height;
+  ctx.save();
+  // subtle frame border
+  ctx.strokeStyle = "#444";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(box.ox + 0.5, box.oy + 0.5, box.w - 1, box.h - 1);
+
+  // Gridlines every ~500m world (or fewer/more depending on map size).
+  const step = worldW > 10000 ? 1000 : 500;
+  ctx.strokeStyle = "rgba(180,180,180,0.10)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  const startX = Math.ceil(originX / step) * step;
+  const endX   = originX + worldW;
+  for (let wx = startX; wx <= endX; wx += step) {
+    const px = box.ox + ((wx - originX) / worldW) * box.w;
+    ctx.moveTo(px + 0.5, box.oy);
+    ctx.lineTo(px + 0.5, box.oy + box.h);
+  }
+  const startZ = Math.ceil(originZ / step) * step;
+  const endZ   = originZ + worldH;
+  for (let wz = startZ; wz <= endZ; wz += step) {
+    const py = box.oy + (1 - (wz - originZ) / worldH) * box.h;
+    ctx.moveTo(box.ox,          py + 0.5);
+    ctx.lineTo(box.ox + box.w,  py + 0.5);
+  }
+  ctx.stroke();
+
+  if (showLabels) {
+    ctx.fillStyle = "rgba(200,200,200,0.65)";
+    ctx.font = "10px system-ui, sans-serif";
+    ctx.textBaseline = "top";
+    for (let wx = startX; wx <= endX; wx += step) {
+      const px = box.ox + ((wx - originX) / worldW) * box.w;
+      ctx.fillText(String(wx), px + 2, box.oy + 2);
+    }
+    ctx.textBaseline = "bottom";
+    for (let wz = startZ; wz <= endZ; wz += step) {
+      const py = box.oy + (1 - (wz - originZ) / worldH) * box.h;
+      ctx.fillText(String(wz), box.ox + 2, py - 2);
+    }
+  }
+
+  // North arrow
+  ctx.fillStyle = "rgba(220,220,220,0.7)";
+  ctx.font = "bold 11px system-ui, sans-serif";
+  ctx.textAlign = "center"; ctx.textBaseline = "top";
+  ctx.fillText("↑ N", box.ox + box.w - 20, box.oy + 4);
+  ctx.textAlign = "left";
+  ctx.restore();
+}
+
+// ============================================================
+// LEFT: MAP  — MapReplay-style: real terrain PNG + entity icons
+//
+// Coord frame is MapReplay's convention: playable world is [-extent, +extent]
+// on both axes; the map PNG covers exactly that square. We letterbox that
+// square into the canvas and project entity/layer world coords accordingly.
+// ============================================================
+async function paintMap() {
+  const holder = $("#mapHolder");
+  const cw = holder.clientWidth;
+  const ch = holder.clientHeight;
+  const dim = Math.min(cw, ch);
+  if (mapCanvas.width !== dim || mapCanvas.height !== dim) {
+    mapCanvas.width = dim; mapCanvas.height = dim;
+  }
+  const ctx = mapCanvas.getContext("2d");
+  ctx.clearRect(0, 0, mapCanvas.width, mapCanvas.height);
+  // Clip everything to the canvas rect so zoomed content doesn't leak into
+  // adjacent panels.
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, 0, mapCanvas.width, mapCanvas.height);
+  ctx.clip();
+
+  const mapName = catalog.map;
+  const extent  = MAP_WORLD_EXTENTS[mapName] || 3000;
+
+  // Fit the [-extent, +extent] world square (uniformly scaled) inside the canvas,
+  // then apply the interactive zoom + pan. All downstream draws (map PNG, bg
+  // layer overlay, entities, grid, labels) project through `box`, so scaling it
+  // scales everything coherently — no need to touch individual draw calls.
+  const boxRaw = fitBox(2 * extent, 2 * extent, mapCanvas.width, mapCanvas.height);
+  const fx = mapCanvas.width / 2, fy = mapCanvas.height / 2;
+  const box = {
+    ox: (boxRaw.ox - fx) * mapZoom + fx + mapPanX,
+    oy: (boxRaw.oy - fy) * mapZoom + fy + mapPanY,
+    w:  boxRaw.w * mapZoom,
+    h:  boxRaw.h * mapZoom,
+  };
+  const worldW = 2 * extent, worldH = 2 * extent;
+  const originX = -extent, originZ = -extent;
+  const project = (x, z) => [
+    box.ox + ((x - originX) / worldW) * box.w,
+    box.oy + (1 - (z - originZ) / worldH) * box.h,
+  ];
+
+  // Background: real map PNG
+  const mapImg = getMapImg(mapName);
+  if (mapImg) {
+    ctx.drawImage(mapImg, box.ox, box.oy, box.w, box.h);
+  } else {
+    ctx.fillStyle = "#111";
+    ctx.fillRect(box.ox, box.oy, box.w, box.h);
+    ctx.fillStyle = "#666"; ctx.font = "12px system-ui";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(`loading maps/${mapName}.png…`, box.ox + box.w/2, box.oy + box.h/2);
+    ctx.textAlign = "left";
+  }
+
+  // Optional layer overlay (from the "bg layer" dropdown — layers still use
+  // their own grid extent, so we overlay by projecting the layer bitmap into
+  // world coords first). Skip if user picked "(none)".
+  const bgKey = mapBgSelect.value;
+  const bgMeta = bgKey ? catalog.layers.find(l => `${l.team}/${l.name}` === bgKey) : null;
+  if (bgMeta) {
+    try {
+      const abuf = await fetchLayer(bgMeta.team, bgMeta.name);
+      const f = parseFrame(abuf);
+      const bmp = bitmapFromFrame(f, parseInt(mapBgAlpha.value,10), hexToRgb(teamColor(bgMeta.team)));
+      // The layer covers world rect [originX, originX + w*cellSize] × [originZ, originZ + h*cellSize].
+      // Bitmap row 0 = grid row 0 = world Z = originZ (LOW z), but on screen low-Z is
+      // the BOTTOM. Flip via translate-to-bottom + negative-Y scale so the FoW mask
+      // aligns with where entities actually spawn — the previous straight drawImage
+      // put the LOW-Z rows at the TOP of the screen and everything was upside-down.
+      const layerX0 = bgMeta.originX,   layerZ0 = bgMeta.originZ;
+      const layerX1 = layerX0 + bgMeta.w * bgMeta.cellSize;
+      const layerZ1 = layerZ0 + bgMeta.h * bgMeta.cellSize;
+      const [sx0, sy1] = project(layerX0, layerZ0);   // world bottom-left → screen bottom-left
+      const [sx1, sy0] = project(layerX1, layerZ1);   // world top-right    → screen top-right
+      ctx.save();
+      ctx.imageSmoothingEnabled = false;
+      ctx.translate(sx0, sy1);
+      ctx.scale((sx1 - sx0) / bmp.width, -(sy1 - sy0) / bmp.height);
+      ctx.drawImage(bmp, 0, 0);
+      ctx.restore();
+    } catch {}
+  }
+
+  // Grid + border + N
+  if (showGridCk.checked) {
+    drawGridOverlay(ctx, box, worldW, worldH, originX, originZ, true);
+  } else {
+    ctx.save(); ctx.strokeStyle = "#444"; ctx.lineWidth = 1;
+    ctx.strokeRect(box.ox + 0.5, box.oy + 0.5, box.w - 1, box.h - 1);
+    ctx.restore();
+  }
+
+  // Resources (drawn first so entities render over them)
+  await drawResources(ctx, project);
+
+  // Entities
+  let unitsN = 0, structN = 0;
+  if (!entitiesUnavailable) {
+    try {
+      const ents = await fetchEntities();
+      unitsN  = ents.units?.length || 0;
+      structN = ents.structures?.length || 0;
+      for (const s of ents.structures || []) {
+        const [px, py] = project(s.x, s.z);
+        drawEntity(ctx, s, px, py, /*isStructure*/true);
+      }
+      for (const u of ents.units || []) {
+        const [px, py] = project(u.x, u.z);
+        drawEntity(ctx, u, px, py, /*isStructure*/false);
+      }
+    } catch (e) {
+      if (e.message && e.message.includes("404")) entitiesUnavailable = true;
+    }
+  }
+
+  mapInfo.textContent =
+    `${mapName} · extent ±${extent}m (${worldW}×${worldH}m) · ${unitsN} units · ${structN} struct` +
+    (entitiesUnavailable ? " · /entities OFFLINE" : "") +
+    (resourcesUnavailable ? " · /resources OFFLINE (restart mod)" : "");
+
+  ctx.restore();
+}
+
+async function tryGetEntityFrame() {
+  if (entitiesUnavailable) return null;
+  try {
+    const ents = await fetchEntities();
+    if (ents.world && ents.world.gridW) {
+      return { w: ents.world.gridW, h: ents.world.gridH, cellSize: ents.world.cellSize, originX: ents.world.originX, originZ: ents.world.originZ };
+    }
+  } catch (e) { if (e.message && e.message.includes("404")) entitiesUnavailable = true; }
+  return null;
+}
+
+function drawEntity(ctx, e, px, py, isStructure) {
+  const img = showIconsCk.checked ? getIconImg(e.name, e.team) : null;
+  const size = isStructure ? 26 : 16;
+  // Construction sites — buildings not yet finished — render at reduced opacity
+  // so they read as "being built" without being confused with completed ones.
+  // Dashed frame around the icon reinforces the "in progress" state.
+  const building = isStructure && e.building === true;
+  const prevAlpha = ctx.globalAlpha;
+  if (building) ctx.globalAlpha = 0.45;
+  if (img) {
+    // Icon only — no team-color disc behind. Tint replaces white pixels with
+    // team RGB so faction is visible from the icon itself.
+    ctx.drawImage(img, px - size/2, py - size/2, size, size);
+  } else {
+    // Fallback: tiny dot in team color so unmapped entities don't vanish, but
+    // small enough not to obscure the map.
+    const [r,g,b] = teamRgb(e.team);
+    ctx.fillStyle = `rgb(${r},${g},${b})`;
+    ctx.strokeStyle = "rgba(0,0,0,0.7)";
+    ctx.lineWidth = 1;
+    if (isStructure) {
+      const s = 6;
+      ctx.beginPath(); ctx.rect(px - s/2, py - s/2, s, s); ctx.fill(); ctx.stroke();
+    } else {
+      ctx.beginPath(); ctx.arc(px, py, 2.5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    }
+  }
+  if (building) {
+    // Dashed team-colored outline around the construction site — reads at a glance
+    // as "this thing is going up right now", even when the icon is barely visible.
+    const [r,g,b] = teamRgb(e.team);
+    ctx.strokeStyle = `rgb(${r},${g},${b})`;
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    ctx.rect(px - size/2 - 2, py - size/2 - 2, size + 4, size + 4);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  ctx.globalAlpha = prevAlpha;
+}
+
+// Resources: /resources returns [{type,x,z}]. Draw underneath entities as
+// neutral (non-team) icons — Balterium = white, Organics/Biotics = tan.
+async function drawResources(ctx, project) {
+  if (resourcesUnavailable) return;
+  let list;
+  try {
+    const r = await fetch(base() + "/resources");
+    if (!r.ok) { if (r.status === 404) resourcesUnavailable = true; return; }
+    list = (await r.json()).resources || [];
+  } catch { return; }
+  const size = 22;
+  for (const res of list) {
+    const [px, py] = project(res.x, res.z);
+    const t = (res.type || "").toLowerCase();
+    let fname = null;
+    if (t.includes("balterium"))                fname = "Tac_Resource_BalteriumField.png";
+    else if (t.includes("organics") || t.includes("biotic")) fname = "Tac_Resource_Organics.png";
+    if (fname) {
+      // neutral tint = pale gold so it reads as "resource, no faction"
+      const img = getResourceIcon(fname);
+      if (img) { ctx.drawImage(img, px - size/2, py - size/2, size, size); continue; }
+    }
+    // fallback dot
+    ctx.fillStyle = "rgba(255,215,90,0.85)";
+    ctx.strokeStyle = "rgba(0,0,0,0.7)";
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(px, py, 5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  }
+}
+// Resource icons stay neutral — no team tint, just a pale gold recolor so they
+// stand out against the terrain PNG.
+const RES_TINT = [235, 200, 90];
+function getResourceIcon(fname) {
+  const key = `${fname}|res`;
+  const cached = iconTintCache.get(key);
+  if (cached) return cached;
+  const raw = loadRawIcon(fname);
+  if (!raw) return null;
+  const c = tintCanvas(raw, RES_TINT);
+  if (c) iconTintCache.set(key, c);
+  return c || raw;
+}
+let resourcesUnavailable = false;
+
+// ============================================================
+// LEFT: STATS TABLE
+// ============================================================
+async function paintStats() {
+  // Merge /state (cash, cap, counts) with /entities (per-type unit counts) if available.
+  let ents = null;
+  if (!entitiesUnavailable) {
+    try { ents = await fetchEntities(); } catch (e) { if (e.message?.includes("404")) entitiesUnavailable = true; }
+  }
+  const s = await fetchState();
+  const tbody = $("#statsTable tbody");
+  tbody.innerHTML = "";
+
+  for (const t of s.teams) {
+    // Everything except cash/capacity is now computed client-side from /entities
+    // — /state's counts don't distinguish alien BCs from human refineries and
+    // don't expose worker breakdown. Falling back to /state's `bases` / `refineries`
+    // /`units` only when /entities isn't up yet.
+    let baseCount = null, ecoCount = null, workers = null, cysts = null, combat = null;
+    if (ents) {
+      baseCount = 0; ecoCount = 0; workers = 0; cysts = 0; combat = 0;
+      for (const st of ents.structures || []) {
+        if (st.team !== t.name) continue;
+        const n = norm(st.name);
+        if (BASE_NAMES.has(n))         baseCount++;
+        else if (ECO_BUILDINGS.has(n)) ecoCount++;
+        else if (CYST_NAMES.has(n))    cysts++;
+      }
+      for (const u of ents.units || []) {
+        if (u.team !== t.name) continue;
+        const n = norm(u.name);
+        if (WORKER_NAMES.has(n))       workers++;
+        else if (BREEDER_NAMES.has(n)) { /* Queen/Crab — spawn other units, not combat */ }
+        else                            combat++;
+      }
+    }
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td><span class="team-swatch" style="background:${teamColor(t.name)}"></span>${t.name.replace(/^Team_/,'')}</td>
+      <td>${t.cash}</td>
+      <td>${t.capacity}</td>
+      <td>${shortNum(t.cumulativeIncome || 0)}</td>
+      <td>${baseCount ?? t.bases}</td>
+      <td>${ecoCount  ?? t.refineries}</td>
+      <td>${workers   ?? "—"}</td>
+      <td>${cysts     ?? "—"}</td>
+      <td>${combat    ?? "—"}</td>
+      <td>${t.units}</td>`;
+    tbody.appendChild(tr);
+
+    // Push into eco history
+    if (!ecoHistory.has(t.name)) ecoHistory.set(t.name, []);
+    const arr = ecoHistory.get(t.name);
+    const last = arr[arr.length - 1];
+    if (!last || s.roundTime - last.t >= 0.5) {
+      arr.push({ t: s.roundTime, cash: t.cash, cap: t.capacity, cum: t.cumulativeIncome || 0, fps: s.serverFps || 0 });
+      if (arr.length > ECO_MAX_POINTS) arr.shift();
+    }
+  }
+  // Prune teams no longer present
+  for (const k of Array.from(ecoHistory.keys())) {
+    if (!s.teams.find(t => t.name === k)) ecoHistory.delete(k);
+  }
+  return s;
+}
+
+// ============================================================
+// LEFT: ECO LINE CHART
+// ============================================================
+function paintEco() {
+  const holder = $("#ecoHolder");
+  const cw = holder.clientWidth, ch = holder.clientHeight;
+  if (ecoCanvas.width !== cw || ecoCanvas.height !== ch) { ecoCanvas.width = cw; ecoCanvas.height = ch; }
+  const ctx = ecoCanvas.getContext("2d");
+  ctx.clearRect(0, 0, cw, ch);
+  ctx.fillStyle = "#050505"; ctx.fillRect(0, 0, cw, ch);
+
+  const pad = { l: 42, r: 8, t: 6, b: 18 };
+  const plotW = cw - pad.l - pad.r, plotH = ch - pad.t - pad.b;
+
+  // Find domain — cumulative income can dwarf cash/cap (e.g. cumul 500k while cap
+  // 40k), so include it in the max-value scan or the graph clips cumul at the top.
+  let maxT = 0, maxV = 100;
+  for (const arr of ecoHistory.values()) {
+    for (const p of arr) {
+      if (p.t > maxT) maxT = p.t;
+      const m = Math.max(p.cash, p.cap, p.cum || 0);
+      if (m > maxV) maxV = m;
+    }
+  }
+  if (maxT < 1) maxT = 1;
+  // Snap Y to a nice ceiling
+  const yCeil = niceCeil(maxV);
+
+  // Axes
+  ctx.strokeStyle = "#333"; ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(pad.l, pad.t); ctx.lineTo(pad.l, pad.t + plotH); ctx.lineTo(pad.l + plotW, pad.t + plotH);
+  ctx.stroke();
+
+  // Y grid + labels
+  ctx.fillStyle = "#777"; ctx.font = "10px system-ui, sans-serif"; ctx.textBaseline = "middle";
+  ctx.strokeStyle = "rgba(180,180,180,0.08)";
+  const yTicks = 5;
+  for (let i = 0; i <= yTicks; i++) {
+    const y = pad.t + plotH - (i / yTicks) * plotH;
+    ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(pad.l + plotW, y); ctx.stroke();
+    ctx.fillText(shortNum((yCeil * i) / yTicks), 4, y);
+  }
+  // X labels (round time in mm:ss)
+  ctx.textBaseline = "top";
+  const xTicks = 6;
+  for (let i = 0; i <= xTicks; i++) {
+    const x = pad.l + (i / xTicks) * plotW;
+    const t = (maxT * i) / xTicks;
+    ctx.fillText(mmss(t), x - 15, pad.t + plotH + 4);
+  }
+
+  // Data lines
+  for (const [team, arr] of ecoHistory.entries()) {
+    if (arr.length < 2) continue;
+    const col = teamColor(team);
+    // Cash (solid)
+    ctx.strokeStyle = col; ctx.lineWidth = 1.6; ctx.beginPath();
+    for (let i = 0; i < arr.length; i++) {
+      const px = pad.l + (arr[i].t / maxT) * plotW;
+      const py = pad.t + plotH - (arr[i].cash / yCeil) * plotH;
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+    // Capacity (dotted)
+    ctx.strokeStyle = col + "88"; ctx.setLineDash([3,3]); ctx.lineWidth = 1; ctx.beginPath();
+    for (let i = 0; i < arr.length; i++) {
+      const px = pad.l + (arr[i].t / maxT) * plotW;
+      const py = pad.t + plotH - (arr[i].cap / yCeil) * plotH;
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.stroke(); ctx.setLineDash([]);
+    // Cumulative income (thick, brighter team color) — the "total earned" line
+    if (arr[0].cum !== undefined) {
+      ctx.strokeStyle = col; ctx.lineWidth = 2.4; ctx.globalAlpha = 0.9; ctx.beginPath();
+      for (let i = 0; i < arr.length; i++) {
+        const px = pad.l + (arr[i].t / maxT) * plotW;
+        const py = pad.t + plotH - (arr[i].cum / yCeil) * plotH;
+        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.stroke(); ctx.globalAlpha = 1;
+    }
+  }
+
+  // Server FPS overlay — separate right-side axis in [0, 60]. Painted from
+  // ANY team's history since FPS is shared. If FPS collapses below ~20 the
+  // eco chart's growth is being throttled by main-thread load — usually
+  // planner ticks or telemetry serialization at high structure counts.
+  const anyHistory = ecoHistory.values().next().value;
+  if (anyHistory && anyHistory.length >= 2 && anyHistory.some(p => p.fps > 0)) {
+    const fpsMax = 60;
+    ctx.strokeStyle = "#facc15"; ctx.lineWidth = 1.4; ctx.globalAlpha = 0.85; ctx.beginPath();
+    for (let i = 0; i < anyHistory.length; i++) {
+      const px = pad.l + (anyHistory[i].t / maxT) * plotW;
+      const f = Math.min(anyHistory[i].fps || 0, fpsMax);
+      const py = pad.t + plotH - (f / fpsMax) * plotH;
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.stroke(); ctx.globalAlpha = 1;
+    // Right-side FPS axis labels
+    ctx.fillStyle = "#facc15"; ctx.font = "10px system-ui, sans-serif"; ctx.textBaseline = "middle";
+    for (let i = 0; i <= 3; i++) {
+      const y = pad.t + plotH - (i / 3) * plotH;
+      const f = Math.round((fpsMax * i) / 3);
+      ctx.fillText(f + " fps", cw - pad.r - 24, y);
+    }
+  }
+}
+function niceCeil(v) {
+  if (v <= 0) return 100;
+  const p = Math.pow(10, Math.floor(Math.log10(v)));
+  const n = v / p;
+  const m = n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10;
+  return m * p;
+}
+function shortNum(v) {
+  if (v >= 1000) return (v/1000).toFixed(v>=10000?0:1) + "k";
+  return String(Math.round(v));
+}
+function mmss(sec) {
+  const m = Math.floor(sec / 60), s = Math.floor(sec % 60);
+  return `${m}:${s<10?"0":""}${s}`;
+}
+
+// ============================================================
+// RIGHT: 2×2 LAYER GRID
+// ============================================================
+async function paintLayerCells() {
+  for (const c of cells) {
+    const key = c.pick.value;
+    if (!key) { c.info.textContent = ""; continue; }
+    const [team, name] = key.split("/");
+    const meta = catalog.layers.find(l => l.team === team && l.name === name);
+    if (!meta) { c.info.textContent = "no meta"; continue; }
+    c.info.textContent = `${meta.w}×${meta.h} · tick ${meta.lastTick} · t=${meta.lastRoundTime.toFixed(0)}s`;
+
+    // Size the canvas to fit its holder square-aspect (matches source is 1:1 for now)
+    const holder = c.holder;
+    const dim = Math.min(holder.clientWidth, holder.clientHeight);
+    if (dim < 8) continue;
+    if (c.canvas.width !== dim || c.canvas.height !== dim) { c.canvas.width = dim; c.canvas.height = dim; }
+
+    if (meta.lastTick === c.lastRenderedTick) { drawLayerCellChrome(c, meta); continue; }
+    try {
+      const abuf = await fetchLayer(team, name);
+      const f = parseFrame(abuf);
+      const bmp = bitmapFromFrame(f, parseInt(c.opa.value,10), hexToRgb(teamColor(team)));
+      const ctx = c.canvas.getContext("2d");
+      ctx.clearRect(0, 0, c.canvas.width, c.canvas.height);
+      const proj = projector({...meta, cellSize: meta.cellSize}, c.canvas.width, c.canvas.height);
+      // Bitmap
+      ctx.save();
+      ctx.imageSmoothingEnabled = false;
+      ctx.translate(proj.box.ox, proj.box.oy + proj.box.h);
+      ctx.scale(proj.box.w / f.w, -proj.box.h / f.h);
+      ctx.drawImage(bmp, 0, 0);
+      ctx.restore();
+      // Chrome (grid + border + N)
+      drawLayerCellChrome(c, meta);
+      c.lastRenderedTick = meta.lastTick;
+    } catch (e) { c.info.textContent += ` · err ${e.message}`; }
+  }
+}
+function drawLayerCellChrome(c, meta) {
+  const ctx = c.canvas.getContext("2d");
+  const proj = projector({...meta, cellSize: meta.cellSize}, c.canvas.width, c.canvas.height);
+  if (showGridCk.checked) {
+    // Show world-coord labels on the layer cells so the user can read the scale.
+    drawGridOverlay(ctx, proj.box, proj.worldW, proj.worldH, meta.originX, meta.originZ, true);
+  } else {
+    ctx.save(); ctx.strokeStyle = "#444"; ctx.lineWidth = 1;
+    ctx.strokeRect(proj.box.ox + 0.5, proj.box.oy + 0.5, proj.box.w - 1, proj.box.h - 1);
+    ctx.restore();
+  }
+  // Playable-area indicator: MapReplay's world extent is smaller than our
+  // terrain-union grid (e.g. NorthPolarCap: playable ±2048m, grid ±6144m).
+  // Draw a dashed rect showing where entities can actually be — makes the
+  // "big black area" instantly readable as off-map, not missing data.
+  const extent = MAP_WORLD_EXTENTS[catalog.map];
+  if (extent) {
+    const worldToPx = (wx, wz) => [
+      proj.box.ox + ((wx - meta.originX) / proj.worldW) * proj.box.w,
+      proj.box.oy + (1 - (wz - meta.originZ) / proj.worldH) * proj.box.h,
+    ];
+    const [x0, y1] = worldToPx(-extent, -extent);
+    const [x1, y0] = worldToPx(+extent, +extent);
+    ctx.save();
+    ctx.strokeStyle = "rgba(255,220,120,0.55)";
+    ctx.setLineDash([4, 3]);
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
+}
+
+// ============================================================
+// MAIN TICK
+// ============================================================
+async function renderAllOnce() {
+  try {
+    catalog = await fetchCatalog();
+    if (catalog.layers.length === 0) {
+      statusEl.textContent = `waiting for first snapshot (map=${catalog.map})…`;
+      return;
+    }
+    populatePickers();
+    setDefaultsIfEmpty();
+    const state = await paintStats();          // also polls /entities
+    stateLine.textContent = `map=${state.map} · t=${mmss(state.roundTime)}`;
+    await paintMap();
+    paintEco();
+    await paintLayerCells();
+    statusEl.textContent = `ok · ${catalog.layers.length} layers · ${new Date().toLocaleTimeString()}`;
+  } catch (e) {
+    statusEl.textContent = "error: " + e.message;
+  }
+}
+
+let timer = null;
+function startTimer() {
+  if (timer) { clearInterval(timer); timer = null; }
+  const ms = parseInt(refreshSelect.value, 10);
+  if (ms > 0) timer = setInterval(renderAllOnce, ms);
+}
+refreshSelect.addEventListener("change", startTimer);
+serverInput.addEventListener("change", () => { entitiesUnavailable = false; iconsUnavailable = false; iconImgCache.clear(); renderAllOnce(); });
+$("#refreshNow").addEventListener("click", () => { entitiesUnavailable = false; iconsUnavailable = false; renderAllOnce(); });
+for (const c of cells) {
+  c.pick.addEventListener("change", () => { c.lastRenderedTick = -1; renderAllOnce(); });
+  c.opa.addEventListener("input",   () => { c.lastRenderedTick = -1; renderAllOnce(); });
+}
+mapBgSelect.addEventListener("change", renderAllOnce);
+mapBgAlpha.addEventListener("input",   renderAllOnce);
+showIconsCk.addEventListener("change", renderAllOnce);
+showGridCk.addEventListener("change",  () => { for (const c of cells) c.lastRenderedTick = -1; renderAllOnce(); });
+window.addEventListener("resize", () => { for (const c of cells) c.lastRenderedTick = -1; renderAllOnce(); });
+
+// Map zoom/pan handlers. Wheel = zoom under cursor; drag = pan. Adjust panX/panY
+// so the world point under the mouse stays under the mouse after zoom — the
+// canonical "zoom under cursor" transform.
+mapCanvas.addEventListener("wheel", (ev) => {
+  ev.preventDefault();
+  const rect = mapCanvas.getBoundingClientRect();
+  const sx = (ev.clientX - rect.left) * (mapCanvas.width  / rect.width);
+  const sy = (ev.clientY - rect.top)  * (mapCanvas.height / rect.height);
+  const factor = Math.exp(-ev.deltaY * 0.0012);
+  const newZoom = Math.max(0.25, Math.min(20, mapZoom * factor));
+  const k = newZoom / mapZoom;
+  mapPanX = sx - k * (sx - mapPanX);
+  mapPanY = sy - k * (sy - mapPanY);
+  mapZoom = newZoom;
+  $("#mapZoomInfo").textContent = mapZoom.toFixed(2) + "×";
+  renderAllOnce();
+}, { passive: false });
+
+let _panDrag = null;
+mapCanvas.addEventListener("mousedown", (ev) => {
+  if (ev.button !== 0 && ev.button !== 1) return;
+  ev.preventDefault();
+  _panDrag = { x: ev.clientX, y: ev.clientY, panX: mapPanX, panY: mapPanY };
+  mapCanvas.style.cursor = "grabbing";
+});
+window.addEventListener("mousemove", (ev) => {
+  if (!_panDrag) return;
+  const rect = mapCanvas.getBoundingClientRect();
+  const sxRatio = mapCanvas.width  / rect.width;
+  const syRatio = mapCanvas.height / rect.height;
+  mapPanX = _panDrag.panX + (ev.clientX - _panDrag.x) * sxRatio;
+  mapPanY = _panDrag.panY + (ev.clientY - _panDrag.y) * syRatio;
+  renderAllOnce();
+});
+window.addEventListener("mouseup", () => {
+  if (!_panDrag) return;
+  _panDrag = null;
+  mapCanvas.style.cursor = "";
+});
+$("#mapZoomReset").addEventListener("click", () => {
+  mapZoom = 1; mapPanX = 0; mapPanY = 0;
+  $("#mapZoomInfo").textContent = "1.00×";
+  renderAllOnce();
+});
+
+renderAllOnce();
+startTimer();
+</script>
+</body>
+</html>

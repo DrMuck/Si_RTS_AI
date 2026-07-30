@@ -1,0 +1,1462 @@
+{
+  "configuration" : { },
+  "description" : "Silica RTS AI commander mod — subsystem model",
+  "documentation" : { },
+  "id" : 1,
+  "lastModifiedAgent" : "structurizr-ui",
+  "lastModifiedDate" : "2026-07-22T16:29:07Z",
+  "model" : {
+    "people" : [ {
+      "description" : "Optional. Chee-style human on Alien team; competes with our AI for the same role.",
+      "id" : "1",
+      "name" : "Human commander",
+      "properties" : {
+        "structurizr.dsl.identifier" : "commander"
+      },
+      "relationships" : [ {
+        "description" : "Plays as Alien Commander (optional)",
+        "destinationId" : "3",
+        "id" : "47",
+        "sourceId" : "1",
+        "tags" : "Relationship"
+      } ],
+      "tags" : "Element,Person"
+    }, {
+      "description" : "You. Reads LayersViewer + round logs.",
+      "id" : "2",
+      "name" : "Mod author / observer",
+      "properties" : {
+        "structurizr.dsl.identifier" : "watcher"
+      },
+      "relationships" : [ {
+        "description" : "Watches heatmaps",
+        "destinationId" : "7",
+        "id" : "48",
+        "sourceId" : "2",
+        "tags" : "Relationship"
+      }, {
+        "description" : "Edits config, reads logs",
+        "destinationId" : "8",
+        "id" : "49",
+        "sourceId" : "2",
+        "tags" : "Relationship"
+      } ],
+      "tags" : "Element,Person"
+    } ],
+    "softwareSystems" : [ {
+      "description" : "Bohemia Interactive RTS. Hosts MP_Strategy, ResourceArea, AI commander loop, structure/unit lifecycle.",
+      "documentation" : { },
+      "id" : "3",
+      "name" : "Silica RTS Game",
+      "properties" : {
+        "structurizr.dsl.identifier" : "silicaGame"
+      },
+      "tags" : "Element,Software System,External"
+    }, {
+      "description" : "Mod host + Harmony patching + MelonPreferences persistence.",
+      "documentation" : { },
+      "id" : "4",
+      "name" : "MelonLoader",
+      "properties" : {
+        "structurizr.dsl.identifier" : "melonLoader"
+      },
+      "relationships" : [ {
+        "description" : "Hosts + Harmony-patches",
+        "destinationId" : "8",
+        "id" : "50",
+        "sourceId" : "4",
+        "tags" : "Relationship"
+      } ],
+      "tags" : "Element,Software System,External"
+    }, {
+      "description" : "Provides PlayerMethods.RegisterPlayerCommand — used for /rtsai chat commands.",
+      "documentation" : { },
+      "id" : "5",
+      "name" : "SilicaAdminMod",
+      "properties" : {
+        "structurizr.dsl.identifier" : "adminMod"
+      },
+      "tags" : "Element,Software System,External"
+    }, {
+      "description" : "Optional peer mod that mutates ConstructionData at runtime (BC cost, radii, etc.). We honor its edits.",
+      "documentation" : { },
+      "id" : "6",
+      "name" : "Si_UnitBalance",
+      "properties" : {
+        "structurizr.dsl.identifier" : "unitBalance"
+      },
+      "tags" : "Element,Software System,External"
+    }, {
+      "description" : "Local Python/HTML viewer that pulls heatmaps from TelemetryServer on port 8765.",
+      "documentation" : { },
+      "id" : "7",
+      "name" : "RTSA LayersViewer",
+      "properties" : {
+        "structurizr.dsl.identifier" : "layersView"
+      },
+      "tags" : "Element,Software System,External"
+    }, {
+      "containers" : [ {
+        "components" : [ {
+          "description" : "30s per-BC JSON dump for offline BC-utility regression",
+          "documentation" : { },
+          "id" : "10",
+          "name" : "BcMetrics",
+          "properties" : {
+            "structurizr.dsl.identifier" : "bcMetrics"
+          },
+          "tags" : "Element,Component"
+        }, {
+          "description" : "2s cadence. Rolling income, checkpoint benchmarks, optional AutoDrain.",
+          "documentation" : { },
+          "id" : "11",
+          "name" : "EcoRateSampler",
+          "properties" : {
+            "structurizr.dsl.identifier" : "ecoRateSampler"
+          },
+          "relationships" : [ {
+            "description" : "Measured income per shrimp",
+            "destinationId" : "26",
+            "id" : "57",
+            "sourceId" : "11",
+            "tags" : "Relationship"
+          }, {
+            "description" : "Measured income per shrimp",
+            "destinationId" : "21",
+            "id" : "58",
+            "linkedRelationshipId" : "57",
+            "sourceId" : "11"
+          } ],
+          "tags" : "Element,Component"
+        }, {
+          "description" : "1s per-worker stored/max via reflection.",
+          "documentation" : { },
+          "id" : "12",
+          "name" : "ShrimpStateSampler",
+          "properties" : {
+            "structurizr.dsl.identifier" : "shrimpSampler"
+          },
+          "tags" : "Element,Component"
+        }, {
+          "description" : "1s CSV — smoothed FPS, peak dt, frames-in-window.",
+          "documentation" : { },
+          "id" : "13",
+          "name" : "FpsSampler",
+          "properties" : {
+            "structurizr.dsl.identifier" : "fpsSampler"
+          },
+          "tags" : "Element,Component"
+        }, {
+          "description" : "One-shot reflect of every field on Shrimp/BC/Cyst/etc.",
+          "documentation" : { },
+          "id" : "14",
+          "name" : "GameConstantsDumper",
+          "properties" : {
+            "structurizr.dsl.identifier" : "constDumper"
+          },
+          "tags" : "Element,Component"
+        }, {
+          "description" : "HttpListener on :8765 — /catalog /layer/... /state /entities /patches.",
+          "documentation" : { },
+          "id" : "15",
+          "name" : "TelemetryServer",
+          "properties" : {
+            "structurizr.dsl.identifier" : "telemetryServer"
+          },
+          "relationships" : [ {
+            "description" : "HTTP :8765 — layer bytes + state",
+            "destinationId" : "7",
+            "id" : "54",
+            "sourceId" : "15",
+            "tags" : "Relationship"
+          } ],
+          "tags" : "Element,Component"
+        }, {
+          "description" : "40m-cell grid, per-map extent lookup.",
+          "documentation" : { },
+          "id" : "16",
+          "name" : "GridWorld",
+          "properties" : {
+            "structurizr.dsl.identifier" : "gridWorld"
+          },
+          "relationships" : [ {
+            "description" : "Cell coords / extent",
+            "destinationId" : "17",
+            "id" : "72",
+            "sourceId" : "16",
+            "tags" : "Relationship"
+          }, {
+            "description" : "Cell coords / extent",
+            "destinationId" : "18",
+            "id" : "73",
+            "sourceId" : "16",
+            "tags" : "Relationship"
+          }, {
+            "description" : "Cell coords / extent",
+            "destinationId" : "19",
+            "id" : "74",
+            "sourceId" : "16",
+            "tags" : "Relationship"
+          } ],
+          "tags" : "Element,Component"
+        }, {
+          "description" : "BioticsWeighted → CystPressure (BC-masked, existing-Cyst-subtracted).",
+          "documentation" : { },
+          "id" : "17",
+          "name" : "AlienEcoLayers",
+          "properties" : {
+            "structurizr.dsl.identifier" : "alienEcoLayers"
+          },
+          "relationships" : [ {
+            "description" : "CystPressure argmax for Phase B",
+            "destinationId" : "32",
+            "id" : "65",
+            "sourceId" : "17",
+            "tags" : "Relationship"
+          }, {
+            "description" : "CystPressure argmax for Phase B",
+            "destinationId" : "30",
+            "id" : "66",
+            "linkedRelationshipId" : "65",
+            "sourceId" : "17"
+          } ],
+          "tags" : "Element,Component"
+        }, {
+          "description" : "Balterium + HQ masks + EcoHqExpansionValue = weighted × dist-to-HQ.",
+          "documentation" : { },
+          "id" : "18",
+          "name" : "HumanEcoLayers",
+          "properties" : {
+            "structurizr.dsl.identifier" : "humanEcoLayers"
+          },
+          "relationships" : [ {
+            "description" : "EcoHqExpansionValue argmax",
+            "destinationId" : "36",
+            "id" : "69",
+            "sourceId" : "18",
+            "tags" : "Relationship"
+          }, {
+            "description" : "EcoHqExpansionValue argmax",
+            "destinationId" : "30",
+            "id" : "70",
+            "linkedRelationshipId" : "69",
+            "sourceId" : "18"
+          } ],
+          "tags" : "Element,Component"
+        }, {
+          "description" : "Per-team active + explored grids.",
+          "documentation" : { },
+          "id" : "19",
+          "name" : "FoWLayers",
+          "properties" : {
+            "structurizr.dsl.identifier" : "fowLayers"
+          },
+          "relationships" : [ {
+            "description" : "Explored mask (main-thread snapshot)",
+            "destinationId" : "23",
+            "id" : "62",
+            "sourceId" : "19",
+            "tags" : "Relationship"
+          }, {
+            "description" : "Explored mask (main-thread snapshot)",
+            "destinationId" : "21",
+            "id" : "63",
+            "linkedRelationshipId" : "62",
+            "sourceId" : "19"
+          } ],
+          "tags" : "Element,Component"
+        }, {
+          "description" : "5s snapshots to <round>/<team>/<layer>/*.bin, cache for HTTP server.",
+          "documentation" : { },
+          "id" : "20",
+          "name" : "LayerReplay",
+          "properties" : {
+            "structurizr.dsl.identifier" : "layerReplay"
+          },
+          "relationships" : [ {
+            "description" : "Latest-bytes cache (per team/layer)",
+            "destinationId" : "15",
+            "id" : "75",
+            "sourceId" : "20",
+            "tags" : "Relationship"
+          } ],
+          "tags" : "Element,Component"
+        } ],
+        "description" : "Samplers, layer computation, HTTP telemetry",
+        "documentation" : { },
+        "id" : "9",
+        "name" : "Perception",
+        "properties" : {
+          "structurizr.dsl.identifier" : "perception"
+        },
+        "relationships" : [ {
+          "description" : "HTTP :8765 — layer bytes + state",
+          "destinationId" : "7",
+          "id" : "55",
+          "linkedRelationshipId" : "54",
+          "sourceId" : "9"
+        }, {
+          "description" : "Measured income per shrimp",
+          "destinationId" : "26",
+          "id" : "59",
+          "linkedRelationshipId" : "57",
+          "sourceId" : "9"
+        }, {
+          "description" : "Measured income per shrimp",
+          "destinationId" : "21",
+          "id" : "60",
+          "linkedRelationshipId" : "57",
+          "sourceId" : "9"
+        }, {
+          "description" : "Explored mask (main-thread snapshot)",
+          "destinationId" : "23",
+          "id" : "64",
+          "linkedRelationshipId" : "62",
+          "sourceId" : "9"
+        }, {
+          "description" : "CystPressure argmax for Phase B",
+          "destinationId" : "32",
+          "id" : "67",
+          "linkedRelationshipId" : "65",
+          "sourceId" : "9"
+        }, {
+          "description" : "CystPressure argmax for Phase B",
+          "destinationId" : "30",
+          "id" : "68",
+          "linkedRelationshipId" : "65",
+          "sourceId" : "9"
+        }, {
+          "description" : "EcoHqExpansionValue argmax",
+          "destinationId" : "36",
+          "id" : "71",
+          "linkedRelationshipId" : "69",
+          "sourceId" : "9"
+        } ],
+        "tags" : "Element,Container",
+        "technology" : "C# / Il2Cpp reflection"
+      }, {
+        "components" : [ {
+          "description" : "IActionSource coordinator. Score × (1+urgency), fires under cash − reservations.",
+          "documentation" : { },
+          "id" : "22",
+          "name" : "MoneyBroker",
+          "properties" : {
+            "structurizr.dsl.identifier" : "moneyBroker"
+          },
+          "relationships" : [ {
+            "description" : "Sorts + fires proposals",
+            "destinationId" : "25",
+            "id" : "76",
+            "sourceId" : "22",
+            "tags" : "Relationship"
+          } ],
+          "tags" : "Element,Component"
+        }, {
+          "description" : "Async beam search (depth 5, width 6, horizon 180s). Phase 1 base eco → Phase 2 expand.",
+          "documentation" : { },
+          "id" : "23",
+          "name" : "EcoPlanner",
+          "properties" : {
+            "structurizr.dsl.identifier" : "ecoPlanner"
+          },
+          "relationships" : [ {
+            "description" : "Reads GetReservedCash (subtracts from budget)",
+            "destinationId" : "22",
+            "id" : "78",
+            "sourceId" : "23",
+            "tags" : "Relationship"
+          }, {
+            "description" : "TryBuildStructureForPlanner(BC / Cyst / Node)",
+            "destinationId" : "32",
+            "id" : "79",
+            "sourceId" : "23",
+            "tags" : "Relationship"
+          }, {
+            "description" : "TryBuildStructureForPlanner(BC / Cyst / Node)",
+            "destinationId" : "30",
+            "id" : "80",
+            "linkedRelationshipId" : "79",
+            "sourceId" : "23"
+          }, {
+            "description" : "Also ticks producer at end of plan",
+            "destinationId" : "33",
+            "id" : "85",
+            "sourceId" : "23",
+            "tags" : "Relationship"
+          }, {
+            "description" : "MaybeRun after apply",
+            "destinationId" : "27",
+            "id" : "87",
+            "sourceId" : "23",
+            "tags" : "Relationship"
+          } ],
+          "tags" : "Element,Component"
+        }, {
+          "description" : "Runtime knobs: cluster radius, uncysted BC queue cap, target-farthest flag.",
+          "documentation" : { },
+          "id" : "24",
+          "name" : "EcoPlannerConfig",
+          "properties" : {
+            "structurizr.dsl.identifier" : "ecoPlannerConfig"
+          },
+          "tags" : "Element,Component"
+        }, {
+          "description" : "Cortex placement + Alpha..Omega research queue. Reserves 2000 hard.",
+          "documentation" : { },
+          "id" : "25",
+          "name" : "TechPlanner",
+          "properties" : {
+            "structurizr.dsl.identifier" : "techPlanner"
+          },
+          "relationships" : [ {
+            "description" : "PublishState + reservations",
+            "destinationId" : "22",
+            "id" : "77",
+            "sourceId" : "25",
+            "tags" : "Relationship"
+          }, {
+            "description" : "TryBuildStructureByCd(Cortex + research)",
+            "destinationId" : "32",
+            "id" : "83",
+            "sourceId" : "25",
+            "tags" : "Relationship"
+          }, {
+            "description" : "TryBuildStructureByCd(Cortex + research)",
+            "destinationId" : "30",
+            "id" : "84",
+            "linkedRelationshipId" : "83",
+            "sourceId" : "25"
+          } ],
+          "tags" : "Element,Component"
+        }, {
+          "description" : "Producer-count × measured IPS + shrimp-ramp integral. (Not yet consumed by TechPlanner.)",
+          "documentation" : { },
+          "id" : "26",
+          "name" : "CashFlowProjector",
+          "properties" : {
+            "structurizr.dsl.identifier" : "cashFlowProjector"
+          },
+          "relationships" : [ {
+            "description" : "Reservation math (not yet used)",
+            "destinationId" : "25",
+            "id" : "61",
+            "sourceId" : "26",
+            "tags" : "Relationship"
+          } ],
+          "tags" : "Element,Component"
+        }, {
+          "description" : "Per-shrimp marginal-income migration with life-critical discounts.",
+          "documentation" : { },
+          "id" : "27",
+          "name" : "ShrimpRelocator",
+          "properties" : {
+            "structurizr.dsl.identifier" : "shrimpRelocator"
+          },
+          "tags" : "Element,Component"
+        }, {
+          "description" : "Cloneable snapshot + deterministic 2s forward stepping with crowd(N) factor.",
+          "documentation" : { },
+          "id" : "28",
+          "name" : "EcoState / Builder / Simulator",
+          "properties" : {
+            "structurizr.dsl.identifier" : "ecoState"
+          },
+          "tags" : "Element,Component"
+        }, {
+          "description" : "Static Priority lists per phase × faction — MVP placeholder.",
+          "documentation" : { },
+          "id" : "29",
+          "name" : "CompositionPlanner",
+          "properties" : {
+            "structurizr.dsl.identifier" : "compositionPlan"
+          },
+          "tags" : "Element,Component"
+        } ],
+        "description" : "Cash arbitration, beam-search eco planner, tech + relocator",
+        "documentation" : { },
+        "id" : "21",
+        "name" : "Planning",
+        "properties" : {
+          "structurizr.dsl.identifier" : "planning"
+        },
+        "relationships" : [ {
+          "description" : "TryBuildStructureForPlanner(BC / Cyst / Node)",
+          "destinationId" : "32",
+          "id" : "81",
+          "linkedRelationshipId" : "79",
+          "sourceId" : "21"
+        }, {
+          "description" : "TryBuildStructureForPlanner(BC / Cyst / Node)",
+          "destinationId" : "30",
+          "id" : "82",
+          "linkedRelationshipId" : "79",
+          "sourceId" : "21"
+        }, {
+          "description" : "Also ticks producer at end of plan",
+          "destinationId" : "33",
+          "id" : "86",
+          "linkedRelationshipId" : "85",
+          "sourceId" : "21"
+        } ],
+        "tags" : "Element,Container",
+        "technology" : "C# — async on background Task"
+      }, {
+        "components" : [ {
+          "description" : "Per-faction master switch — team-name substring match.",
+          "documentation" : { },
+          "id" : "31",
+          "name" : "FactionControl",
+          "properties" : {
+            "structurizr.dsl.identifier" : "factionControl"
+          },
+          "relationships" : [ {
+            "description" : "Master switch",
+            "destinationId" : "32",
+            "id" : "97",
+            "sourceId" : "31",
+            "tags" : "Relationship"
+          }, {
+            "description" : "Master switch",
+            "destinationId" : "36",
+            "id" : "98",
+            "sourceId" : "31",
+            "tags" : "Relationship"
+          } ],
+          "tags" : "Element,Component"
+        }, {
+          "description" : "Prefix on AIConstructionHandler.Think (Alien). Owns tick when planner active.",
+          "documentation" : { },
+          "id" : "32",
+          "name" : "AlienConstruction",
+          "properties" : {
+            "structurizr.dsl.identifier" : "alienConstr"
+          },
+          "relationships" : [ {
+            "description" : "Places structures via QueueFirstValidPlacementAroundPoint",
+            "destinationId" : "3",
+            "id" : "89",
+            "sourceId" : "32",
+            "tags" : "Relationship"
+          } ],
+          "tags" : "Element,Component"
+        }, {
+          "description" : "Per-Cyst Construct(shrimpCd) with per-BC + team caps.",
+          "documentation" : { },
+          "id" : "33",
+          "name" : "AlienShrimpProducer",
+          "properties" : {
+            "structurizr.dsl.identifier" : "shrimpProducer"
+          },
+          "relationships" : [ {
+            "description" : "Cyst.Construct(shrimpCd)",
+            "destinationId" : "3",
+            "id" : "91",
+            "sourceId" : "33",
+            "tags" : "Relationship"
+          } ],
+          "tags" : "Element,Component"
+        }, {
+          "description" : "Strips shrimps from attack groups, blocks non-harvest moves.",
+          "documentation" : { },
+          "id" : "34",
+          "name" : "AlienShrimpAntiAttack",
+          "properties" : {
+            "structurizr.dsl.identifier" : "shrimpAntiAttack"
+          },
+          "relationships" : [ {
+            "description" : "Filters AIGroup.OnAttackOrder, Unit.OnMoveOrder",
+            "destinationId" : "3",
+            "id" : "92",
+            "sourceId" : "34",
+            "tags" : "Relationship"
+          } ],
+          "tags" : "Element,Component"
+        }, {
+          "description" : "Threat scan, target ranking, unit production. Army orders STUBBED.",
+          "documentation" : { },
+          "id" : "35",
+          "name" : "MilitaryManager",
+          "properties" : {
+            "structurizr.dsl.identifier" : "militaryManager"
+          },
+          "relationships" : [ {
+            "description" : "Higher-tier producer placement (Greater/Colossus/Grand)",
+            "destinationId" : "32",
+            "id" : "88",
+            "sourceId" : "35",
+            "tags" : "Relationship"
+          }, {
+            "description" : "Produces combat units, TODO: orders army",
+            "destinationId" : "3",
+            "id" : "93",
+            "sourceId" : "35",
+            "tags" : "Relationship"
+          } ],
+          "tags" : "Element,Component"
+        }, {
+          "description" : "Sol/Centauri refinery + HQ + tech (single Barracks/Research cap).",
+          "documentation" : { },
+          "id" : "36",
+          "name" : "HumanConstruction",
+          "properties" : {
+            "structurizr.dsl.identifier" : "humanConstr"
+          },
+          "relationships" : [ {
+            "description" : "Refinery / HQ / Barracks / Research placement",
+            "destinationId" : "3",
+            "id" : "94",
+            "sourceId" : "36",
+            "tags" : "Relationship"
+          } ],
+          "tags" : "Element,Component"
+        }, {
+          "description" : "Postfix routing rules (init/anti-clump/queue/stuck).",
+          "documentation" : { },
+          "id" : "37",
+          "name" : "HumanHarvesterController",
+          "properties" : {
+            "structurizr.dsl.identifier" : "humanHarvester"
+          },
+          "relationships" : [ {
+            "description" : "Postfix harvester routing",
+            "destinationId" : "3",
+            "id" : "95",
+            "sourceId" : "37",
+            "tags" : "Relationship"
+          } ],
+          "tags" : "Element,Component"
+        }, {
+          "description" : "Mark I..V queue at each Research Facility.",
+          "documentation" : { },
+          "id" : "38",
+          "name" : "HumanTechResearcher",
+          "properties" : {
+            "structurizr.dsl.identifier" : "humanTech"
+          },
+          "relationships" : [ {
+            "description" : "Structure.Construct(markN cd)",
+            "destinationId" : "3",
+            "id" : "96",
+            "sourceId" : "38",
+            "tags" : "Relationship"
+          } ],
+          "tags" : "Element,Component"
+        }, {
+          "description" : "Global attack-order suppress (test aid).",
+          "documentation" : { },
+          "id" : "39",
+          "name" : "SuppressCombat",
+          "properties" : {
+            "structurizr.dsl.identifier" : "suppressCombat"
+          },
+          "tags" : "Element,Component"
+        }, {
+          "description" : "Suicide human units + zero cash (EnemyBroke mode).",
+          "documentation" : { },
+          "id" : "40",
+          "name" : "SuppressHumanAI",
+          "properties" : {
+            "structurizr.dsl.identifier" : "suppressHumanAI"
+          },
+          "tags" : "Element,Component"
+        } ],
+        "description" : "Harmony patches into Silica's AI handler + per-faction owners",
+        "documentation" : { },
+        "id" : "30",
+        "name" : "Execution / Faction",
+        "properties" : {
+          "structurizr.dsl.identifier" : "faction"
+        },
+        "relationships" : [ {
+          "description" : "Places structures via QueueFirstValidPlacementAroundPoint",
+          "destinationId" : "3",
+          "id" : "90",
+          "linkedRelationshipId" : "89",
+          "sourceId" : "30"
+        } ],
+        "tags" : "Element,Container",
+        "technology" : "Harmony prefixes/postfixes"
+      }, {
+        "components" : [ {
+          "description" : "Reads all prefs, auto-starts round, force-ends after N min. IsRoundActive published every tick.",
+          "documentation" : { },
+          "id" : "42",
+          "name" : "TestHarness",
+          "properties" : {
+            "structurizr.dsl.identifier" : "harness"
+          },
+          "relationships" : [ {
+            "description" : "Push RTSAI_* prefs",
+            "destinationId" : "31",
+            "id" : "99",
+            "sourceId" : "42",
+            "tags" : "Relationship"
+          }, {
+            "description" : "Push RTSAI_* prefs",
+            "destinationId" : "30",
+            "id" : "100",
+            "linkedRelationshipId" : "99",
+            "sourceId" : "42"
+          }, {
+            "description" : "EnemyBroke tick",
+            "destinationId" : "40",
+            "id" : "103",
+            "sourceId" : "42",
+            "tags" : "Relationship"
+          }, {
+            "description" : "SuppressCombat pref",
+            "destinationId" : "39",
+            "id" : "105",
+            "sourceId" : "42",
+            "tags" : "Relationship"
+          }, {
+            "description" : "AutoDrain toggle",
+            "destinationId" : "11",
+            "id" : "107",
+            "sourceId" : "42",
+            "tags" : "Relationship"
+          }, {
+            "description" : "AutoDrain toggle",
+            "destinationId" : "9",
+            "id" : "108",
+            "linkedRelationshipId" : "107",
+            "sourceId" : "42"
+          }, {
+            "description" : "MilitaryEnabled + tunables",
+            "destinationId" : "35",
+            "id" : "111",
+            "sourceId" : "42",
+            "tags" : "Relationship"
+          }, {
+            "description" : "TelemetryPort → server start",
+            "destinationId" : "43",
+            "id" : "113",
+            "sourceId" : "42",
+            "tags" : "Relationship"
+          } ],
+          "tags" : "Element,Component"
+        }, {
+          "description" : "Starts HttpListener whenever TelemetryPort > 0. Decoupled from TestMode.",
+          "documentation" : { },
+          "id" : "43",
+          "name" : "TelemetryServer boot",
+          "properties" : {
+            "structurizr.dsl.identifier" : "startTelemetry"
+          },
+          "relationships" : [ {
+            "description" : "HttpListener boot",
+            "destinationId" : "15",
+            "id" : "114",
+            "sourceId" : "43",
+            "tags" : "Relationship"
+          }, {
+            "description" : "HttpListener boot",
+            "destinationId" : "9",
+            "id" : "115",
+            "linkedRelationshipId" : "114",
+            "sourceId" : "43"
+          } ],
+          "tags" : "Element,Component"
+        } ],
+        "description" : "Headless auto-start / force-end / prefs / boot HTTP server",
+        "documentation" : { },
+        "id" : "41",
+        "name" : "TestHarness",
+        "properties" : {
+          "structurizr.dsl.identifier" : "testHarness"
+        },
+        "relationships" : [ {
+          "description" : "Push RTSAI_* prefs",
+          "destinationId" : "31",
+          "id" : "101",
+          "linkedRelationshipId" : "99",
+          "sourceId" : "41"
+        }, {
+          "description" : "Push RTSAI_* prefs",
+          "destinationId" : "30",
+          "id" : "102",
+          "linkedRelationshipId" : "99",
+          "sourceId" : "41"
+        }, {
+          "description" : "EnemyBroke tick",
+          "destinationId" : "40",
+          "id" : "104",
+          "linkedRelationshipId" : "103",
+          "sourceId" : "41"
+        }, {
+          "description" : "SuppressCombat pref",
+          "destinationId" : "39",
+          "id" : "106",
+          "linkedRelationshipId" : "105",
+          "sourceId" : "41"
+        }, {
+          "description" : "AutoDrain toggle",
+          "destinationId" : "11",
+          "id" : "109",
+          "linkedRelationshipId" : "107",
+          "sourceId" : "41"
+        }, {
+          "description" : "AutoDrain toggle",
+          "destinationId" : "9",
+          "id" : "110",
+          "linkedRelationshipId" : "107",
+          "sourceId" : "41"
+        }, {
+          "description" : "MilitaryEnabled + tunables",
+          "destinationId" : "35",
+          "id" : "112",
+          "linkedRelationshipId" : "111",
+          "sourceId" : "41"
+        }, {
+          "description" : "HttpListener boot",
+          "destinationId" : "15",
+          "id" : "116",
+          "linkedRelationshipId" : "114",
+          "sourceId" : "41"
+        } ],
+        "tags" : "Element,Container",
+        "technology" : "MelonPreferences + Harmony"
+      }, {
+        "components" : [ {
+          "description" : "status | override | enable — admin-gated via Power.Generic.",
+          "documentation" : { },
+          "id" : "45",
+          "name" : "Commands (/rtsai)",
+          "properties" : {
+            "structurizr.dsl.identifier" : "chatCmds"
+          },
+          "relationships" : [ {
+            "description" : "enable <faction> on|off",
+            "destinationId" : "31",
+            "id" : "117",
+            "sourceId" : "45",
+            "tags" : "Relationship"
+          }, {
+            "description" : "enable <faction> on|off",
+            "destinationId" : "30",
+            "id" : "118",
+            "linkedRelationshipId" : "117",
+            "sourceId" : "45"
+          }, {
+            "description" : "override [team] on|off",
+            "destinationId" : "46",
+            "id" : "121",
+            "sourceId" : "45",
+            "tags" : "Relationship"
+          } ],
+          "tags" : "Element,Component"
+        }, {
+          "description" : "Postfix on AIUnitHandler.GetBestUnitToBuildForPreset — swaps unit pick to CompositionPlanner target.",
+          "documentation" : { },
+          "id" : "46",
+          "name" : "Phase31_Production",
+          "properties" : {
+            "structurizr.dsl.identifier" : "phase31"
+          },
+          "relationships" : [ {
+            "description" : "Asks target for TeamState",
+            "destinationId" : "29",
+            "id" : "122",
+            "sourceId" : "46",
+            "tags" : "Relationship"
+          }, {
+            "description" : "Asks target for TeamState",
+            "destinationId" : "21",
+            "id" : "123",
+            "linkedRelationshipId" : "122",
+            "sourceId" : "46"
+          }, {
+            "description" : "Replaces AIUnitHandler pick",
+            "destinationId" : "3",
+            "id" : "126",
+            "sourceId" : "46",
+            "tags" : "Relationship"
+          } ],
+          "tags" : "Element,Component"
+        } ],
+        "description" : "In-game chat commands + Phase 3.1 unit override",
+        "documentation" : { },
+        "id" : "44",
+        "name" : "Commands",
+        "properties" : {
+          "structurizr.dsl.identifier" : "commands"
+        },
+        "relationships" : [ {
+          "description" : "enable <faction> on|off",
+          "destinationId" : "31",
+          "id" : "119",
+          "linkedRelationshipId" : "117",
+          "sourceId" : "44"
+        }, {
+          "description" : "enable <faction> on|off",
+          "destinationId" : "30",
+          "id" : "120",
+          "linkedRelationshipId" : "117",
+          "sourceId" : "44"
+        }, {
+          "description" : "Asks target for TeamState",
+          "destinationId" : "29",
+          "id" : "124",
+          "linkedRelationshipId" : "122",
+          "sourceId" : "44"
+        }, {
+          "description" : "Asks target for TeamState",
+          "destinationId" : "21",
+          "id" : "125",
+          "linkedRelationshipId" : "122",
+          "sourceId" : "44"
+        }, {
+          "description" : "Replaces AIUnitHandler pick",
+          "destinationId" : "3",
+          "id" : "127",
+          "linkedRelationshipId" : "126",
+          "sourceId" : "44"
+        } ],
+        "tags" : "Element,Container",
+        "technology" : "SilicaAdminMod"
+      } ],
+      "description" : "Alien commander AI, plus observability + test harness.",
+      "documentation" : { },
+      "id" : "8",
+      "name" : "Si_RTS_AI",
+      "properties" : {
+        "structurizr.dsl.identifier" : "rtsai"
+      },
+      "relationships" : [ {
+        "description" : "Prefixes/postfixes AI handlers, reads Team/Structure/ResourceArea",
+        "destinationId" : "3",
+        "id" : "51",
+        "sourceId" : "8",
+        "tags" : "Relationship"
+      }, {
+        "description" : "Registers /rtsai commands",
+        "destinationId" : "5",
+        "id" : "52",
+        "sourceId" : "8",
+        "tags" : "Relationship"
+      }, {
+        "description" : "Reads CDs mutated by peer mod",
+        "destinationId" : "6",
+        "id" : "53",
+        "sourceId" : "8",
+        "tags" : "Relationship"
+      }, {
+        "description" : "HTTP :8765 — layer bytes + state",
+        "destinationId" : "7",
+        "id" : "56",
+        "linkedRelationshipId" : "54",
+        "sourceId" : "8"
+      } ],
+      "tags" : "Element,Software System"
+    } ]
+  },
+  "name" : "Si_RTS_AI",
+  "properties" : {
+    "structurizr.inspection.info" : "0",
+    "structurizr.inspection.ignore" : "0",
+    "structurizr.inspection.error" : "95",
+    "structurizr.inspection.warning" : "0",
+    "structurizr.dsl" : "LyoqDQogKiBTaV9SVFNfQUkg4oCUIFN0cnVjdHVyaXpyIERTTCBtb2RlbA0KICoNCiAqIEEgbGl2aW5nIEM0IG1vZGVsIG9mIHRoZSBtb2QuIEVkaXQgdGhpcyBmaWxlLCBzYXZlLCB0aGVuIHJlZnJlc2gNCiAqIHRoZSBTdHJ1Y3R1cml6ciBMaXRlIHRhYiAobG9jYWxob3N0OjgwODApIHRvIHNlZSB1cGRhdGVkIGRpYWdyYW1zLg0KICoNCiAqIEM0IGxldmVscyB1c2VkIGhlcmU6DQogKiAgIEwxICBTeXN0ZW0gQ29udGV4dCAgIOKAlCBtb2QgdnMuIGdhbWUgdnMuIHRvb2xpbmcNCiAqICAgTDIgIENvbnRhaW5lcnMgICAgICAg4oCUIFBlcmNlcHRpb24gLyBQbGFubmluZyAvIEV4ZWN1dGlvbiAvIFRlc3RIYXJuZXNzIC8gQ29tbWFuZHMNCiAqICAgTDMgIENvbXBvbmVudHMgICAgICAg4oCUIHBlci1jb250YWluZXIgem9vbSAoUGxhbm5pbmcsIEV4ZWN1dGlvbiBzaG93bikNCiAqDQogKiBDb252ZW50aW9uOiBjYXBpdGFsaXplIGNvbXBvbmVudCBuYW1lcyB0byBtYXRjaCB0aGVpciBmaWxlL2NsYXNzIG5hbWUNCiAqIChlLmcuIEVjb1BsYW5uZXIsIG5vdCBlY29QbGFubmVyKS4gVGhlIERTTCBpZGVudGlmaWVyIGlzIGxvd2VyY2FzZS4NCiAqLw0Kd29ya3NwYWNlICJTaV9SVFNfQUkiICJTaWxpY2EgUlRTIEFJIGNvbW1hbmRlciBtb2Qg4oCUIHN1YnN5c3RlbSBtb2RlbCIgew0KDQogICAgbW9kZWwgew0KDQogICAgICAgIC8vIC0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tDQogICAgICAgIC8vIEFjdG9ycyArIGV4dGVybmFsIHN5c3RlbXMNCiAgICAgICAgLy8gLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0NCiAgICAgICAgY29tbWFuZGVyID0gcGVyc29uICJIdW1hbiBjb21tYW5kZXIiICAgICAgICAiT3B0aW9uYWwuIENoZWUtc3R5bGUgaHVtYW4gb24gQWxpZW4gdGVhbTsgY29tcGV0ZXMgd2l0aCBvdXIgQUkgZm9yIHRoZSBzYW1lIHJvbGUuIg0KICAgICAgICB3YXRjaGVyICAgPSBwZXJzb24gIk1vZCBhdXRob3IgLyBvYnNlcnZlciIgICJZb3UuIFJlYWRzIExheWVyc1ZpZXdlciArIHJvdW5kIGxvZ3MuIg0KDQogICAgICAgIHNpbGljYUdhbWUgPSBzb2Z0d2FyZVN5c3RlbSAiU2lsaWNhIFJUUyBHYW1lIiAgICAiQm9oZW1pYSBJbnRlcmFjdGl2ZSBSVFMuIEhvc3RzIE1QX1N0cmF0ZWd5LCBSZXNvdXJjZUFyZWEsIEFJIGNvbW1hbmRlciBsb29wLCBzdHJ1Y3R1cmUvdW5pdCBsaWZlY3ljbGUuIiAgICJFeHRlcm5hbCINCiAgICAgICAgbWVsb25Mb2FkZXIgPSBzb2Z0d2FyZVN5c3RlbSAiTWVsb25Mb2FkZXIiICAgICAgICAiTW9kIGhvc3QgKyBIYXJtb255IHBhdGNoaW5nICsgTWVsb25QcmVmZXJlbmNlcyBwZXJzaXN0ZW5jZS4iICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIkV4dGVybmFsIg0KICAgICAgICBhZG1pbk1vZCAgID0gc29mdHdhcmVTeXN0ZW0gIlNpbGljYUFkbWluTW9kIiAgICAgIlByb3ZpZGVzIFBsYXllck1ldGhvZHMuUmVnaXN0ZXJQbGF5ZXJDb21tYW5kIOKAlCB1c2VkIGZvciAvcnRzYWkgY2hhdCBjb21tYW5kcy4iICAgICAgICAgICAgICAgICAgICAgICAgICAgIkV4dGVybmFsIg0KICAgICAgICB1bml0QmFsYW5jZSA9IHNvZnR3YXJlU3lzdGVtICJTaV9Vbml0QmFsYW5jZSIgICAgICJPcHRpb25hbCBwZWVyIG1vZCB0aGF0IG11dGF0ZXMgQ29uc3RydWN0aW9uRGF0YSBhdCBydW50aW1lIChCQyBjb3N0LCByYWRpaSwgZXRjLikuIFdlIGhvbm9yIGl0cyBlZGl0cy4iICAiRXh0ZXJuYWwiDQogICAgICAgIGxheWVyc1ZpZXcgPSBzb2Z0d2FyZVN5c3RlbSAiUlRTQSBMYXllcnNWaWV3ZXIiICAiTG9jYWwgUHl0aG9uL0hUTUwgdmlld2VyIHRoYXQgcHVsbHMgaGVhdG1hcHMgZnJvbSBUZWxlbWV0cnlTZXJ2ZXIgb24gcG9ydCA4NzY1LiIgICAgICAgICAgICAgICAgICAgICAgICAgIkV4dGVybmFsIg0KDQogICAgICAgIC8vIC0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tDQogICAgICAgIC8vIFRoZSBtb2QgaXRzZWxmDQogICAgICAgIC8vIC0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tDQogICAgICAgIHJ0c2FpID0gc29mdHdhcmVTeXN0ZW0gIlNpX1JUU19BSSIgIkFsaWVuIGNvbW1hbmRlciBBSSwgcGx1cyBvYnNlcnZhYmlsaXR5ICsgdGVzdCBoYXJuZXNzLiIgew0KDQogICAgICAgICAgICAvLyA9PT09IFBlcmNlcHRpb24gPT09PQ0KICAgICAgICAgICAgcGVyY2VwdGlvbiA9IGNvbnRhaW5lciAiUGVyY2VwdGlvbiIgIlNhbXBsZXJzLCBsYXllciBjb21wdXRhdGlvbiwgSFRUUCB0ZWxlbWV0cnkiICJDIyAvIElsMkNwcCByZWZsZWN0aW9uIiB7DQogICAgICAgICAgICAgICAgYmNNZXRyaWNzICAgICAgICA9IGNvbXBvbmVudCAiQmNNZXRyaWNzIiAgICAgICAgICAiMzBzIHBlci1CQyBKU09OIGR1bXAgZm9yIG9mZmxpbmUgQkMtdXRpbGl0eSByZWdyZXNzaW9uIg0KICAgICAgICAgICAgICAgIGVjb1JhdGVTYW1wbGVyICAgPSBjb21wb25lbnQgIkVjb1JhdGVTYW1wbGVyIiAgICAgIjJzIGNhZGVuY2UuIFJvbGxpbmcgaW5jb21lLCBjaGVja3BvaW50IGJlbmNobWFya3MsIG9wdGlvbmFsIEF1dG9EcmFpbi4iDQogICAgICAgICAgICAgICAgc2hyaW1wU2FtcGxlciAgICA9IGNvbXBvbmVudCAiU2hyaW1wU3RhdGVTYW1wbGVyIiAiMXMgcGVyLXdvcmtlciBzdG9yZWQvbWF4IHZpYSByZWZsZWN0aW9uLiINCiAgICAgICAgICAgICAgICBmcHNTYW1wbGVyICAgICAgID0gY29tcG9uZW50ICJGcHNTYW1wbGVyIiAgICAgICAgICIxcyBDU1Yg4oCUIHNtb290aGVkIEZQUywgcGVhayBkdCwgZnJhbWVzLWluLXdpbmRvdy4iDQogICAgICAgICAgICAgICAgY29uc3REdW1wZXIgICAgICA9IGNvbXBvbmVudCAiR2FtZUNvbnN0YW50c0R1bXBlciIgIk9uZS1zaG90IHJlZmxlY3Qgb2YgZXZlcnkgZmllbGQgb24gU2hyaW1wL0JDL0N5c3QvZXRjLiINCiAgICAgICAgICAgICAgICB0ZWxlbWV0cnlTZXJ2ZXIgID0gY29tcG9uZW50ICJUZWxlbWV0cnlTZXJ2ZXIiICAgICJIdHRwTGlzdGVuZXIgb24gOjg3NjUg4oCUIC9jYXRhbG9nIC9sYXllci8uLi4gL3N0YXRlIC9lbnRpdGllcyAvcGF0Y2hlcy4iDQogICAgICAgICAgICAgICAgZ3JpZFdvcmxkICAgICAgICA9IGNvbXBvbmVudCAiR3JpZFdvcmxkIiAgICAgICAgICAiNDBtLWNlbGwgZ3JpZCwgcGVyLW1hcCBleHRlbnQgbG9va3VwLiINCiAgICAgICAgICAgICAgICBhbGllbkVjb0xheWVycyAgID0gY29tcG9uZW50ICJBbGllbkVjb0xheWVycyIgICAgICJCaW90aWNzV2VpZ2h0ZWQg4oaSIEN5c3RQcmVzc3VyZSAoQkMtbWFza2VkLCBleGlzdGluZy1DeXN0LXN1YnRyYWN0ZWQpLiINCiAgICAgICAgICAgICAgICBodW1hbkVjb0xheWVycyAgID0gY29tcG9uZW50ICJIdW1hbkVjb0xheWVycyIgICAgICJCYWx0ZXJpdW0gKyBIUSBtYXNrcyArIEVjb0hxRXhwYW5zaW9uVmFsdWUgPSB3ZWlnaHRlZCDDlyBkaXN0LXRvLUhRLiINCiAgICAgICAgICAgICAgICBmb3dMYXllcnMgICAgICAgID0gY29tcG9uZW50ICJGb1dMYXllcnMiICAgICAgICAgICJQZXItdGVhbSBhY3RpdmUgKyBleHBsb3JlZCBncmlkcy4iDQogICAgICAgICAgICAgICAgbGF5ZXJSZXBsYXkgICAgICA9IGNvbXBvbmVudCAiTGF5ZXJSZXBsYXkiICAgICAgICAiNXMgc25hcHNob3RzIHRvIDxyb3VuZD4vPHRlYW0+LzxsYXllcj4vKi5iaW4sIGNhY2hlIGZvciBIVFRQIHNlcnZlci4iDQogICAgICAgICAgICB9DQoNCiAgICAgICAgICAgIC8vID09PT0gUGxhbm5pbmcgPT09PQ0KICAgICAgICAgICAgcGxhbm5pbmcgPSBjb250YWluZXIgIlBsYW5uaW5nIiAiQ2FzaCBhcmJpdHJhdGlvbiwgYmVhbS1zZWFyY2ggZWNvIHBsYW5uZXIsIHRlY2ggKyByZWxvY2F0b3IiICJDIyDigJQgYXN5bmMgb24gYmFja2dyb3VuZCBUYXNrIiB7DQogICAgICAgICAgICAgICAgbW9uZXlCcm9rZXIgICAgICA9IGNvbXBvbmVudCAiTW9uZXlCcm9rZXIiICAgICAgICAiSUFjdGlvblNvdXJjZSBjb29yZGluYXRvci4gU2NvcmUgw5cgKDErdXJnZW5jeSksIGZpcmVzIHVuZGVyIGNhc2gg4oiSIHJlc2VydmF0aW9ucy4iDQogICAgICAgICAgICAgICAgZWNvUGxhbm5lciAgICAgICA9IGNvbXBvbmVudCAiRWNvUGxhbm5lciIgICAgICAgICAiQXN5bmMgYmVhbSBzZWFyY2ggKGRlcHRoIDUsIHdpZHRoIDYsIGhvcml6b24gMTgwcykuIFBoYXNlIDEgYmFzZSBlY28g4oaSIFBoYXNlIDIgZXhwYW5kLiINCiAgICAgICAgICAgICAgICBlY29QbGFubmVyQ29uZmlnID0gY29tcG9uZW50ICJFY29QbGFubmVyQ29uZmlnIiAgICJSdW50aW1lIGtub2JzOiBjbHVzdGVyIHJhZGl1cywgdW5jeXN0ZWQgQkMgcXVldWUgY2FwLCB0YXJnZXQtZmFydGhlc3QgZmxhZy4iDQogICAgICAgICAgICAgICAgdGVjaFBsYW5uZXIgICAgICA9IGNvbXBvbmVudCAiVGVjaFBsYW5uZXIiICAgICAgICAiQ29ydGV4IHBsYWNlbWVudCArIEFscGhhLi5PbWVnYSByZXNlYXJjaCBxdWV1ZS4gUmVzZXJ2ZXMgMjAwMCBoYXJkLiINCiAgICAgICAgICAgICAgICBjYXNoRmxvd1Byb2plY3RvciA9IGNvbXBvbmVudCAiQ2FzaEZsb3dQcm9qZWN0b3IiICAiUHJvZHVjZXItY291bnQgw5cgbWVhc3VyZWQgSVBTICsgc2hyaW1wLXJhbXAgaW50ZWdyYWwuIChOb3QgeWV0IGNvbnN1bWVkIGJ5IFRlY2hQbGFubmVyLikiDQogICAgICAgICAgICAgICAgc2hyaW1wUmVsb2NhdG9yICA9IGNvbXBvbmVudCAiU2hyaW1wUmVsb2NhdG9yIiAgICAiUGVyLXNocmltcCBtYXJnaW5hbC1pbmNvbWUgbWlncmF0aW9uIHdpdGggbGlmZS1jcml0aWNhbCBkaXNjb3VudHMuIg0KICAgICAgICAgICAgICAgIGVjb1N0YXRlICAgICAgICAgPSBjb21wb25lbnQgIkVjb1N0YXRlIC8gQnVpbGRlciAvIFNpbXVsYXRvciIgIkNsb25lYWJsZSBzbmFwc2hvdCArIGRldGVybWluaXN0aWMgMnMgZm9yd2FyZCBzdGVwcGluZyB3aXRoIGNyb3dkKE4pIGZhY3Rvci4iDQogICAgICAgICAgICAgICAgY29tcG9zaXRpb25QbGFuICA9IGNvbXBvbmVudCAiQ29tcG9zaXRpb25QbGFubmVyIiAiU3RhdGljIFByaW9yaXR5IGxpc3RzIHBlciBwaGFzZSDDlyBmYWN0aW9uIOKAlCBNVlAgcGxhY2Vob2xkZXIuIg0KICAgICAgICAgICAgfQ0KDQogICAgICAgICAgICAvLyA9PT09IEV4ZWN1dGlvbiAvIEZhY3Rpb24gPT09PQ0KICAgICAgICAgICAgZmFjdGlvbiA9IGNvbnRhaW5lciAiRXhlY3V0aW9uIC8gRmFjdGlvbiIgIkhhcm1vbnkgcGF0Y2hlcyBpbnRvIFNpbGljYSdzIEFJIGhhbmRsZXIgKyBwZXItZmFjdGlvbiBvd25lcnMiICJIYXJtb255IHByZWZpeGVzL3Bvc3RmaXhlcyIgew0KICAgICAgICAgICAgICAgIGZhY3Rpb25Db250cm9sICAgPSBjb21wb25lbnQgIkZhY3Rpb25Db250cm9sIiAgICAgICAgICAgIlBlci1mYWN0aW9uIG1hc3RlciBzd2l0Y2gg4oCUIHRlYW0tbmFtZSBzdWJzdHJpbmcgbWF0Y2guIg0KICAgICAgICAgICAgICAgIGFsaWVuQ29uc3RyICAgICAgPSBjb21wb25lbnQgIkFsaWVuQ29uc3RydWN0aW9uIiAgICAgICAgIlByZWZpeCBvbiBBSUNvbnN0cnVjdGlvbkhhbmRsZXIuVGhpbmsgKEFsaWVuKS4gT3ducyB0aWNrIHdoZW4gcGxhbm5lciBhY3RpdmUuIg0KICAgICAgICAgICAgICAgIHNocmltcFByb2R1Y2VyICAgPSBjb21wb25lbnQgIkFsaWVuU2hyaW1wUHJvZHVjZXIiICAgICAgIlBlci1DeXN0IENvbnN0cnVjdChzaHJpbXBDZCkgd2l0aCBwZXItQkMgKyB0ZWFtIGNhcHMuIg0KICAgICAgICAgICAgICAgIHNocmltcEFudGlBdHRhY2sgPSBjb21wb25lbnQgIkFsaWVuU2hyaW1wQW50aUF0dGFjayIgICAgIlN0cmlwcyBzaHJpbXBzIGZyb20gYXR0YWNrIGdyb3VwcywgYmxvY2tzIG5vbi1oYXJ2ZXN0IG1vdmVzLiINCiAgICAgICAgICAgICAgICBtaWxpdGFyeU1hbmFnZXIgID0gY29tcG9uZW50ICJNaWxpdGFyeU1hbmFnZXIiICAgICAgICAgICJUaHJlYXQgc2NhbiwgdGFyZ2V0IHJhbmtpbmcsIHVuaXQgcHJvZHVjdGlvbi4gQXJteSBvcmRlcnMgU1RVQkJFRC4iDQogICAgICAgICAgICAgICAgaHVtYW5Db25zdHIgICAgICA9IGNvbXBvbmVudCAiSHVtYW5Db25zdHJ1Y3Rpb24iICAgICAgICAiU29sL0NlbnRhdXJpIHJlZmluZXJ5ICsgSFEgKyB0ZWNoIChzaW5nbGUgQmFycmFja3MvUmVzZWFyY2ggY2FwKS4iDQogICAgICAgICAgICAgICAgaHVtYW5IYXJ2ZXN0ZXIgICA9IGNvbXBvbmVudCAiSHVtYW5IYXJ2ZXN0ZXJDb250cm9sbGVyIiAiUG9zdGZpeCByb3V0aW5nIHJ1bGVzIChpbml0L2FudGktY2x1bXAvcXVldWUvc3R1Y2spLiINCiAgICAgICAgICAgICAgICBodW1hblRlY2ggICAgICAgID0gY29tcG9uZW50ICJIdW1hblRlY2hSZXNlYXJjaGVyIiAgICAgICJNYXJrIEkuLlYgcXVldWUgYXQgZWFjaCBSZXNlYXJjaCBGYWNpbGl0eS4iDQogICAgICAgICAgICAgICAgc3VwcHJlc3NDb21iYXQgICA9IGNvbXBvbmVudCAiU3VwcHJlc3NDb21iYXQiICAgICAgICAgICAiR2xvYmFsIGF0dGFjay1vcmRlciBzdXBwcmVzcyAodGVzdCBhaWQpLiINCiAgICAgICAgICAgICAgICBzdXBwcmVzc0h1bWFuQUkgID0gY29tcG9uZW50ICJTdXBwcmVzc0h1bWFuQUkiICAgICAgICAgICJTdWljaWRlIGh1bWFuIHVuaXRzICsgemVybyBjYXNoIChFbmVteUJyb2tlIG1vZGUpLiINCiAgICAgICAgICAgIH0NCg0KICAgICAgICAgICAgLy8gPT09PSBUZXN0IGhhcm5lc3MgKyBjb21tYW5kcyArIHN1cHByZXNzaW9uID09PT0NCiAgICAgICAgICAgIHRlc3RIYXJuZXNzID0gY29udGFpbmVyICJUZXN0SGFybmVzcyIgIkhlYWRsZXNzIGF1dG8tc3RhcnQgLyBmb3JjZS1lbmQgLyBwcmVmcyAvIGJvb3QgSFRUUCBzZXJ2ZXIiICJNZWxvblByZWZlcmVuY2VzICsgSGFybW9ueSIgew0KICAgICAgICAgICAgICAgIGhhcm5lc3MgICAgICAgICAgPSBjb21wb25lbnQgIlRlc3RIYXJuZXNzIiAgICAgICAgIlJlYWRzIGFsbCBwcmVmcywgYXV0by1zdGFydHMgcm91bmQsIGZvcmNlLWVuZHMgYWZ0ZXIgTiBtaW4uIElzUm91bmRBY3RpdmUgcHVibGlzaGVkIGV2ZXJ5IHRpY2suIg0KICAgICAgICAgICAgICAgIHN0YXJ0VGVsZW1ldHJ5ICAgPSBjb21wb25lbnQgIlRlbGVtZXRyeVNlcnZlciBib290IiAiU3RhcnRzIEh0dHBMaXN0ZW5lciB3aGVuZXZlciBUZWxlbWV0cnlQb3J0ID4gMC4gRGVjb3VwbGVkIGZyb20gVGVzdE1vZGUuIg0KICAgICAgICAgICAgfQ0KDQogICAgICAgICAgICBjb21tYW5kcyA9IGNvbnRhaW5lciAiQ29tbWFuZHMiICJJbi1nYW1lIGNoYXQgY29tbWFuZHMgKyBQaGFzZSAzLjEgdW5pdCBvdmVycmlkZSIgIlNpbGljYUFkbWluTW9kIiB7DQogICAgICAgICAgICAgICAgY2hhdENtZHMgICAgICAgICA9IGNvbXBvbmVudCAiQ29tbWFuZHMgKC9ydHNhaSkiICAic3RhdHVzIHwgb3ZlcnJpZGUgfCBlbmFibGUg4oCUIGFkbWluLWdhdGVkIHZpYSBQb3dlci5HZW5lcmljLiINCiAgICAgICAgICAgICAgICBwaGFzZTMxICAgICAgICAgID0gY29tcG9uZW50ICJQaGFzZTMxX1Byb2R1Y3Rpb24iICJQb3N0Zml4IG9uIEFJVW5pdEhhbmRsZXIuR2V0QmVzdFVuaXRUb0J1aWxkRm9yUHJlc2V0IOKAlCBzd2FwcyB1bml0IHBpY2sgdG8gQ29tcG9zaXRpb25QbGFubmVyIHRhcmdldC4iDQogICAgICAgICAgICB9DQogICAgICAgIH0NCg0KICAgICAgICAvLyAtLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLQ0KICAgICAgICAvLyBSZWxhdGlvbnNoaXBzIOKAlCBkYXRhICsgY29udHJvbCBmbG93IHRoYXQgYWN0dWFsbHkgZXhpc3RzDQogICAgICAgIC8vIC0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tDQoNCiAgICAgICAgLy8gQWN0b3JzIOKGlCBzeXN0ZW0NCiAgICAgICAgY29tbWFuZGVyIC0+IHNpbGljYUdhbWUgICJQbGF5cyBhcyBBbGllbiBDb21tYW5kZXIgKG9wdGlvbmFsKSINCiAgICAgICAgd2F0Y2hlciAgIC0+IGxheWVyc1ZpZXcgICJXYXRjaGVzIGhlYXRtYXBzIg0KICAgICAgICB3YXRjaGVyICAgLT4gcnRzYWkgICAgICAgIkVkaXRzIGNvbmZpZywgcmVhZHMgbG9ncyINCg0KICAgICAgICAvLyBNb2QgbG9hZHMgaW5zaWRlIGl0cyBob3N0DQogICAgICAgIG1lbG9uTG9hZGVyIC0+IHJ0c2FpICAgICAgIkhvc3RzICsgSGFybW9ueS1wYXRjaGVzIg0KICAgICAgICBydHNhaSAtPiBzaWxpY2FHYW1lICAgICAgICJQcmVmaXhlcy9wb3N0Zml4ZXMgQUkgaGFuZGxlcnMsIHJlYWRzIFRlYW0vU3RydWN0dXJlL1Jlc291cmNlQXJlYSINCiAgICAgICAgcnRzYWkgLT4gYWRtaW5Nb2QgICAgICAgICAiUmVnaXN0ZXJzIC9ydHNhaSBjb21tYW5kcyINCiAgICAgICAgcnRzYWkgLT4gdW5pdEJhbGFuY2UgICAgICAiUmVhZHMgQ0RzIG11dGF0ZWQgYnkgcGVlciBtb2QiDQoNCiAgICAgICAgLy8gVGVsZW1ldHJ5IG91dA0KICAgICAgICB0ZWxlbWV0cnlTZXJ2ZXIgLT4gbGF5ZXJzVmlldyAiSFRUUCA6ODc2NSDigJQgbGF5ZXIgYnl0ZXMgKyBzdGF0ZSINCg0KICAgICAgICAvLyBQZXJjZXB0aW9uIOKGkiBQbGFubmluZw0KICAgICAgICBlY29SYXRlU2FtcGxlciAgIC0+IGNhc2hGbG93UHJvamVjdG9yICJNZWFzdXJlZCBpbmNvbWUgcGVyIHNocmltcCINCiAgICAgICAgY2FzaEZsb3dQcm9qZWN0b3IgLT4gdGVjaFBsYW5uZXIgICAgICAgICJSZXNlcnZhdGlvbiBtYXRoIChub3QgeWV0IHVzZWQpIg0KICAgICAgICBmb3dMYXllcnMgICAgICAgIC0+IGVjb1BsYW5uZXIgICAgICAgICAiRXhwbG9yZWQgbWFzayAobWFpbi10aHJlYWQgc25hcHNob3QpIg0KICAgICAgICBhbGllbkVjb0xheWVycyAgIC0+IGFsaWVuQ29uc3RyICAgICAgICAiQ3lzdFByZXNzdXJlIGFyZ21heCBmb3IgUGhhc2UgQiINCiAgICAgICAgaHVtYW5FY29MYXllcnMgICAtPiBodW1hbkNvbnN0ciAgICAgICAgIkVjb0hxRXhwYW5zaW9uVmFsdWUgYXJnbWF4Ig0KICAgICAgICBncmlkV29ybGQgICAgICAgIC0+IGFsaWVuRWNvTGF5ZXJzICAgICAiQ2VsbCBjb29yZHMgLyBleHRlbnQiDQogICAgICAgIGdyaWRXb3JsZCAgICAgICAgLT4gaHVtYW5FY29MYXllcnMgICAgICJDZWxsIGNvb3JkcyAvIGV4dGVudCINCiAgICAgICAgZ3JpZFdvcmxkICAgICAgICAtPiBmb3dMYXllcnMgICAgICAgICAgIkNlbGwgY29vcmRzIC8gZXh0ZW50Ig0KICAgICAgICBsYXllclJlcGxheSAgICAgIC0+IHRlbGVtZXRyeVNlcnZlciAgICAiTGF0ZXN0LWJ5dGVzIGNhY2hlIChwZXIgdGVhbS9sYXllcikiDQoNCiAgICAgICAgLy8gUGxhbm5pbmcgY29vcmRpbmF0aW9uDQogICAgICAgIG1vbmV5QnJva2VyIC0+IHRlY2hQbGFubmVyICAiU29ydHMgKyBmaXJlcyBwcm9wb3NhbHMiDQogICAgICAgIHRlY2hQbGFubmVyIC0+IG1vbmV5QnJva2VyICAiUHVibGlzaFN0YXRlICsgcmVzZXJ2YXRpb25zIg0KICAgICAgICBlY29QbGFubmVyICAtPiBtb25leUJyb2tlciAgIlJlYWRzIEdldFJlc2VydmVkQ2FzaCAoc3VidHJhY3RzIGZyb20gYnVkZ2V0KSINCg0KICAgICAgICAvLyBQbGFubmluZyDihpIgRXhlY3V0aW9uDQogICAgICAgIGVjb1BsYW5uZXIgIC0+IGFsaWVuQ29uc3RyICAiVHJ5QnVpbGRTdHJ1Y3R1cmVGb3JQbGFubmVyKEJDIC8gQ3lzdCAvIE5vZGUpIg0KICAgICAgICB0ZWNoUGxhbm5lciAtPiBhbGllbkNvbnN0ciAgIlRyeUJ1aWxkU3RydWN0dXJlQnlDZChDb3J0ZXggKyByZXNlYXJjaCkiDQogICAgICAgIGVjb1BsYW5uZXIgIC0+IHNocmltcFByb2R1Y2VyICJBbHNvIHRpY2tzIHByb2R1Y2VyIGF0IGVuZCBvZiBwbGFuIg0KICAgICAgICBlY29QbGFubmVyICAtPiBzaHJpbXBSZWxvY2F0b3IgIk1heWJlUnVuIGFmdGVyIGFwcGx5Ig0KICAgICAgICBtaWxpdGFyeU1hbmFnZXIgLT4gYWxpZW5Db25zdHIgIkhpZ2hlci10aWVyIHByb2R1Y2VyIHBsYWNlbWVudCAoR3JlYXRlci9Db2xvc3N1cy9HcmFuZCkiDQoNCiAgICAgICAgLy8gRXhlY3V0aW9uIOKGlCBnYW1lDQogICAgICAgIGFsaWVuQ29uc3RyICAgICAgLT4gc2lsaWNhR2FtZSAgIlBsYWNlcyBzdHJ1Y3R1cmVzIHZpYSBRdWV1ZUZpcnN0VmFsaWRQbGFjZW1lbnRBcm91bmRQb2ludCINCiAgICAgICAgc2hyaW1wUHJvZHVjZXIgICAtPiBzaWxpY2FHYW1lICAiQ3lzdC5Db25zdHJ1Y3Qoc2hyaW1wQ2QpIg0KICAgICAgICBzaHJpbXBBbnRpQXR0YWNrIC0+IHNpbGljYUdhbWUgICJGaWx0ZXJzIEFJR3JvdXAuT25BdHRhY2tPcmRlciwgVW5pdC5Pbk1vdmVPcmRlciINCiAgICAgICAgbWlsaXRhcnlNYW5hZ2VyICAtPiBzaWxpY2FHYW1lICAiUHJvZHVjZXMgY29tYmF0IHVuaXRzLCBUT0RPOiBvcmRlcnMgYXJteSINCiAgICAgICAgaHVtYW5Db25zdHIgICAgICAtPiBzaWxpY2FHYW1lICAiUmVmaW5lcnkgLyBIUSAvIEJhcnJhY2tzIC8gUmVzZWFyY2ggcGxhY2VtZW50Ig0KICAgICAgICBodW1hbkhhcnZlc3RlciAgIC0+IHNpbGljYUdhbWUgICJQb3N0Zml4IGhhcnZlc3RlciByb3V0aW5nIg0KICAgICAgICBodW1hblRlY2ggICAgICAgIC0+IHNpbGljYUdhbWUgICJTdHJ1Y3R1cmUuQ29uc3RydWN0KG1hcmtOIGNkKSINCiAgICAgICAgZmFjdGlvbkNvbnRyb2wgICAtPiBhbGllbkNvbnN0ciAgICAiTWFzdGVyIHN3aXRjaCINCiAgICAgICAgZmFjdGlvbkNvbnRyb2wgICAtPiBodW1hbkNvbnN0ciAgICAiTWFzdGVyIHN3aXRjaCINCg0KICAgICAgICAvLyBUZXN0IGhhcm5lc3MNCiAgICAgICAgaGFybmVzcyAgICAgICAgICAtPiBmYWN0aW9uQ29udHJvbCAgICAiUHVzaCBSVFNBSV8qIHByZWZzIg0KICAgICAgICBoYXJuZXNzICAgICAgICAgIC0+IHN1cHByZXNzSHVtYW5BSSAgICJFbmVteUJyb2tlIHRpY2siDQogICAgICAgIGhhcm5lc3MgICAgICAgICAgLT4gc3VwcHJlc3NDb21iYXQgICAgIlN1cHByZXNzQ29tYmF0IHByZWYiDQogICAgICAgIGhhcm5lc3MgICAgICAgICAgLT4gZWNvUmF0ZVNhbXBsZXIgICAgIkF1dG9EcmFpbiB0b2dnbGUiDQogICAgICAgIGhhcm5lc3MgICAgICAgICAgLT4gbWlsaXRhcnlNYW5hZ2VyICAgIk1pbGl0YXJ5RW5hYmxlZCArIHR1bmFibGVzIg0KICAgICAgICBoYXJuZXNzICAgICAgICAgIC0+IHN0YXJ0VGVsZW1ldHJ5ICAgICJUZWxlbWV0cnlQb3J0IOKGkiBzZXJ2ZXIgc3RhcnQiDQogICAgICAgIHN0YXJ0VGVsZW1ldHJ5ICAgLT4gdGVsZW1ldHJ5U2VydmVyICAgIkh0dHBMaXN0ZW5lciBib290Ig0KDQogICAgICAgIC8vIENvbW1hbmRzDQogICAgICAgIGNoYXRDbWRzIC0+IGZhY3Rpb25Db250cm9sICJlbmFibGUgPGZhY3Rpb24+IG9ufG9mZiINCiAgICAgICAgY2hhdENtZHMgLT4gcGhhc2UzMSAgICAgICAgIm92ZXJyaWRlIFt0ZWFtXSBvbnxvZmYiDQogICAgICAgIHBoYXNlMzEgIC0+IGNvbXBvc2l0aW9uUGxhbiAiQXNrcyB0YXJnZXQgZm9yIFRlYW1TdGF0ZSINCiAgICAgICAgcGhhc2UzMSAgLT4gc2lsaWNhR2FtZSAgICAgIlJlcGxhY2VzIEFJVW5pdEhhbmRsZXIgcGljayINCiAgICB9DQoNCiAgICB2aWV3cyB7DQoNCiAgICAgICAgLy8gTDEg4oCUIHRoZSAid2h5IGRvZXMgdGhpcyBtb2QgZXhpc3QiIHBpY3R1cmUNCiAgICAgICAgc3lzdGVtQ29udGV4dCBydHNhaSAiTDFfQ29udGV4dCIgew0KICAgICAgICAgICAgaW5jbHVkZSAqDQogICAgICAgICAgICBhdXRvbGF5b3V0IGxyDQogICAgICAgICAgICBkZXNjcmlwdGlvbiAiV2hlcmUgdGhlIG1vZCBzaXRzIOKAlCBiZXR3ZWVuIE1lbG9uTG9hZGVyIChob3N0KSBhbmQgdGhlIFNpbGljYSBnYW1lLCBmZWVkaW5nIHRoZSBsb2NhbCBMYXllcnNWaWV3ZXIuIg0KICAgICAgICB9DQoNCiAgICAgICAgLy8gTDIg4oCUIHN1YnN5c3RlbSBtYXAuIFRoaXMgaXMgdGhlIGRpYWdyYW0geW91J2xsIGxvb2sgYXQgbW9zdC4NCiAgICAgICAgY29udGFpbmVyIHJ0c2FpICJMMl9Db250YWluZXJzIiB7DQogICAgICAgICAgICBpbmNsdWRlICoNCiAgICAgICAgICAgIGF1dG9sYXlvdXQgdGINCiAgICAgICAgICAgIGRlc2NyaXB0aW9uICJQZXJjZXB0aW9uIC8gUGxhbm5pbmcgLyBFeGVjdXRpb24gLyBUZXN0IC8gQ29tbWFuZHMg4oCUIHRoZSA1IGluLW1vZCBjb250YWluZXJzLiINCiAgICAgICAgfQ0KDQogICAgICAgIC8vIEwzIOKAlCBQbGFubmluZyBpbnRlcm5hbHMuIFRoZSBoZWFydCBvZiB0aGUgbW9kLg0KICAgICAgICBjb21wb25lbnQgcGxhbm5pbmcgIkwzX1BsYW5uaW5nIiB7DQogICAgICAgICAgICBpbmNsdWRlICoNCiAgICAgICAgICAgIGF1dG9sYXlvdXQgdGINCiAgICAgICAgICAgIGRlc2NyaXB0aW9uICJFY29QbGFubmVyICsgVGVjaFBsYW5uZXIgKyBNb25leUJyb2tlciArIHN1cHBvcnRpbmcgc3RhdGUuIE1vbmV5QnJva2VyIGlzIGN1cnJlbnRseSBvbmx5IHdpcmVkIHRvIFRlY2hQbGFubmVyLiINCiAgICAgICAgfQ0KDQogICAgICAgIC8vIEwzIOKAlCBFeGVjdXRpb24gaW50ZXJuYWxzLiBXaG8gYWN0dWFsbHkgcGxhY2VzIHRoaW5ncy4NCiAgICAgICAgY29tcG9uZW50IGZhY3Rpb24gIkwzX0V4ZWN1dGlvbiIgew0KICAgICAgICAgICAgaW5jbHVkZSAqDQogICAgICAgICAgICBhdXRvbGF5b3V0IHRiDQogICAgICAgICAgICBkZXNjcmlwdGlvbiAiSGFybW9ueS1wYXRjaGVkIGhhbmRsZXJzIHBlciBmYWN0aW9uLiBNaWxpdGFyeU1hbmFnZXIgYXJteSBvcmRlcnMgYXJlIHN0dWJiZWQuIg0KICAgICAgICB9DQoNCiAgICAgICAgLy8gTDMg4oCUIFBlcmNlcHRpb24gaW50ZXJuYWxzLg0KICAgICAgICBjb21wb25lbnQgcGVyY2VwdGlvbiAiTDNfUGVyY2VwdGlvbiIgew0KICAgICAgICAgICAgaW5jbHVkZSAqDQogICAgICAgICAgICBhdXRvbGF5b3V0IHRiDQogICAgICAgICAgICBkZXNjcmlwdGlvbiAiU2FtcGxlcnMgKyBNYXBMYXllcnMgREFHICsgVGVsZW1ldHJ5U2VydmVyLiBOb3RoaW5nIGhlcmUgbXV0YXRlcyBnYW1lIHN0YXRlLiINCiAgICAgICAgfQ0KDQogICAgICAgIC8vIFN0eWxpbmcg4oCUIGNvbW11bmljYXRlIHN0YXR1cyBhdCBhIGdsYW5jZS4NCiAgICAgICAgc3R5bGVzIHsNCiAgICAgICAgICAgIGVsZW1lbnQgIlNvZnR3YXJlIFN5c3RlbSIgew0KICAgICAgICAgICAgICAgIGJhY2tncm91bmQgIzEzMUExNQ0KICAgICAgICAgICAgICAgIGNvbG9yICAgICAgI0RERTRERQ0KICAgICAgICAgICAgICAgIHN0cm9rZSAgICAgIzg4QzA3MA0KICAgICAgICAgICAgfQ0KICAgICAgICAgICAgZWxlbWVudCAiRXh0ZXJuYWwiIHsNCiAgICAgICAgICAgICAgICBiYWNrZ3JvdW5kICMxQTIyMUMNCiAgICAgICAgICAgICAgICBjb2xvciAgICAgICM5QUE2OUUNCiAgICAgICAgICAgICAgICBzdHJva2UgICAgICM2RTc5NzINCiAgICAgICAgICAgICAgICBzaGFwZSAgICAgIFJvdW5kZWRCb3gNCiAgICAgICAgICAgIH0NCiAgICAgICAgICAgIGVsZW1lbnQgIlBlcnNvbiIgew0KICAgICAgICAgICAgICAgIGJhY2tncm91bmQgIzg4QzA3MA0KICAgICAgICAgICAgICAgIGNvbG9yICAgICAgIzBFMTMxMA0KICAgICAgICAgICAgICAgIHNoYXBlICAgICAgUGVyc29uDQogICAgICAgICAgICB9DQogICAgICAgICAgICBlbGVtZW50ICJDb250YWluZXIiIHsNCiAgICAgICAgICAgICAgICBiYWNrZ3JvdW5kICMxNzFFMTkNCiAgICAgICAgICAgICAgICBjb2xvciAgICAgICNEREU0REUNCiAgICAgICAgICAgICAgICBzdHJva2UgICAgICM4OEMwNzANCiAgICAgICAgICAgIH0NCiAgICAgICAgICAgIGVsZW1lbnQgIkNvbXBvbmVudCIgew0KICAgICAgICAgICAgICAgIGJhY2tncm91bmQgIzFGMjgyMg0KICAgICAgICAgICAgICAgIGNvbG9yICAgICAgI0RERTRERQ0KICAgICAgICAgICAgICAgIHN0cm9rZSAgICAgIzg4QzA3MA0KICAgICAgICAgICAgfQ0KICAgICAgICB9DQoNCiAgICAgICAgdGhlbWUgZGVmYXVsdA0KICAgIH0NCn0="
+  },
+  "views" : {
+    "componentViews" : [ {
+      "automaticLayout" : {
+        "applied" : false,
+        "edgeSeparation" : 0,
+        "implementation" : "Graphviz",
+        "nodeSeparation" : 300,
+        "rankDirection" : "TopBottom",
+        "rankSeparation" : 300,
+        "vertices" : false
+      },
+      "containerId" : "21",
+      "description" : "EcoPlanner + TechPlanner + MoneyBroker + supporting state. MoneyBroker is currently only wired to TechPlanner.",
+      "dimensions" : {
+        "height" : 2868,
+        "width" : 4872
+      },
+      "elements" : [ {
+        "id" : "9",
+        "x" : 1740,
+        "y" : 162
+      }, {
+        "id" : "22",
+        "x" : 240,
+        "y" : 2112
+      }, {
+        "id" : "23",
+        "x" : 1740,
+        "y" : 1512
+      }, {
+        "id" : "24",
+        "x" : 990,
+        "y" : 2112
+      }, {
+        "id" : "25",
+        "x" : 797,
+        "y" : 1512
+      }, {
+        "id" : "26",
+        "x" : 797,
+        "y" : 912
+      }, {
+        "id" : "27",
+        "x" : 1740,
+        "y" : 2112
+      }, {
+        "id" : "28",
+        "x" : 2490,
+        "y" : 2112
+      }, {
+        "id" : "29",
+        "x" : 3240,
+        "y" : 2112
+      }, {
+        "id" : "30",
+        "x" : 4202,
+        "y" : 2112
+      }, {
+        "id" : "44",
+        "x" : 4010,
+        "y" : 1512
+      } ],
+      "externalContainerBoundariesVisible" : false,
+      "key" : "L3_Planning",
+      "name" : "Component View: Si_RTS_AI - Planning",
+      "order" : 3,
+      "relationships" : [ {
+        "id" : "120"
+      }, {
+        "id" : "124"
+      }, {
+        "id" : "59"
+      }, {
+        "id" : "61"
+      }, {
+        "id" : "64"
+      }, {
+        "id" : "68"
+      }, {
+        "id" : "76"
+      }, {
+        "id" : "77"
+      }, {
+        "id" : "78"
+      }, {
+        "id" : "80"
+      }, {
+        "id" : "84"
+      }, {
+        "id" : "87"
+      } ]
+    }, {
+      "automaticLayout" : {
+        "applied" : false,
+        "edgeSeparation" : 0,
+        "implementation" : "Graphviz",
+        "nodeSeparation" : 300,
+        "rankDirection" : "TopBottom",
+        "rankSeparation" : 300,
+        "vertices" : false
+      },
+      "containerId" : "30",
+      "description" : "Harmony-patched handlers per faction. MilitaryManager army orders are stubbed.",
+      "dimensions" : {
+        "height" : 3570,
+        "width" : 7597
+      },
+      "elements" : [ {
+        "id" : "3",
+        "x" : 3685,
+        "y" : 3012
+      }, {
+        "id" : "9",
+        "x" : 1982,
+        "y" : 762
+      }, {
+        "id" : "21",
+        "x" : 260,
+        "y" : 1512
+      }, {
+        "id" : "31",
+        "x" : 3867,
+        "y" : 1512
+      }, {
+        "id" : "32",
+        "x" : 1395,
+        "y" : 2112
+      }, {
+        "id" : "33",
+        "x" : 3887,
+        "y" : 2112
+      }, {
+        "id" : "34",
+        "x" : 4637,
+        "y" : 2112
+      }, {
+        "id" : "35",
+        "x" : 1597,
+        "y" : 1512
+      }, {
+        "id" : "36",
+        "x" : 5407,
+        "y" : 2112
+      }, {
+        "id" : "37",
+        "x" : 6157,
+        "y" : 2112
+      }, {
+        "id" : "38",
+        "x" : 6907,
+        "y" : 2112
+      }, {
+        "id" : "39",
+        "x" : 2367,
+        "y" : 1512
+      }, {
+        "id" : "40",
+        "x" : 3117,
+        "y" : 1512
+      }, {
+        "id" : "41",
+        "x" : 2002,
+        "y" : 162
+      }, {
+        "id" : "44",
+        "x" : 220,
+        "y" : 762
+      } ],
+      "externalContainerBoundariesVisible" : false,
+      "key" : "L3_Execution",
+      "name" : "Component View: Si_RTS_AI - Execution / Faction",
+      "order" : 4,
+      "relationships" : [ {
+        "id" : "101"
+      }, {
+        "id" : "104"
+      }, {
+        "id" : "106"
+      }, {
+        "id" : "110"
+      }, {
+        "id" : "112"
+      }, {
+        "id" : "119"
+      }, {
+        "id" : "125"
+      }, {
+        "id" : "127"
+      }, {
+        "id" : "60"
+      }, {
+        "id" : "67"
+      }, {
+        "id" : "71"
+      }, {
+        "id" : "81"
+      }, {
+        "id" : "86"
+      }, {
+        "id" : "88"
+      }, {
+        "id" : "89"
+      }, {
+        "id" : "91"
+      }, {
+        "id" : "92"
+      }, {
+        "id" : "93"
+      }, {
+        "id" : "94"
+      }, {
+        "id" : "95"
+      }, {
+        "id" : "96"
+      }, {
+        "id" : "97"
+      }, {
+        "id" : "98"
+      } ]
+    }, {
+      "automaticLayout" : {
+        "applied" : false,
+        "edgeSeparation" : 0,
+        "implementation" : "Graphviz",
+        "nodeSeparation" : 300,
+        "rankDirection" : "TopBottom",
+        "rankSeparation" : 300,
+        "vertices" : false
+      },
+      "containerId" : "9",
+      "description" : "Samplers + MapLayers DAG + TelemetryServer. Nothing here mutates game state.",
+      "dimensions" : {
+        "height" : 2789,
+        "width" : 8430
+      },
+      "elements" : [ {
+        "id" : "7",
+        "x" : 7780,
+        "y" : 1533
+      }, {
+        "id" : "10",
+        "x" : 240,
+        "y" : 783
+      }, {
+        "id" : "11",
+        "x" : 5490,
+        "y" : 783
+      }, {
+        "id" : "12",
+        "x" : 1740,
+        "y" : 783
+      }, {
+        "id" : "13",
+        "x" : 2490,
+        "y" : 783
+      }, {
+        "id" : "14",
+        "x" : 3240,
+        "y" : 783
+      }, {
+        "id" : "15",
+        "x" : 6240,
+        "y" : 783
+      }, {
+        "id" : "16",
+        "x" : 3990,
+        "y" : 183
+      }, {
+        "id" : "17",
+        "x" : 990,
+        "y" : 783
+      }, {
+        "id" : "18",
+        "x" : 3990,
+        "y" : 783
+      }, {
+        "id" : "19",
+        "x" : 4740,
+        "y" : 783
+      }, {
+        "id" : "20",
+        "x" : 5470,
+        "y" : 183
+      }, {
+        "id" : "21",
+        "x" : 5115,
+        "y" : 1533
+      }, {
+        "id" : "30",
+        "x" : 4740,
+        "y" : 2133
+      }, {
+        "id" : "41",
+        "x" : 7010,
+        "y" : 183
+      } ],
+      "externalContainerBoundariesVisible" : false,
+      "key" : "L3_Perception",
+      "name" : "Component View: Si_RTS_AI - Perception",
+      "order" : 5,
+      "relationships" : [ {
+        "id" : "102"
+      }, {
+        "id" : "109"
+      }, {
+        "id" : "116"
+      }, {
+        "id" : "54"
+      }, {
+        "id" : "58"
+      }, {
+        "id" : "63"
+      }, {
+        "id" : "66"
+      }, {
+        "id" : "70"
+      }, {
+        "id" : "72"
+      }, {
+        "id" : "73"
+      }, {
+        "id" : "74"
+      }, {
+        "id" : "75"
+      }, {
+        "id" : "82"
+      } ]
+    } ],
+    "configuration" : {
+      "branding" : { },
+      "lastSavedView" : "L3_Perception",
+      "metadataSymbols" : "SquareBrackets",
+      "styles" : {
+        "elements" : [ {
+          "background" : "#1f2822",
+          "color" : "#dde4de",
+          "stroke" : "#88c070",
+          "tag" : "Component"
+        }, {
+          "background" : "#171e19",
+          "color" : "#dde4de",
+          "stroke" : "#88c070",
+          "tag" : "Container"
+        }, {
+          "background" : "#1a221c",
+          "color" : "#9aa69e",
+          "shape" : "RoundedBox",
+          "stroke" : "#6e7972",
+          "tag" : "External"
+        }, {
+          "background" : "#88c070",
+          "color" : "#0e1310",
+          "shape" : "Person",
+          "tag" : "Person"
+        }, {
+          "background" : "#131a15",
+          "color" : "#dde4de",
+          "stroke" : "#88c070",
+          "tag" : "Software System"
+        } ]
+      },
+      "terminology" : { },
+      "themes" : [ "https://static.structurizr.com/themes/default/theme.json" ]
+    },
+    "containerViews" : [ {
+      "automaticLayout" : {
+        "applied" : false,
+        "edgeSeparation" : 0,
+        "implementation" : "Graphviz",
+        "nodeSeparation" : 300,
+        "rankDirection" : "TopBottom",
+        "rankSeparation" : 300,
+        "vertices" : false
+      },
+      "description" : "Perception / Planning / Execution / Test / Commands — the 5 in-mod containers.",
+      "dimensions" : {
+        "height" : 3270,
+        "width" : 2592
+      },
+      "elements" : [ {
+        "id" : "3",
+        "x" : 1941,
+        "y" : 2712
+      }, {
+        "id" : "7",
+        "x" : 199,
+        "y" : 1362
+      }, {
+        "id" : "9",
+        "x" : 979,
+        "y" : 762
+      }, {
+        "id" : "21",
+        "x" : 979,
+        "y" : 1362
+      }, {
+        "id" : "30",
+        "x" : 1739,
+        "y" : 1962
+      }, {
+        "id" : "41",
+        "x" : 1536,
+        "y" : 162
+      }, {
+        "id" : "44",
+        "x" : 1729,
+        "y" : 762
+      } ],
+      "externalSoftwareSystemBoundariesVisible" : false,
+      "key" : "L2_Containers",
+      "name" : "Container View: Si_RTS_AI",
+      "order" : 2,
+      "relationships" : [ {
+        "id" : "102"
+      }, {
+        "id" : "110"
+      }, {
+        "id" : "120"
+      }, {
+        "id" : "125"
+      }, {
+        "id" : "127"
+      }, {
+        "id" : "55"
+      }, {
+        "id" : "60"
+      }, {
+        "id" : "68"
+      }, {
+        "id" : "82"
+      }, {
+        "id" : "90"
+      } ],
+      "softwareSystemId" : "8"
+    } ],
+    "systemContextViews" : [ {
+      "automaticLayout" : {
+        "applied" : false,
+        "edgeSeparation" : 0,
+        "implementation" : "Graphviz",
+        "nodeSeparation" : 300,
+        "rankDirection" : "LeftRight",
+        "rankSeparation" : 300,
+        "vertices" : false
+      },
+      "description" : "Where the mod sits — between MelonLoader (host) and the Silica game, feeding the local LayersViewer.",
+      "dimensions" : {
+        "height" : 2500,
+        "width" : 2350
+      },
+      "elements" : [ {
+        "id" : "2",
+        "x" : 225,
+        "y" : 634
+      }, {
+        "id" : "3",
+        "x" : 1700,
+        "y" : 742
+      }, {
+        "id" : "4",
+        "x" : 200,
+        "y" : 1334
+      }, {
+        "id" : "5",
+        "x" : 1700,
+        "y" : 1342
+      }, {
+        "id" : "6",
+        "x" : 1700,
+        "y" : 1942
+      }, {
+        "id" : "7",
+        "x" : 1700,
+        "y" : 142
+      }, {
+        "id" : "8",
+        "x" : 950,
+        "y" : 1274
+      } ],
+      "enterpriseBoundaryVisible" : true,
+      "key" : "L1_Context",
+      "name" : "System Context View: Si_RTS_AI",
+      "order" : 1,
+      "relationships" : [ {
+        "id" : "48"
+      }, {
+        "id" : "49"
+      }, {
+        "id" : "50"
+      }, {
+        "id" : "51"
+      }, {
+        "id" : "52"
+      }, {
+        "id" : "53"
+      }, {
+        "id" : "56"
+      } ],
+      "softwareSystemId" : "8"
+    } ]
+  }
+}

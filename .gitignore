@@ -1,0 +1,17 @@
+# Build output
+bin/
+obj/
+*.user
+*.suo
+
+# Third-party tool binary — 168MB, downloadable from structurizr.com
+mbse/structurizr-lite.war
+mbse/.structurizr/
+
+# Python caches
+__pycache__/
+*.pyc
+
+# Scratch / generated analysis output
+*.jsonl
+*.srpl

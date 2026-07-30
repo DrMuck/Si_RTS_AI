@@ -1,0 +1,310 @@
+using HarmonyLib;
+using MelonLoader;
+using Silica.AI;
+using System;
+using System.Collections.Generic;
+using UnityEngine;
+
+namespace Si_RTS_AI.Faction
+{
+    /// <summary>
+    /// Phase 3.2 MVP — inject Alien_Node construct requests toward known biotics
+    /// patches so the AI actually extends its build range.
+    ///
+    /// Stock Alien AI's failure mode (verified via observation):
+    ///   1. AIResourcesHandler correctly identifies a target biotics patch and calls
+    ///      AIRequest.Construct(BioCache, patchPosition).
+    ///   2. AIConstructionHandler tries to place it; patch is out of build range;
+    ///      placement silently clamps to the nearest reachable position (near Nest).
+    ///   3. Stock NEVER emits Alien_Node requests — even though Nodes cost only 100
+    ///      credits and would extend the build range.
+    ///   4. Result: every BioCache ends up clustered around the Nest, most biotics
+    ///      patches on the map are never tapped, and the AI hard-caps its own eco.
+    ///
+    /// Our fix: prefix AIConstructionHandler.Think() for Alien-commanded teams. Enumerate
+    /// known biotics ResourceAreas the team can see, and for each one that isn't already
+    /// covered by our infrastructure, inject a Node construct request with the biotics
+    /// patch position as the placement hint. Stock's placement stage then puts the Node
+    /// at the nearest reachable spot toward the target — which is exactly what we want,
+    /// because next tick the reachable region is a bit wider, and after N ticks the Node
+    /// chain reaches the biotics.
+    ///
+    /// Nodes can chain even while under construction (game mechanic — thanks user), so
+    /// we can inject several in one tick without waiting.
+    ///
+    /// Opt-in per team via /rtsai override <team> on. Same override switch used by
+    /// Phase 3.1 for production. (For now both toggles share the flag — will separate
+    /// per-feature toggles once we have more replaced handlers.)
+    /// </summary>
+    internal static class AlienNodeInjector
+    {
+        // Cap injections per tick so we don't flood the request queue on every Think.
+        const int MAX_NODE_REQUESTS_PER_TICK     = 2;
+        const int MAX_BIOCACHE_REQUESTS_PER_TICK = 1;
+        const int MAX_CYST_REQUESTS_PER_TICK     = 1;
+
+        // Team-level caps — hard ceiling per round.
+        const int MAX_NODES_PER_TEAM     = 40;
+        const int MAX_BIOCACHES_PER_TEAM = 8;
+        const int MAX_CYSTS_PER_TEAM     = 6;
+
+        // Priority.
+        //   Node = high (90) — extend build range first
+        //   BioCache = medium (70) — need nodes to reach biotics before placing
+        //   Lesser Cyst = low (55) — after BioCache, spawn shrimps
+        const int NODE_PRIORITY     = 90;
+        const int BIOCACHE_PRIORITY = 70;
+        const int CYST_PRIORITY     = 55;
+
+        // Gating radii — how close a structure needs to be to a biotics patch before
+        // we consider "this patch is reachable and ready for BioCache/Cyst".
+        const float PATCH_REACHABLE_RADIUS   = 400f;   // any owned structure within 400m → chain has reached
+        const float BIOCACHE_COVERAGE_RADIUS = 250f;   // BioCache within 250m of patch → patch has its own BC
+        // Wide Cyst radius per user's design note (shrimps migrate between depleted
+        // biotics, so one Cyst can serve multiple nearby patches).
+        const float CYST_COVERAGE_RADIUS     = 1000f;  // Lesser Cyst within 1000m → zone is served, no new Cyst needed
+
+        // Reused list to enumerate visible biotics ResourceAreas without alloc churn.
+        static readonly List<ResourceArea> _biotics = new List<ResourceArea>(16);
+
+        internal static int NodeInjectionsThisRound;      // for round summary
+        internal static int BioCacheInjectionsThisRound;
+        internal static int CystInjectionsThisRound;
+        internal static int PatchesFullyCovered;          // biotics where we have BOTH BioCache + Cyst nearby
+        internal static int AnchorSwaps;                  // times we swapped the placement anchor
+
+        // The target position of the last injection per ConstructionData. Consumed by
+        // AlienPlacementFixup to pick a nearer anchor structure so the 500m clamp doesn't
+        // pin placements at 500m from Nest.
+        internal static readonly Dictionary<ConstructionData, Vector3> LastTargetByData
+            = new Dictionary<ConstructionData, Vector3>();
+
+        [HarmonyPatch(typeof(AIConstructionHandler), nameof(AIConstructionHandler.Think))]
+        static class Patch_Prefix
+        {
+            static void Prefix(AIConstructionHandler __instance)
+            {
+                try { InjectForAlien(__instance); }
+                catch (Exception ex) { MelonLogger.Warning("[RTSA/P32] AlienNode inject threw: " + ex.Message); }
+            }
+        }
+
+        static void InjectForAlien(AIConstructionHandler h)
+        {
+            var team = h?.Commander?.Team;
+            if (team == null) return;
+
+            // Alien-only for MVP — Sol/Cent use different eco (Refinery, no node chain).
+            if (!(team.name ?? "").Contains("Alien")) return;
+
+            // Opt-in via the same override flag Phase 3.1 uses.
+            if (!Suppression.Phase31_Production.OverrideByTeam.TryGetValue(team, out bool overrideOn) || !overrideOn)
+                return;
+
+            // Find the ConstructionData we'll be injecting.
+            var nodeCd  = FindConstructionData(h, "Node");
+            var bcCd    = FindConstructionData(h, "Bio Cache");
+            var cystCd  = FindConstructionData(h, "Lesser Spawning Cyst");
+            if (nodeCd == null) return;   // Node is the essential one; others fall through if not available yet
+
+            // Enumerate biotics patches this team knows about.
+            _biotics.Clear();
+            int biCount = 0;
+            try
+            {
+                biCount = ResourceArea.GetKnownResourcesAreas(team, team.UsableResource, _biotics, ignoreEmpty: true);
+            }
+            catch (Exception ex) { MelonLogger.Warning("[RTSA/P32] GetKnownResourcesAreas threw: " + ex.Message); return; }
+            if (biCount == 0) return;
+
+            int nodeInjected = 0, bcInjected = 0, cystInjected = 0;
+            int fullyCoveredThisTick = 0;
+            int currentNodeCount     = CountOwnedStructuresOfType(team, "Node");
+            int currentBcCount       = CountOwnedStructuresOfType(team, "Bio Cache");
+            int currentCystCount     = CountOwnedStructuresOfType(team, "Lesser Spawning Cyst");
+
+            for (int i = 0; i < _biotics.Count; i++)
+            {
+                var patch = _biotics[i];
+                if (patch == null) continue;
+                Vector3 patchPos = patch.SignalCenter;
+
+                bool hasBc         = HasStructureTypeNear(team, "Bio Cache",            patchPos, BIOCACHE_COVERAGE_RADIUS);
+                bool hasCyst       = HasStructureTypeNear(team, "Lesser Spawning Cyst", patchPos, CYST_COVERAGE_RADIUS);
+                bool chainReached  = HasAnyOwnedStructureNear(team, patchPos, PATCH_REACHABLE_RADIUS);
+
+                // Case A: fully covered → skip.
+                if (hasBc && hasCyst)
+                {
+                    fullyCoveredThisTick++;
+                    continue;
+                }
+
+                // Case B: chain hasn't reached this patch yet → ONLY inject Nodes toward it.
+                //         Critically, do NOT inject BioCache/Cyst here — that's what caused
+                //         the cluster: placement clamps them to reachable range and drops
+                //         them in the wrong spot.
+                if (!chainReached)
+                {
+                    if (nodeInjected < MAX_NODE_REQUESTS_PER_TICK && currentNodeCount < MAX_NODES_PER_TEAM)
+                    {
+                        try
+                        {
+                            LastTargetByData[nodeCd] = patchPos;
+                            AIRequest.Construct(h, NODE_PRIORITY, nodeCd, patchPos);
+                            nodeInjected++; currentNodeCount++;
+                            NodeInjectionsThisRound++;
+                        }
+                        catch (Exception ex) { MelonLogger.Warning("[RTSA/P32] Node inject threw: " + ex.Message); }
+                    }
+                    continue;   // skip BioCache/Cyst for this patch this tick
+                }
+
+                // Case C: chain HAS reached, but no BioCache yet → inject BioCache.
+                if (!hasBc && bcCd != null && bcInjected < MAX_BIOCACHE_REQUESTS_PER_TICK
+                    && currentBcCount < MAX_BIOCACHES_PER_TEAM)
+                {
+                    try
+                    {
+                        LastTargetByData[bcCd] = patchPos;
+                        AIRequest.Construct(h, BIOCACHE_PRIORITY, bcCd, patchPos);
+                        bcInjected++; currentBcCount++;
+                        BioCacheInjectionsThisRound++;
+                    }
+                    catch (Exception ex) { MelonLogger.Warning("[RTSA/P32] BioCache inject threw: " + ex.Message); }
+                }
+
+                // Case D: BioCache present but no Lesser Cyst → inject Cyst near patch.
+                if (hasBc && !hasCyst && cystCd != null && cystInjected < MAX_CYST_REQUESTS_PER_TICK
+                    && currentCystCount < MAX_CYSTS_PER_TEAM)
+                {
+                    try
+                    {
+                        LastTargetByData[cystCd] = patchPos;
+                        AIRequest.Construct(h, CYST_PRIORITY, cystCd, patchPos);
+                        cystInjected++; currentCystCount++;
+                        CystInjectionsThisRound++;
+                    }
+                    catch (Exception ex) { MelonLogger.Warning("[RTSA/P32] Cyst inject threw: " + ex.Message); }
+                }
+
+                // Stop iterating once we've hit ALL per-tick caps.
+                if (nodeInjected >= MAX_NODE_REQUESTS_PER_TICK
+                 && bcInjected   >= MAX_BIOCACHE_REQUESTS_PER_TICK
+                 && cystInjected >= MAX_CYST_REQUESTS_PER_TICK) break;
+            }
+
+            PatchesFullyCovered = System.Math.Max(PatchesFullyCovered, fullyCoveredThisTick);
+
+            if (nodeInjected + bcInjected + cystInjected > 0)
+            {
+                Si_RTS_AI.AppendToRound(
+                    $"[P32] team={team.name} node+={nodeInjected} biocache+={bcInjected} cyst+={cystInjected} " +
+                    $"fullyCoveredPatches={fullyCoveredThisTick}/{_biotics.Count} nodeCountOwned={currentNodeCount}");
+            }
+        }
+
+        // ---- helpers ----
+
+        static ConstructionData? FindConstructionData(AIConstructionHandler h, string displayName)
+        {
+            var list = h.BuildableStructuresAll;
+            if (list == null) return null;
+            for (int i = 0; i < list.Count; i++)
+            {
+                var cd = list[i];
+                if (cd?.ObjectInfo == null) continue;
+                if (string.Equals(cd.ObjectInfo.DisplayName, displayName, StringComparison.OrdinalIgnoreCase))
+                    return cd;
+            }
+            return null;
+        }
+
+        // Any owned structure — Nest, Node, BioCache, Cyst, whatever — within radius.
+        // Used as the "chain has reached this patch" gate before we permit BioCache/Cyst.
+        static bool HasAnyOwnedStructureNear(Team team, Vector3 pos, float radius)
+        {
+            try
+            {
+                var structs = team.Structures;
+                if (structs == null) return false;
+                float r2 = radius * radius;
+                for (int i = 0; i < structs.Count; i++)
+                {
+                    var s = structs[i];
+                    if (s == null) continue;
+                    Vector3 sp = s.transform.position;
+                    float dx = sp.x - pos.x, dz = sp.z - pos.z;
+                    if (dx * dx + dz * dz < r2) return true;
+                }
+            }
+            catch { }
+            return false;
+        }
+
+        static bool HasStructureTypeNear(Team team, string displayName, Vector3 pos, float radius)
+        {
+            // Walk team.Structures, look for one whose DisplayName matches AND is within
+            // radius of pos (2D distance — ignore Y elevation). Includes IN-CONSTRUCTION
+            // structures because those count for "we already asked for one at this patch".
+            try
+            {
+                var structs = team.Structures;
+                if (structs == null) return false;
+                float r2 = radius * radius;
+                for (int i = 0; i < structs.Count; i++)
+                {
+                    var s = structs[i];
+                    if (s == null || s.ObjectInfo == null) continue;
+                    if (!string.Equals(s.ObjectInfo.DisplayName, displayName, StringComparison.OrdinalIgnoreCase)) continue;
+                    Vector3 sp = s.transform.position;
+                    float dx = sp.x - pos.x, dz = sp.z - pos.z;
+                    if (dx * dx + dz * dz < r2) return true;
+                }
+            }
+            catch { }
+            return false;
+        }
+
+        static int CountOwnedStructuresOfType(Team team, string displayName)
+        {
+            try
+            {
+                var structs = team.Structures;
+                if (structs == null) return 0;
+                int n = 0;
+                for (int i = 0; i < structs.Count; i++)
+                {
+                    var s = structs[i];
+                    if (s?.ObjectInfo == null) continue;
+                    if (string.Equals(s.ObjectInfo.DisplayName, displayName, StringComparison.OrdinalIgnoreCase))
+                        n++;
+                }
+                return n;
+            }
+            catch { return 0; }
+        }
+
+        internal static void ResetForNewRound()
+        {
+            NodeInjectionsThisRound = 0;
+            BioCacheInjectionsThisRound = 0;
+            CystInjectionsThisRound = 0;
+            PatchesFullyCovered = 0;
+            AnchorSwaps = 0;
+            LastTargetByData.Clear();
+        }
+
+        internal static string BuildRoundSummaryFragment()
+        {
+            int total = NodeInjectionsThisRound + BioCacheInjectionsThisRound + CystInjectionsThisRound;
+            if (total == 0 && PatchesFullyCovered == 0) return "";
+            return "--- Phase 3.2 (Alien base extension) ---\n" +
+                   $"  Node injections:                     {NodeInjectionsThisRound}\n" +
+                   $"  BioCache injections:                 {BioCacheInjectionsThisRound}\n" +
+                   $"  Lesser Cyst injections:              {CystInjectionsThisRound}\n" +
+                   $"  Biotics patches fully covered:       {PatchesFullyCovered}\n" +
+                   $"  Anchor swaps (Nest → nearer node):   {AnchorSwaps}\n";
+        }
+    }
+}
