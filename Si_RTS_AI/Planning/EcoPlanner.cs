@@ -1307,6 +1307,12 @@ namespace Si_RTS_AI.Planning
                     }
                 }
 
+                // Shadow: what a space-colonization growth model would do here,
+                // logged beside what the beam actually commits to. Changes
+                // nothing — see GrowthModel.
+                if (_currentPhase == PlanPhase.Phase2_Expand)
+                    GrowthModel.LogShadow(state);
+
                 // REACH FOLLOWS THE SHRIMPS.
                 //
                 // Shrimp migration asks for expansion by publishing a hint, and
