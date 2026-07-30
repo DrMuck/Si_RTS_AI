@@ -120,6 +120,9 @@ namespace Si_RTS_AI.Planning
         // 60-shrimp pile takes ~30s of ticks spread across many destinations,
         // instead of one instantaneous wave.
         const int   MOVES_PER_TICK = 4;
+        /// <summary>Cap on the deficit list. Was MOVES_PER_TICK * 4, which
+        /// bounded a tick's placements to 16 even when the surplus was 40.</summary>
+        const int   NEEDS_CAP = 64;
 
         // A relocation must repay its walk within this. Generous enough that
         // genuinely better ground is still worth crossing to, tight enough that
@@ -154,7 +157,7 @@ namespace Si_RTS_AI.Planning
 
         // Snapshot published for AlienShrimpProducer so production respects
         // the same capacity model instead of a flat per-BC constant.
-        struct BcCap { public Vector3 Pos; public int Capacity; }
+        struct BcCap { public Vector3 Pos; public int Capacity; public int Current; public Vector3 Best; public bool HasProducer; }
         static BcCap[] _capSnapshot = new BcCap[0];
 
         /// <summary>
@@ -249,6 +252,12 @@ namespace Si_RTS_AI.Planning
             if (!global::Si_RTS_AI.TestHarnessNs.TestHarness.IsRoundActive) return;
 
             float now = Time.time;
+
+            // Supervision runs EVERY tick; the full regroup stays on its
+            // cadence. See Supervise for why the two are separated.
+            try { Supervise(team, now); }
+            catch (System.Exception ex) { MelonLogger.Warning("[SHRIMP-SUP] threw: " + ex.Message); }
+
             if (now - _lastTickAt < TICK_CADENCE_S) return;
             _lastTickAt = now;
 
@@ -287,10 +296,216 @@ namespace Si_RTS_AI.Planning
                 return Targets[best];
             }
             public int     Capacity;
+            public bool    HasProducer;   // a Cyst of ours feeds this group
             public int     Desired;
             public int     Current;
             public readonly List<Unit> Members = new List<Unit>();
         }
+
+        /// <summary>
+        /// Per-tick supervision: catch shrimps that are producing NOTHING and
+        /// fix them immediately, without waiting for the next regroup and
+        /// without spending the migration budget.
+        ///
+        /// The distinction that matters is CORRECTION vs OPTIMISATION. The
+        /// waterfill and its MOVES_PER_TICK trickle exist to stop working
+        /// shrimps being mass-migrated for a marginal gain — that throttle is
+        /// right for optimisation. A shrimp standing on a patch whose capacity
+        /// has fallen to zero is not a marginal case: it earns nothing at all,
+        /// so there is no cost to weigh and no reason to queue behind three
+        /// other moves. Measured NarakaCity 2026-07-30: groups sat at
+        /// "cur=12/des=0/cap=0" and "cur=13/des=0/cap=0" for minutes while the
+        /// trickle handled four moves per tick against surpluses of 20-40.
+        ///
+        /// Capacity falls continuously as patches depleted (18 -> 13 -> 7 -> 2
+        /// -> 0), so this case is not an edge — it is the normal end state of
+        /// every patch on the map.
+        /// </summary>
+        /// <summary>
+        /// Shrimps are stranded with nowhere holding spare capacity. The full
+        /// pass already computes an ExpansionHint from the homeless count and
+        /// the patch list; this only records that the condition is live between
+        /// those passes, so the reason a shrimp is idle is never invisible.
+        /// </summary>
+        static void WantExpansionNear(Vector3 from)
+        {
+            _strandedNoRoom++;
+            float now = Time.time;
+            if (now - _lastStrandedLogAt < 20f) return;
+            _lastStrandedLogAt = now;
+            MelonLogger.Msg($"[SHRIMP-SUP] {_strandedNoRoom} shrimps stranded near " +
+                            $"({from.x:F0},{from.z:F0}) — every live patch is full, need expansion");
+            _strandedNoRoom = 0;
+        }
+
+        static int   _strandedNoRoom;
+        static float _lastStrandedLogAt;
+
+        static bool StructureNearPos(Team team, string name, Vector3 pos, float radiusM)
+        {
+            try
+            {
+                var structs = team?.Structures;
+                if (structs == null) return false;
+                float r2 = radiusM * radiusM;
+                for (int i = 0; i < structs.Count; i++)
+                {
+                    var st = structs[i];
+                    if (st == null || st.ObjectInfo == null || st.IsDestroyed) continue;
+                    if ((st.ObjectInfo.DisplayName ?? "") != name) continue;
+                    Vector3 q = st.transform.position;
+                    float dx = q.x - pos.x, dz = q.z - pos.z;
+                    if (dx * dx + dz * dz <= r2) return true;
+                }
+            }
+            catch { }
+            return false;
+        }
+
+        /// <summary>How much biotics this shrimp is carrying right now.</summary>
+        static int CarriedBy(Unit u)
+        {
+            try
+            {
+                var holders = u.ResourceHolders;
+                if (holders == null) return 0;
+                int total = 0;
+                for (int i = 0; i < holders.Count; i++)
+                {
+                    var h = holders[i];
+                    if (h != null) total += h.AmountStored;
+                }
+                return total;
+            }
+            catch { return 0; }
+        }
+
+        static void Supervise(Team team, float now)
+        {
+            if (now - _lastSuperviseAt < SUPERVISE_CADENCE_S) return;
+            _lastSuperviseAt = now;
+
+            var snap = _capSnapshot;
+            if (snap == null || snap.Length == 0) return;
+
+            // Somewhere with room. Without a destination there is nothing to do.
+            int stranded = 0, rescued = 0, unloading = 0;
+            var units = team.Units;
+            if (units == null) return;
+
+            for (int i = 0; i < units.Count; i++)
+            {
+                var u = units[i];
+                if (u == null || u.ObjectInfo == null || u.IsDestroyed) continue;
+                if (u.ObjectInfo.DisplayName != "Shrimp") continue;
+
+                Vector3 p = u.transform.position;
+
+                // Is the group it is standing on dead?
+                int here = -1; float hereSq = float.MaxValue;
+                for (int gi = 0; gi < snap.Length; gi++)
+                {
+                    float dx = snap[gi].Pos.x - p.x, dz = snap[gi].Pos.z - p.z;
+                    float d = dx * dx + dz * dz;
+                    if (d < hereSq) { hereSq = d; here = gi; }
+                }
+                if (here < 0 || hereSq > GROUP_PATCH_RADIUS_M * GROUP_PATCH_RADIUS_M) continue;
+                if (snap[here].Capacity > 0) continue;      // still worth harvesting
+
+                stranded++;
+
+                // Don't re-order the same shrimp every tick while it walks.
+                if (_assign.TryGetValue(u, out var a)
+                    && now - a.LastOrderAt < REISSUE_COOLDOWN_S) continue;
+
+                // CARRYING? DEPOSIT FIRST.
+                //
+                // A shrimp that walks off a dead patch with a full load throws
+                // that load away. The group anchor IS its Bio Cache, so send it
+                // there; next pass it will be empty and get its real
+                // destination.
+                if (CarriedBy(u) > 0)
+                {
+                    IssueMove(u, snap[here].Pos);
+                    _assign[u] = new Assignment { Target = snap[here].Pos,
+                                                  AssignedAt = now, LastOrderAt = now };
+                    unloading++;
+                    continue;
+                }
+
+                // DESTINATION: prefer somewhere that is NOT already filling
+                // itself. A group with its own Cyst produces shrimps locally and
+                // will reach its own capacity without help, so sending walkers
+                // there wastes the walk and crowds a patch that was already
+                // spoken for. Untapped ground is worth more, even a bit further.
+                int dst = -1; float dstSq = float.MaxValue;
+                bool dstIsFresh = false;
+                for (int gi = 0; gi < snap.Length; gi++)
+                {
+                    if (snap[gi].Capacity - snap[gi].Current <= 0) continue;
+                    bool fresh = !snap[gi].HasProducer;
+                    float dx = snap[gi].Best.x - p.x, dz = snap[gi].Best.z - p.z;
+                    float d = dx * dx + dz * dz;
+                    // A group without its own producer wins outright; among
+                    // equals, the nearest.
+                    if (fresh && !dstIsFresh) { dstIsFresh = true; dstSq = d; dst = gi; continue; }
+                    if (fresh != dstIsFresh) continue;
+                    if (d < dstSq) { dstSq = d; dst = gi; }
+                }
+                // UNTAKEN GROUND COMPETES WITH DEVELOPED GROUND.
+                //
+                // A patch with no Bio Cache has no group, so it was invisible
+                // here and a displaced shrimp could only walk to somewhere
+                // already built — past closer, untouched biotics. Migration is
+                // the signal that expansion is due: if untaken ground is nearer
+                // than the best existing home, ask for a Bio Cache there and
+                // walk the shrimp toward it. It arrives about when the Bio Cache
+                // does instead of crowding a patch that was already spoken for.
+                var freeP = _freePatches;
+                int freeIdx = -1; float freshSq = float.MaxValue;
+                for (int fi = 0; fi < freeP.Length; fi++)
+                {
+                    float dx = freeP[fi].x - p.x, dz = freeP[fi].z - p.z;
+                    float d = dx * dx + dz * dz;
+                    if (d < freshSq) { freshSq = d; freeIdx = fi; }
+                }
+                if (freeIdx >= 0 && (dst < 0 || freshSq < dstSq))
+                {
+                    _hint = new ExpansionHint { Pos = freeP[freeIdx], Shrimps = stranded, AtTime = now };
+                    IssueMove(u, freeP[freeIdx]);
+                    _assign[u] = new Assignment { Target = freeP[freeIdx],
+                                                  AssignedAt = now, LastOrderAt = now };
+                    rescued++;
+                    if (now - _lastHintLogAt > 20f)
+                    {
+                        _lastHintLogAt = now;
+                        MelonLogger.Msg($"[SHRIMP-SUP] displaced shrimps heading to UNTAPPED " +
+                                        $"({freeP[freeIdx].x:F0},{freeP[freeIdx].z:F0}) " +
+                                        $"{Mathf.Sqrt(freshSq):F0}m away — asking for expansion there");
+                    }
+                    continue;
+                }
+
+                if (dst < 0)
+                {
+                    // Nowhere has room and no untaken ground either. That is an
+                    // expansion problem, not a shrimp problem — say so.
+                    WantExpansionNear(p);
+                    continue;
+                }
+
+                IssueMove(u, snap[dst].Best);
+                _assign[u] = new Assignment { Target = snap[dst].Best, AssignedAt = now, LastOrderAt = now };
+                rescued++;
+            }
+
+            if (rescued > 0 || unloading > 0)
+                MelonLogger.Msg($"[SHRIMP-SUP] depleted-patch shrimps: {stranded} stranded, " +
+                                $"{unloading} depositing first, {rescued} relocated");
+        }
+
+        const float SUPERVISE_CADENCE_S = 1f;
+        static float _lastSuperviseAt;
 
         static void Run(Team team)
         {
@@ -397,6 +612,10 @@ namespace Si_RTS_AI.Planning
                             + (float)CARRY / HARVEST_RATE
                             + (float)CARRY / DEPOSIT_RATE;
                 g.Value = CARRY / cycle;
+                // Does this group make its own shrimps? If so it will fill
+                // itself and is a poor destination for someone else's.
+                g.HasProducer = StructureNearPos(team, "Lesser Spawning Cyst",
+                                                 g.Anchor, GROUP_PATCH_RADIUS_M);
                 totalCapacity += g.Capacity;
             }
 
@@ -470,7 +689,19 @@ namespace Si_RTS_AI.Planning
             for (int gi = 0; gi < groups.Count; gi++)
             {
                 var g = groups[gi];
-                int keep = Mathf.Min(g.Current, g.Capacity);
+                // RULE: a shrimp moves off a patch only when that patch is
+                // EMPTY — not because capacity shrank.
+                //
+                // Capacity falls continuously as a patch depletes (18 -> 13 ->
+                // 7 -> 2 -> 0), so keeping only min(Current, Capacity) meant a
+                // steady trickle of relocation all round for no real gain: the
+                // patch was still worth harvesting, the shrimps were already
+                // standing on it, and the walk was pure loss. User 2026-07-30:
+                // relocate when the biotics is empty, not before.
+                //
+                // HARD_CAP still applies, so a genuine pile-up (40 on one
+                // group was observed) still sheds down to a workable number.
+                int keep = g.Capacity > 0 ? Mathf.Min(g.Current, HARD_CAP) : 0;
                 g.Desired += keep; pool -= keep;
             }
             if (pool < 0) pool = 0;
@@ -499,6 +730,7 @@ namespace Si_RTS_AI.Planning
 
             TeamShrimps = shrimps.Count;
             PublishCapacities(groups);
+            PublishFreePatches(patches, groups);
 
             // ---- Sticky re-issue: pull drifters back to their assignment ----
             float now = Time.time;
@@ -524,7 +756,7 @@ namespace Si_RTS_AI.Planning
             {
                 var gi = order[oi];
                 int deficit = groups[gi].Desired - groups[gi].Current;
-                for (int k = 0; k < deficit && needs.Count < MOVES_PER_TICK * 4; k++) needs.Add(gi);
+                for (int k = 0; k < deficit && needs.Count < NEEDS_CAP; k++) needs.Add(gi);
             }
 
             // Donor pool: free agents first (in transit, cheap to redirect),
@@ -547,9 +779,21 @@ namespace Si_RTS_AI.Planning
                     donors.Add(new KeyValuePair<Unit, int>(g.Members[k], gi));
             }
 
-            int moved = 0;
-            for (int ni = 0; ni < needs.Count && moved < MOVES_PER_TICK && donors.Count > 0; ni++)
+            // TWO BUDGETS, NOT ONE.
+            //
+            // The trickle limit exists so working shrimps are not mass-migrated.
+            // It has no business throttling shrimps that are not working yet: a
+            // newly produced one spawns at its Cyst with no assignment, and
+            // redirecting it costs nothing because it has not started a harvest
+            // cycle. Charging those against the same 4-per-tick budget meant
+            // production outran redistribution all round — measured NarakaCity
+            // 2026-07-30, moved=1..4 per tick against surpluses of 20-40, with
+            // one group holding 40 shrimps on capacity 17 and another 12 on a
+            // depleted patch (cap=0).
+            int moved = 0, movedWorking = 0;
+            for (int ni = 0; ni < needs.Count && donors.Count > 0; ni++)
             {
+                if (movedWorking >= MOVES_PER_TICK && !AnyFreeDonor(donors)) break;
                 var dst = groups[needs[ni]];
                 int bestD = -1; float bestSq = float.MaxValue;
                 for (int di = 0; di < donors.Count; di++)
@@ -557,13 +801,20 @@ namespace Si_RTS_AI.Planning
                     var u = donors[di].Key;
                     int srcGi = donors[di].Value;
                     if (_assign.TryGetValue(u, out var a0) && now - a0.AssignedAt < REASSIGN_COOLDOWN_S) continue;
+                    // Once the trickle budget is spent, only shrimps that are
+                    // not working yet may still be placed.
+                    if (movedWorking >= MOVES_PER_TICK && srcGi >= 0) continue;
                     float d = SqDist(u.transform.position, dst.BestPatch);
                     if (!MoveIsWorthIt(srcGi >= 0 ? groups[srcGi] : null, dst, Mathf.Sqrt(d))) continue;
                     if (d < bestSq) { bestSq = d; bestD = di; }
                 }
-                if (bestD < 0) break;
+                // One unservable need must not end the pass. This was a break,
+                // so a single need with no acceptable donor cancelled every
+                // remaining move in the tick.
+                if (bestD < 0) continue;
 
                 var donor = donors[bestD].Key;
+                if (donors[bestD].Value >= 0) movedWorking++;
                 donors.RemoveAt(bestD);
                 var target = dst.PickTarget();
                 IssueMove(donor, target);
@@ -631,13 +882,51 @@ namespace Si_RTS_AI.Planning
             }
         }
 
+        /// <summary>Is any donor a shrimp that is not working a group yet?</summary>
+        static bool AnyFreeDonor(List<KeyValuePair<Unit, int>> donors)
+        {
+            for (int i = 0; i < donors.Count; i++)
+                if (donors[i].Value < 0) return true;
+            return false;
+        }
+
+        /// <summary>
+        /// Live patches that no Bio Cache serves yet. Without this the
+        /// supervisor can only relocate to EXISTING groups, so a displaced
+        /// shrimp walks past untaken ground to crowd a developed site — the
+        /// north-to-south runs seen on NarakaCity 2026-07-30 while northern and
+        /// western patches sat untouched.
+        /// </summary>
+        static Vector3[] _freePatches = new Vector3[0];
+
+        static void PublishFreePatches(List<Patch> patches, List<Group> groups)
+        {
+            var free = new List<Vector3>();
+            float radSq = GROUP_PATCH_RADIUS_M * GROUP_PATCH_RADIUS_M;
+            for (int pi = 0; pi < patches.Count; pi++)
+            {
+                if (patches[pi].remaining <= PATCH_EMPTY_HARD) continue;
+                bool covered = false;
+                for (int gi = 0; gi < groups.Count && !covered; gi++)
+                {
+                    float dx = groups[gi].Anchor.x - patches[pi].pos.x;
+                    float dz = groups[gi].Anchor.z - patches[pi].pos.z;
+                    if (dx * dx + dz * dz <= radSq) covered = true;
+                }
+                if (!covered) free.Add(patches[pi].pos);
+            }
+            _freePatches = free.ToArray();
+        }
+
         static void PublishCapacities(List<Group> groups)
         {
             var snap = new BcCap[groups.Count];
             int total = 0;
             for (int i = 0; i < groups.Count; i++)
             {
-                snap[i] = new BcCap { Pos = groups[i].Anchor, Capacity = groups[i].Capacity };
+                snap[i] = new BcCap { Pos = groups[i].Anchor, Capacity = groups[i].Capacity,
+                                      Current = groups[i].Current, Best = groups[i].BestPatch,
+                                      HasProducer = groups[i].HasProducer };
                 total += groups[i].Capacity;
             }
             _capSnapshot = snap;

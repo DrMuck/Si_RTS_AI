@@ -82,6 +82,22 @@ namespace Si_RTS_AI.Planning
         // right when base eco is halfway saturated instead of after.
         const int   PHASE2_MIN_SHRIMPS = 15;
         const int   PHASE2_MIN_CASH    = 1500;
+
+        /// <summary>
+        /// Income per second at which base eco is considered established.
+        ///
+        /// Rate is the honest signal for "Phase 1 has done its job". The old
+        /// test used shrimps + cash + "the beam has fired fewer than twice in
+        /// 20s", and that last clause is a symptom of being STUCK, not of being
+        /// finished — so the switch waited for the planner to run out of ideas
+        /// rather than for the economy to be up. Cash is worse still: it is high
+        /// both when the economy is strong and when nothing is being built.
+        ///
+        /// Measured NarakaCity 2026-07-30: a four-site opening reaches ~340/s by
+        /// the handoff, and the round that transitioned at t=178s was earning
+        /// well before that. 200/s marks a base economy running on its own.
+        /// </summary>
+        const float PHASE2_MIN_INCOME_RATE = 200f;
         // Time-based fallback tightened accordingly.
         const float PHASE2_TIME_FALLBACK_S = 150f;
         // Was 15 — 15 shrimps at t=180s meant Phase 2 fired with only
@@ -716,6 +732,7 @@ namespace Si_RTS_AI.Planning
             // Score bonus because displaced shrimps want a home here — the
             // bridge from shrimp management to expansion (rule 5.5a).
             public float      shrimpPull;
+            public float      spreadPull;   // opens a bearing we barely hold
         }
 
         // Beam search node: a partial sequence with its resulting state.
@@ -1290,6 +1307,41 @@ namespace Si_RTS_AI.Planning
                     }
                 }
 
+                // REACH FOLLOWS THE SHRIMPS.
+                //
+                // Shrimp migration asks for expansion by publishing a hint, and
+                // the beam pays a shrimpPull bonus to Bio Cache candidates near
+                // it — but only to candidates that EXIST, and a patch outside
+                // chain reach is never enumerated. NarakaCity 2026-07-30: the
+                // western patch at (1744,1478) was requested at 18:16:28,
+                // 18:17:25, 18:19:02, 18:20:05, 18:20:29 and 18:21:16 while
+                // shrimps walked to it, the only response was a Cyst at
+                // (1747,1487) whose placement search failed for want of reach,
+                // and Bio Caches went up at (1415,1640) 1165m out and
+                // (1860,-1280) 2644m out with 37,000 in the bank.
+                //
+                // The opener walks a chain to a site it cannot reach; Phase 2
+                // had no equivalent, so a hint outside reach could never become
+                // anything. Same fix: build toward it.
+                if (!openerDrove
+                    && ShrimpGroupPlanner.TryGetExpansionHint(out var reachHint)
+                    && !CanPlaceBcTightNow(reachHint.Pos, state)
+                    && NextNodeTowards(state, reachHint.Pos, out Vector3 hintHop))
+                {
+                    int beforeHop = fired;
+                    TryFireAction(new Candidate
+                    {
+                        kind = ActionKind.PlaceNode,
+                        target = hintHop,
+                        cost = EcoSimulator.NODE_COST,
+                        patchIdx = -1,
+                    });
+                    if (fired > beforeHop)
+                        MelonLogger.Msg($"[PLAN/EXEC] chain node at ({hintHop.x:F0},{hintHop.z:F0}) " +
+                                        $"toward shrimp-requested ({reachHint.Pos.x:F0}," +
+                                        $"{reachHint.Pos.z:F0}) for {reachHint.Shrimps} shrimps");
+                }
+
                 // 2) Pick up multi-directional expansion from the runner-ups.
                 //    Only consider each runner-up's FIRST non-Noop action —
                 //    that's the immediate commit the sequence starts with,
@@ -1298,6 +1350,21 @@ namespace Si_RTS_AI.Planning
                 //    since we already fired its actions.
                 if (topSequences != null && !underTappedNow && !openerDrove)
                 {
+                    // MULTI-DIRECTIONAL MEANS DIFFERENT DIRECTIONS.
+                    //
+                    // This block is meant to pick up expansion the winner did
+                    // not commit to, but the runner-ups all come out of one beam
+                    // frontier, so their heads are usually minor variants of the
+                    // same move. Firing them gave breadth in name only: on
+                    // NarakaCity 2026-07-30 expansion snaked south then west and
+                    // never came back — nothing east of the spawn, and north
+                    // stopped after two sites, while those directions still had
+                    // patches.
+                    //
+                    // Same failure the opener had before bearing redundancy went
+                    // in, one phase later. Require each additional commit to be
+                    // genuinely elsewhere.
+                    _expandFiredThisTick.Clear();
                     for (int i = 1; i < topSequences.Count; i++)
                     {
                         var seq = topSequences[i].sequence;
@@ -1305,7 +1372,20 @@ namespace Si_RTS_AI.Planning
                         {
                             var c = seq[j];
                             if (c.kind == ActionKind.Noop) continue;
+
+                            bool crowded = false;
+                            for (int k = 0; k < _expandFiredThisTick.Count; k++)
+                            {
+                                float dx = _expandFiredThisTick[k].x - c.target.x;
+                                float dz = _expandFiredThisTick[k].z - c.target.z;
+                                if (dx * dx + dz * dz < EXPAND_SPREAD_M * EXPAND_SPREAD_M)
+                                { crowded = true; break; }
+                            }
+                            if (crowded) break;   // this runner-up adds nothing new
+
+                            int before2 = fired;
                             TryFireAction(c);   // dedup handles same-target collisions
+                            if (fired > before2) _expandFiredThisTick.Add(c.target);
                             break;              // only the head of the runner-up
                         }
                     }
@@ -1564,7 +1644,11 @@ namespace Si_RTS_AI.Planning
                 Time.time >= PHASE2_TIME_FALLBACK_S &&
                 state.totalShrimps >= PHASE2_TIME_FALLBACK_MIN_SHRIMPS;
 
-            if (!timeFallbackHit)
+            float incomeRate = Perception.EcoRateSampler.GetAvgIncomePerSec(team);
+            bool rateHit = state.totalShrimps >= PHASE2_MIN_SHRIMPS
+                        && incomeRate >= PHASE2_MIN_INCOME_RATE;
+
+            if (!timeFallbackHit && !rateHit)
             {
                 if (state.totalShrimps < PHASE2_MIN_SHRIMPS) return PlanPhase.Phase1_BaseEco;
                 if (state.cash < PHASE2_MIN_CASH) return PlanPhase.Phase1_BaseEco;
@@ -1572,6 +1656,9 @@ namespace Si_RTS_AI.Planning
                 // Fire frequency in last 20s. Fewer than 2 fires means the
                 // beam is stuck — Noop-heavy sequences winning because
                 // absolute income gain from near-patch actions has flattened.
+                // Kept only as a backstop now that rate is the primary signal:
+                // being stuck is still a reason to move on, it is just not the
+                // reason we WANT to move on.
                 int recentFires = 0;
                 if (_fired.TryGetValue(team, out var log))
                 {
@@ -1586,7 +1673,9 @@ namespace Si_RTS_AI.Planning
             MelonLogger.Msg("[PLAN/PHASE] team=" + (team.name ?? "?") +
                             " → PHASE2_EXPAND at t=" + Time.time.ToString("F0") +
                             "s (shrimps=" + state.totalShrimps + " cash=" + state.cash +
-                            (timeFallbackHit ? " via=time-fallback" : " via=threshold") + ")");
+                            " rate=" + incomeRate.ToString("F0") + "/s" +
+                            (timeFallbackHit ? " via=time-fallback"
+                                             : rateHit ? " via=income-rate" : " via=beam-stuck") + ")");
             return PlanPhase.Phase2_Expand;
         }
 
@@ -1723,6 +1812,14 @@ namespace Si_RTS_AI.Planning
         // first action (e.g. Node east vs Node west), and merging their
         // first-actions gives us parallel multi-directional expansion.
         const int TOP_K_TO_FIRE = 10;
+
+        /// <summary>
+        /// How far apart two expansion commits in one tick must be to count as
+        /// different directions. Roughly the spacing between neighbouring
+        /// biotics, so two commits on the same patch cluster collapse to one.
+        /// </summary>
+        const float EXPAND_SPREAD_M = 450f;
+        static readonly List<Vector3> _expandFiredThisTick = new List<Vector3>(8);
 
         // Full beam search: expand the frontier BEAM_DEPTH times, keeping top
         // BEAM_WIDTH sequences at each level by their horizon-score. Returns
@@ -1899,7 +1996,7 @@ namespace Si_RTS_AI.Planning
                     for (int i = 0; i < n.sequence.Count; i++)
                     {
                         unlockSum += n.sequence[i].unlocks;
-                        pullSum   += n.sequence[i].shrimpPull;
+                        pullSum   += n.sequence[i].shrimpPull + n.sequence[i].spreadPull;
                     }
                     n.score += nodeCount * PHASE2_NODE_BONUS
                              + cystBonusSum
@@ -2212,6 +2309,7 @@ namespace Si_RTS_AI.Planning
                     {
                         kind = ActionKind.PlaceBc, target = bcTarget,
                         shrimpPull = shrimpPull,
+                        spreadPull = BearingSpreadBonus(s, patch.pos),
                         cost = EcoSimulator.BC_COST, patchIdx = p,
                         unlocks = CountUnlockedPatches(s, patch.pos),
                     };
@@ -2865,6 +2963,42 @@ namespace Si_RTS_AI.Planning
             if (len < 1f) return false;
             pos = from + dir * (Mathf.Min(hop, len) / len);
             return true;
+        }
+
+        /// <summary>
+        /// How much this patch opens a direction we barely hold, measured as a
+        /// bearing from the Nest.
+        ///
+        /// The beam grows contiguously because a patch beside an existing Bio
+        /// Cache is cheap to reach and scores well, so expansion advances as a
+        /// snake rather than a front. NarakaCity 2026-07-30: it ran south, then
+        /// west, and never came back — nothing east of spawn, north stopped
+        /// after two sites, while those bearings still held patches.
+        ///
+        /// This is the Phase 2 counterpart of the opener's bearing-redundancy
+        /// term, expressed as a BONUS for thin directions rather than a penalty
+        /// for crowded ones, because here it competes against income rather
+        /// than against sibling plans. A quadrant is the sector width, matching
+        /// the opener.
+        /// </summary>
+        const float BEARING_SECTOR_DEG   = 90f;
+        const float BEARING_SPREAD_BONUS = 2500f;
+
+        static float BearingSpreadBonus(EcoState s, Vector3 patchPos)
+        {
+            if (s.nestPos == Vector3.zero) return 0f;
+            float want = Mathf.Atan2(patchPos.x - s.nestPos.x,
+                                     patchPos.z - s.nestPos.z) * Mathf.Rad2Deg;
+            int sameSector = 0;
+            for (int i = 0; i < s.bcs.Count; i++)
+            {
+                Vector3 q = s.bcs[i].pos;
+                float b = Mathf.Atan2(q.x - s.nestPos.x, q.z - s.nestPos.z) * Mathf.Rad2Deg;
+                if (Mathf.Abs(Mathf.DeltaAngle(want, b)) < BEARING_SECTOR_DEG * 0.5f) sameSector++;
+            }
+            // First Bio Cache in a sector is worth the most; each further one
+            // there is worth progressively less.
+            return BEARING_SPREAD_BONUS / (1f + sameSector);
         }
 
         static bool IsChainReachable(Vector3 pos, EcoState s, float reachM = -1f,
