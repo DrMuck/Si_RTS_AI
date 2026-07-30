@@ -875,6 +875,34 @@ namespace Si_RTS_AI.Faction
             }
         }
 
+        /// <summary>
+        /// Is it still safe to touch the objects a placement callback was handed?
+        ///
+        /// A queued placement search cannot be cancelled, and on a map change
+        /// every outstanding one resolves at once against a scene that is being
+        /// destroyed. The server died with an ACCESS VIOLATION (0xC0000005)
+        /// doing exactly that on 2026-07-30: "[Mapcycle] Changing map to
+        /// narakacity" at 23:45:43.273, seventeen placement searches flushed in
+        /// the following two milliseconds, then the process went down.
+        ///
+        /// Reading cbTeam.name or cbStruct on a destroyed Il2Cpp object is a
+        /// native read of freed memory — a managed try/catch cannot save it, so
+        /// the check has to happen BEFORE the first dereference. IsRoundActive
+        /// is the cheap first gate; the null and IsDestroyed tests cover a
+        /// teardown already under way when the round flag has not flipped yet.
+        /// </summary>
+        static bool CallbackTargetsAlive(ConstructionData cd, Team team, Structure anchor)
+        {
+            try
+            {
+                if (!TestHarnessNs.TestHarness.IsRoundActive) return false;
+                if (cd == null || team == null) return false;
+                if (anchor == null || anchor.IsDestroyed) return false;
+                return true;
+            }
+            catch { return false; }
+        }
+
         internal static bool TryBuildStructureByCd(
             Team team,
             ConstructionData cd,
@@ -890,6 +918,8 @@ namespace Si_RTS_AI.Faction
                 onSuccess: (thisCd, cbTeam, cbStruct, gotPos, gotRot) =>
                 {
                     SearchDone(cdName, targetPos);
+                    // SCENE TEARDOWN GUARD — see CallbackTargetsAlive.
+                    if (!CallbackTargetsAlive(thisCd, cbTeam, cbStruct)) return;
                     try
                     {
                         // LAST-MOMENT DUPLICATE CHECK.
@@ -957,6 +987,7 @@ namespace Si_RTS_AI.Faction
                 onFail: (thisCd, cbTeam, cbStruct) =>
                 {
                     SearchDone(cdName, targetPos);
+                    if (!CallbackTargetsAlive(thisCd, cbTeam, cbStruct)) return;
                     MelonLogger.Msg("[PLAN/EXEC] team=" + cbTeam.name +
                                     " placement search FAILED for " + (thisCd.ObjectInfo?.DisplayName ?? "?") +
                                     " near (" + targetPos.x.ToString("F0") + "," + targetPos.z.ToString("F0") + ")");
