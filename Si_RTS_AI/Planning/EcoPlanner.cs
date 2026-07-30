@@ -762,8 +762,17 @@ namespace Si_RTS_AI.Planning
             // planner keeps firing placement orders on top of the human's
             // build actions — user observed "the AI commander overwrites
             // me" when they joined to play a benchmark round.
-            try { if (!Silica.AI.AIManager.IsCommanderEnabled(team)) return; }
-            catch { /* if the API throws, fail open — behave as before */ }
+            //
+            // CO-OP ECO ASSIST reverses that on purpose: the player commands the
+            // aliens and wants the economy run for them. Nothing else about the
+            // opt-out changes — pair it with MilitaryEnabled=false and
+            // ScoutEnabled=false so the planner touches only eco structures and
+            // shrimps, never the player's combat units.
+            if (!EcoPlannerConfig.EcoAssistWithHumanCommander)
+            {
+                try { if (!Silica.AI.AIManager.IsCommanderEnabled(team)) return; }
+                catch { /* if the API throws, fail open — behave as before */ }
+            }
 
             // Startup delay: wait ~20s after the round begins before
             // planning. Starter units (shrimps, initial cash) spawn in

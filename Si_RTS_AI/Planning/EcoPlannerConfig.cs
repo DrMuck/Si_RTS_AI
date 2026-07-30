@@ -20,6 +20,7 @@ namespace Si_RTS_AI.Planning
         static MelonPreferences_Entry<bool>  _p2TargetFarthest;
         static MelonPreferences_Entry<int>   _p2MaxUncystedQueue;
         static MelonPreferences_Entry<int>   _p1MinTappedPatches;
+        static MelonPreferences_Entry<bool>  _ecoAssistHumanCmd;
 
         internal static void Init()
         {
@@ -55,6 +56,9 @@ namespace Si_RTS_AI.Planning
                 _p2MaxUncystedQueue = _cat.CreateEntry("Phase2MaxUncystedBcQueue", 4,
                     "Phase 2 only. How many in-flight uncysted BCs the beam tolerates before blocking new-BC enumeration. Bump to 6 for more aggressive expansion.");
 
+                _ecoAssistHumanCmd = _cat.CreateEntry("EcoAssistWithHumanCommander", false,
+                    "CO-OP ECO ASSIST. Normally the eco planner stands down the moment a real player takes the alien commander role, so it cannot fire placements on top of the player's own build actions. Set true when a human commands the aliens and wants the AI to keep running the economy for them — Bio Caches, Cysts, Nodes, shrimp assignment — while they handle military. Pair it with MilitaryEnabled=false and ScoutEnabled=false so nothing else touches their units.");
+
                 _p1MinTappedPatches = _cat.CreateEntry("Phase1MinTappedPatches", 2,
                     "Phase 1 objective. Until BCs serve this many DISTINCT biotics patches, the planner widens Node reach to 6x chain and pays an explicit [Node -> BC] bonus so it expands toward the next patch instead of stalling. It ALSO gates multi-directional expansion, which is why 4 was too high: the opener already takes four sites, so breadth stayed switched off through the whole opening. Set 3 for a leaner opening, 0 to disable.");
 
@@ -73,5 +77,6 @@ namespace Si_RTS_AI.Planning
         public static bool  Phase2CystTargetFarthestInCluster=> _p2TargetFarthest  != null ? _p2TargetFarthest.Value  : true;
         public static int   Phase2MaxUncystedBcQueue         => _p2MaxUncystedQueue != null ? _p2MaxUncystedQueue.Value: 4;
         public static int   Phase1MinTappedPatches          => _p1MinTappedPatches != null ? _p1MinTappedPatches.Value: 2;
+        public static bool  EcoAssistWithHumanCommander    => _ecoAssistHumanCmd != null && _ecoAssistHumanCmd.Value;
     }
 }
