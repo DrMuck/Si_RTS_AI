@@ -571,9 +571,10 @@ namespace Si_RTS_AI.Planning
         static readonly List<Vector3> _hopsThisTick = new List<Vector3>(4);
 
         /// <summary>
-        /// Nearest FINISHED alien structure to a point. team.Structures carries
-        /// a structure only once construction has ended, so membership alone
-        /// means finished — see BuildTimeline.
+        /// Nearest structure that can anchor a NODE. team.Structures carries a
+        /// structure only once construction has ended, so it supplies the
+        /// finished ones; accepted orders supply the ones still going up, which
+        /// anchor a node just as well.
         /// </summary>
         static bool NearestFinished(Team team, Vector3 to, out Vector3 pos, out float dist)
         {
@@ -594,11 +595,13 @@ namespace Si_RTS_AI.Planning
             // Structures that are ordered and far enough along to anchor, but
             // not yet listed as complete. A Node measured 20s to completion
             // against a 12s build-up, so waiting for the list costs ~8s a hop.
+            // Anchors for a NODE need no age at all: a Bio Cache or Node
+            // anchors from the moment it is placed (user, 2026-07-30). The
+            // build-up wait that used to be applied here was ~8s a hop of pure
+            // loss, and before that it was a full completion wait.
             _anchorScratch.Clear();
-            Faction.AlienConstruction.CollectOrdersOlderThan(
-                "Node", EcoSimulator.NODE_BUILD_S, _anchorScratch);
-            Faction.AlienConstruction.CollectOrdersOlderThan(
-                "Bio Cache", EcoSimulator.BC_BUILD_S, _anchorScratch);
+            Faction.AlienConstruction.CollectOrdersOlderThan("Node", 0f, _anchorScratch);
+            Faction.AlienConstruction.CollectOrdersOlderThan("Bio Cache", 0f, _anchorScratch);
             for (int i = 0; i < _anchorScratch.Count; i++)
             {
                 float dx = _anchorScratch[i].x - to.x, dz = _anchorScratch[i].z - to.z;

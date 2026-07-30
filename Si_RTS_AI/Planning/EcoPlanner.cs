@@ -2910,47 +2910,6 @@ namespace Si_RTS_AI.Planning
         /// </summary>
         const float NODE_DRIFT_MARGIN_M = 40f;
 
-        /// <summary>
-        /// Is a structure already under construction going to be a better place
-        /// to start this chain than anything finished right now?
-        ///
-        /// At t=0 the Nest is the only finished structure, so every far site
-        /// looks unreachable and each one buys a node ~110m out from the Nest —
-        /// two of them, 60m apart, before the opening's own Bio Caches exist.
-        /// Those Bio Caches then land much further along the way and the nodes
-        /// are worse than useless: measured on NarakaCity, the node toward the
-        /// 3rd site sat 570m from the goal while the pending Bio Cache sat 496m.
-        /// User 2026-07-30: "not needed so early because they can anchor from
-        /// biocache later".
-        ///
-        /// A coverage test is not enough — neither goal was inside the pending
-        /// Bio Caches' 277m reach (496m and 724m away), yet both were closer
-        /// than the Nest by more than a hop. So compare the two distances and
-        /// wait whenever waiting saves at least one node.
-        /// </summary>
-        static float _lastAnchorWaitLog;
-
-        static bool WaitForBetterAnchor(EcoState s, Vector3 goal, out float savingM)
-        {
-            savingM = 0f;
-            float now = float.MaxValue, soon = float.MaxValue;
-            void consider(Vector3 q, bool finished)
-            {
-                float dx = q.x - goal.x, dz = q.z - goal.z;
-                float d = Mathf.Sqrt(dx * dx + dz * dz);
-                if (finished && d < now) now = d;
-                if (d < soon) soon = d;
-            }
-            if (s.nestPos != Vector3.zero) consider(s.nestPos, true);
-            for (int i = 0; i < s.bcs.Count; i++)   consider(s.bcs[i].pos,   s.bcs[i].finished);
-            for (int i = 0; i < s.cysts.Count; i++) consider(s.cysts[i].pos, s.cysts[i].finished);
-            for (int i = 0; i < s.nodes.Count; i++) consider(s.nodes[i].pos, s.nodes[i].finished);
-            if (now == float.MaxValue) return false;
-
-            savingM = now - soon;
-            return savingM >= Mathf.Max(1f, EcoSimulator.NODE_REACH_M - NODE_DRIFT_MARGIN_M);
-        }
-
         static bool NextNodeTowards(EcoState s, Vector3 goal, out Vector3 pos)
         {
             pos = goal;
@@ -2963,10 +2922,20 @@ namespace Si_RTS_AI.Planning
                 float d = dx * dx + dz * dz;
                 if (d < best) { best = d; from = q; }
             }
+            // A NODE MAY ANCHOR OFF WORK STILL IN PROGRESS.
+            //
+            // Bio Caches and Nodes anchor a NODE from the moment they are
+            // placed — they do not have to finish first (user, 2026-07-30).
+            // NODES ONLY: a Bio Cache or Cyst still needs a finished anchor,
+            // which is why IsChainReachable is deliberately untouched.
+            //
+            // Worth roughly a build per hop. Every chain step used to wait for
+            // its anchor to complete, so a four-hop chain paid time it never
+            // owed.
             if (s.nestPos != Vector3.zero) consider(s.nestPos);
-            for (int i = 0; i < s.bcs.Count; i++)   if (s.bcs[i].finished)   consider(s.bcs[i].pos);
+            for (int i = 0; i < s.bcs.Count; i++)   consider(s.bcs[i].pos);
+            for (int i = 0; i < s.nodes.Count; i++) consider(s.nodes[i].pos);
             for (int i = 0; i < s.cysts.Count; i++) if (s.cysts[i].finished) consider(s.cysts[i].pos);
-            for (int i = 0; i < s.nodes.Count; i++) if (s.nodes[i].finished) consider(s.nodes[i].pos);
             if (best == float.MaxValue) return false;
 
             float gap = Mathf.Sqrt(best);
