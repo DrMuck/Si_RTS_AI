@@ -1,0 +1,1224 @@
+[
+  {
+    "map": "Badlands",
+    "nest": [
+      -675.0,
+      -2475.0
+    ],
+    "patches": 147,
+    "nearest_m": 222,
+    "median_m": 3249,
+    "within_1000m": 13,
+    "within_1500m": 22,
+    "top": [
+      {
+        "dist_m": 222,
+        "amount": 22000
+      },
+      {
+        "dist_m": 272,
+        "amount": 22000
+      },
+      {
+        "dist_m": 324,
+        "amount": 22000
+      },
+      {
+        "dist_m": 417,
+        "amount": 22000
+      },
+      {
+        "dist_m": 556,
+        "amount": 22000
+      },
+      {
+        "dist_m": 603,
+        "amount": 22000
+      },
+      {
+        "dist_m": 606,
+        "amount": 22000
+      },
+      {
+        "dist_m": 739,
+        "amount": 22000
+      },
+      {
+        "dist_m": 858,
+        "amount": 22000
+      },
+      {
+        "dist_m": 881,
+        "amount": 22000
+      },
+      {
+        "dist_m": 929,
+        "amount": 22000
+      },
+      {
+        "dist_m": 955,
+        "amount": 22000
+      },
+      {
+        "dist_m": 992,
+        "amount": 22000
+      },
+      {
+        "dist_m": 1028,
+        "amount": 22000
+      },
+      {
+        "dist_m": 1116,
+        "amount": 22000
+      },
+      {
+        "dist_m": 1185,
+        "amount": 22000
+      },
+      {
+        "dist_m": 1337,
+        "amount": 22000
+      },
+      {
+        "dist_m": 1372,
+        "amount": 22000
+      },
+      {
+        "dist_m": 1376,
+        "amount": 22000
+      },
+      {
+        "dist_m": 1387,
+        "amount": 22000
+      }
+    ]
+  },
+  {
+    "map": "BlackIsle",
+    "nest": [
+      -540.0,
+      525.0
+    ],
+    "patches": 66,
+    "nearest_m": 91,
+    "median_m": 1014,
+    "within_1000m": 33,
+    "within_1500m": 55,
+    "top": [
+      {
+        "dist_m": 91,
+        "amount": 22000
+      },
+      {
+        "dist_m": 101,
+        "amount": 22000
+      },
+      {
+        "dist_m": 184,
+        "amount": 22000
+      },
+      {
+        "dist_m": 194,
+        "amount": 22000
+      },
+      {
+        "dist_m": 232,
+        "amount": 22000
+      },
+      {
+        "dist_m": 265,
+        "amount": 22000
+      },
+      {
+        "dist_m": 271,
+        "amount": 22000
+      },
+      {
+        "dist_m": 271,
+        "amount": 22000
+      },
+      {
+        "dist_m": 337,
+        "amount": 22000
+      },
+      {
+        "dist_m": 346,
+        "amount": 22000
+      },
+      {
+        "dist_m": 407,
+        "amount": 22000
+      },
+      {
+        "dist_m": 413,
+        "amount": 22000
+      },
+      {
+        "dist_m": 442,
+        "amount": 22000
+      },
+      {
+        "dist_m": 461,
+        "amount": 22000
+      },
+      {
+        "dist_m": 491,
+        "amount": 22000
+      },
+      {
+        "dist_m": 528,
+        "amount": 22000
+      },
+      {
+        "dist_m": 550,
+        "amount": 22000
+      },
+      {
+        "dist_m": 634,
+        "amount": 22000
+      },
+      {
+        "dist_m": 637,
+        "amount": 22000
+      },
+      {
+        "dist_m": 640,
+        "amount": 22000
+      }
+    ]
+  },
+  {
+    "map": "Citadel",
+    "nest": [
+      -225.0,
+      15.0
+    ],
+    "patches": 54,
+    "nearest_m": 71,
+    "median_m": 920,
+    "within_1000m": 32,
+    "within_1500m": 50,
+    "top": [
+      {
+        "dist_m": 71,
+        "amount": 22000
+      },
+      {
+        "dist_m": 117,
+        "amount": 22000
+      },
+      {
+        "dist_m": 176,
+        "amount": 22000
+      },
+      {
+        "dist_m": 231,
+        "amount": 22000
+      },
+      {
+        "dist_m": 239,
+        "amount": 22000
+      },
+      {
+        "dist_m": 282,
+        "amount": 22000
+      },
+      {
+        "dist_m": 329,
+        "amount": 22000
+      },
+      {
+        "dist_m": 384,
+        "amount": 22000
+      },
+      {
+        "dist_m": 387,
+        "amount": 22000
+      },
+      {
+        "dist_m": 402,
+        "amount": 22000
+      },
+      {
+        "dist_m": 402,
+        "amount": 22000
+      },
+      {
+        "dist_m": 437,
+        "amount": 22000
+      },
+      {
+        "dist_m": 450,
+        "amount": 22000
+      },
+      {
+        "dist_m": 483,
+        "amount": 22000
+      },
+      {
+        "dist_m": 509,
+        "amount": 22000
+      },
+      {
+        "dist_m": 549,
+        "amount": 22000
+      },
+      {
+        "dist_m": 572,
+        "amount": 22000
+      },
+      {
+        "dist_m": 596,
+        "amount": 22000
+      },
+      {
+        "dist_m": 615,
+        "amount": 22000
+      },
+      {
+        "dist_m": 628,
+        "amount": 22000
+      }
+    ]
+  },
+  {
+    "map": "CrimsonPeak",
+    "nest": [
+      -1410.0,
+      -135.0
+    ],
+    "patches": 96,
+    "nearest_m": 145,
+    "median_m": 1899,
+    "within_1000m": 17,
+    "within_1500m": 36,
+    "top": [
+      {
+        "dist_m": 145,
+        "amount": 22000
+      },
+      {
+        "dist_m": 147,
+        "amount": 22000
+      },
+      {
+        "dist_m": 195,
+        "amount": 22000
+      },
+      {
+        "dist_m": 320,
+        "amount": 22000
+      },
+      {
+        "dist_m": 328,
+        "amount": 22000
+      },
+      {
+        "dist_m": 411,
+        "amount": 22000
+      },
+      {
+        "dist_m": 765,
+        "amount": 22000
+      },
+      {
+        "dist_m": 776,
+        "amount": 22000
+      },
+      {
+        "dist_m": 807,
+        "amount": 22000
+      },
+      {
+        "dist_m": 809,
+        "amount": 22000
+      },
+      {
+        "dist_m": 820,
+        "amount": 22000
+      },
+      {
+        "dist_m": 855,
+        "amount": 22000
+      },
+      {
+        "dist_m": 856,
+        "amount": 22000
+      },
+      {
+        "dist_m": 884,
+        "amount": 22000
+      },
+      {
+        "dist_m": 946,
+        "amount": 22000
+      },
+      {
+        "dist_m": 966,
+        "amount": 22000
+      },
+      {
+        "dist_m": 982,
+        "amount": 22000
+      },
+      {
+        "dist_m": 1015,
+        "amount": 22000
+      },
+      {
+        "dist_m": 1020,
+        "amount": 22000
+      },
+      {
+        "dist_m": 1023,
+        "amount": 22000
+      }
+    ]
+  },
+  {
+    "map": "CrystalChasm",
+    "nest": [
+      -705.0,
+      -420.0
+    ],
+    "patches": 71,
+    "nearest_m": 111,
+    "median_m": 1362,
+    "within_1000m": 24,
+    "within_1500m": 41,
+    "top": [
+      {
+        "dist_m": 111,
+        "amount": 22000
+      },
+      {
+        "dist_m": 115,
+        "amount": 22000
+      },
+      {
+        "dist_m": 284,
+        "amount": 22000
+      },
+      {
+        "dist_m": 403,
+        "amount": 22000
+      },
+      {
+        "dist_m": 447,
+        "amount": 22000
+      },
+      {
+        "dist_m": 561,
+        "amount": 22000
+      },
+      {
+        "dist_m": 582,
+        "amount": 22000
+      },
+      {
+        "dist_m": 585,
+        "amount": 22000
+      },
+      {
+        "dist_m": 586,
+        "amount": 22000
+      },
+      {
+        "dist_m": 603,
+        "amount": 22000
+      },
+      {
+        "dist_m": 603,
+        "amount": 22000
+      },
+      {
+        "dist_m": 619,
+        "amount": 22000
+      },
+      {
+        "dist_m": 632,
+        "amount": 22000
+      },
+      {
+        "dist_m": 633,
+        "amount": 22000
+      },
+      {
+        "dist_m": 667,
+        "amount": 22000
+      },
+      {
+        "dist_m": 724,
+        "amount": 22000
+      },
+      {
+        "dist_m": 748,
+        "amount": 22000
+      },
+      {
+        "dist_m": 754,
+        "amount": 22000
+      },
+      {
+        "dist_m": 784,
+        "amount": 22000
+      },
+      {
+        "dist_m": 798,
+        "amount": 22000
+      }
+    ]
+  },
+  {
+    "map": "GreatErg",
+    "nest": [
+      -945.0,
+      1815.0
+    ],
+    "patches": 133,
+    "nearest_m": 186,
+    "median_m": 2859,
+    "within_1000m": 15,
+    "within_1500m": 19,
+    "top": [
+      {
+        "dist_m": 186,
+        "amount": 22000
+      },
+      {
+        "dist_m": 265,
+        "amount": 22000
+      },
+      {
+        "dist_m": 387,
+        "amount": 22000
+      },
+      {
+        "dist_m": 576,
+        "amount": 22000
+      },
+      {
+        "dist_m": 609,
+        "amount": 22000
+      },
+      {
+        "dist_m": 650,
+        "amount": 22000
+      },
+      {
+        "dist_m": 699,
+        "amount": 22000
+      },
+      {
+        "dist_m": 728,
+        "amount": 22000
+      },
+      {
+        "dist_m": 813,
+        "amount": 22000
+      },
+      {
+        "dist_m": 826,
+        "amount": 22000
+      },
+      {
+        "dist_m": 833,
+        "amount": 22000
+      },
+      {
+        "dist_m": 849,
+        "amount": 22000
+      },
+      {
+        "dist_m": 871,
+        "amount": 22000
+      },
+      {
+        "dist_m": 950,
+        "amount": 22000
+      },
+      {
+        "dist_m": 969,
+        "amount": 22000
+      },
+      {
+        "dist_m": 1148,
+        "amount": 22000
+      },
+      {
+        "dist_m": 1296,
+        "amount": 22000
+      },
+      {
+        "dist_m": 1332,
+        "amount": 22000
+      },
+      {
+        "dist_m": 1498,
+        "amount": 22000
+      },
+      {
+        "dist_m": 1512,
+        "amount": 22000
+      }
+    ]
+  },
+  {
+    "map": "IndustrialQuarter",
+    "nest": [
+      1185.0,
+      0.0
+    ],
+    "patches": 172,
+    "nearest_m": 77,
+    "median_m": 1490,
+    "within_1000m": 55,
+    "within_1500m": 90,
+    "top": [
+      {
+        "dist_m": 77,
+        "amount": 22000
+      },
+      {
+        "dist_m": 80,
+        "amount": 22000
+      },
+      {
+        "dist_m": 101,
+        "amount": 22000
+      },
+      {
+        "dist_m": 103,
+        "amount": 22000
+      },
+      {
+        "dist_m": 205,
+        "amount": 22000
+      },
+      {
+        "dist_m": 206,
+        "amount": 22000
+      },
+      {
+        "dist_m": 238,
+        "amount": 22000
+      },
+      {
+        "dist_m": 347,
+        "amount": 22000
+      },
+      {
+        "dist_m": 349,
+        "amount": 22000
+      },
+      {
+        "dist_m": 349,
+        "amount": 22000
+      },
+      {
+        "dist_m": 417,
+        "amount": 22000
+      },
+      {
+        "dist_m": 417,
+        "amount": 22000
+      },
+      {
+        "dist_m": 418,
+        "amount": 22000
+      },
+      {
+        "dist_m": 418,
+        "amount": 22000
+      },
+      {
+        "dist_m": 421,
+        "amount": 22000
+      },
+      {
+        "dist_m": 422,
+        "amount": 22000
+      },
+      {
+        "dist_m": 439,
+        "amount": 22000
+      },
+      {
+        "dist_m": 448,
+        "amount": 22000
+      },
+      {
+        "dist_m": 479,
+        "amount": 22000
+      },
+      {
+        "dist_m": 480,
+        "amount": 22000
+      }
+    ]
+  },
+  {
+    "map": "MonumentValley",
+    "nest": [
+      15.0,
+      1860.0
+    ],
+    "patches": 113,
+    "nearest_m": 220,
+    "median_m": 2525,
+    "within_1000m": 10,
+    "within_1500m": 21,
+    "top": [
+      {
+        "dist_m": 220,
+        "amount": 22000
+      },
+      {
+        "dist_m": 289,
+        "amount": 22000
+      },
+      {
+        "dist_m": 309,
+        "amount": 22000
+      },
+      {
+        "dist_m": 536,
+        "amount": 22000
+      },
+      {
+        "dist_m": 581,
+        "amount": 22000
+      },
+      {
+        "dist_m": 802,
+        "amount": 22000
+      },
+      {
+        "dist_m": 820,
+        "amount": 22000
+      },
+      {
+        "dist_m": 850,
+        "amount": 22000
+      },
+      {
+        "dist_m": 872,
+        "amount": 22000
+      },
+      {
+        "dist_m": 923,
+        "amount": 22000
+      },
+      {
+        "dist_m": 1016,
+        "amount": 22000
+      },
+      {
+        "dist_m": 1024,
+        "amount": 22000
+      },
+      {
+        "dist_m": 1038,
+        "amount": 22000
+      },
+      {
+        "dist_m": 1050,
+        "amount": 22000
+      },
+      {
+        "dist_m": 1121,
+        "amount": 22000
+      },
+      {
+        "dist_m": 1203,
+        "amount": 22000
+      },
+      {
+        "dist_m": 1204,
+        "amount": 22000
+      },
+      {
+        "dist_m": 1219,
+        "amount": 22000
+      },
+      {
+        "dist_m": 1280,
+        "amount": 22000
+      },
+      {
+        "dist_m": 1283,
+        "amount": 22000
+      }
+    ]
+  },
+  {
+    "map": "NarakaCity",
+    "nest": [
+      2520.0,
+      1275.0
+    ],
+    "patches": 107,
+    "nearest_m": 214,
+    "median_m": 3415,
+    "within_1000m": 8,
+    "within_1500m": 13,
+    "top": [
+      {
+        "dist_m": 214,
+        "amount": 22000
+      },
+      {
+        "dist_m": 216,
+        "amount": 22000
+      },
+      {
+        "dist_m": 601,
+        "amount": 22000
+      },
+      {
+        "dist_m": 682,
+        "amount": 22000
+      },
+      {
+        "dist_m": 802,
+        "amount": 22000
+      },
+      {
+        "dist_m": 848,
+        "amount": 22000
+      },
+      {
+        "dist_m": 944,
+        "amount": 22000
+      },
+      {
+        "dist_m": 977,
+        "amount": 22000
+      },
+      {
+        "dist_m": 1087,
+        "amount": 22000
+      },
+      {
+        "dist_m": 1206,
+        "amount": 22000
+      },
+      {
+        "dist_m": 1331,
+        "amount": 22000
+      },
+      {
+        "dist_m": 1381,
+        "amount": 22000
+      },
+      {
+        "dist_m": 1383,
+        "amount": 22000
+      },
+      {
+        "dist_m": 1603,
+        "amount": 22000
+      },
+      {
+        "dist_m": 1638,
+        "amount": 22000
+      },
+      {
+        "dist_m": 1740,
+        "amount": 22000
+      },
+      {
+        "dist_m": 1921,
+        "amount": 22000
+      },
+      {
+        "dist_m": 1938,
+        "amount": 22000
+      },
+      {
+        "dist_m": 1945,
+        "amount": 22000
+      },
+      {
+        "dist_m": 1951,
+        "amount": 22000
+      }
+    ]
+  },
+  {
+    "map": "NorthPolarCap",
+    "nest": [
+      1470.0,
+      240.0
+    ],
+    "patches": 63,
+    "nearest_m": 124,
+    "median_m": 1751,
+    "within_1000m": 13,
+    "within_1500m": 26,
+    "top": [
+      {
+        "dist_m": 124,
+        "amount": 22000
+      },
+      {
+        "dist_m": 181,
+        "amount": 22000
+      },
+      {
+        "dist_m": 184,
+        "amount": 22000
+      },
+      {
+        "dist_m": 329,
+        "amount": 22000
+      },
+      {
+        "dist_m": 425,
+        "amount": 22000
+      },
+      {
+        "dist_m": 565,
+        "amount": 22000
+      },
+      {
+        "dist_m": 578,
+        "amount": 22000
+      },
+      {
+        "dist_m": 633,
+        "amount": 22000
+      },
+      {
+        "dist_m": 727,
+        "amount": 22000
+      },
+      {
+        "dist_m": 758,
+        "amount": 22000
+      },
+      {
+        "dist_m": 855,
+        "amount": 22000
+      },
+      {
+        "dist_m": 896,
+        "amount": 22000
+      },
+      {
+        "dist_m": 922,
+        "amount": 22000
+      },
+      {
+        "dist_m": 1054,
+        "amount": 22000
+      },
+      {
+        "dist_m": 1059,
+        "amount": 22000
+      },
+      {
+        "dist_m": 1117,
+        "amount": 22000
+      },
+      {
+        "dist_m": 1143,
+        "amount": 22000
+      },
+      {
+        "dist_m": 1190,
+        "amount": 22000
+      },
+      {
+        "dist_m": 1224,
+        "amount": 22000
+      },
+      {
+        "dist_m": 1283,
+        "amount": 22000
+      }
+    ]
+  },
+  {
+    "map": "RiftBasin",
+    "nest": [
+      -1185.0,
+      -1230.0
+    ],
+    "patches": 64,
+    "nearest_m": 50,
+    "median_m": 2148,
+    "within_1000m": 10,
+    "within_1500m": 18,
+    "top": [
+      {
+        "dist_m": 50,
+        "amount": 22000
+      },
+      {
+        "dist_m": 158,
+        "amount": 22000
+      },
+      {
+        "dist_m": 229,
+        "amount": 22000
+      },
+      {
+        "dist_m": 267,
+        "amount": 22000
+      },
+      {
+        "dist_m": 396,
+        "amount": 22000
+      },
+      {
+        "dist_m": 489,
+        "amount": 22000
+      },
+      {
+        "dist_m": 544,
+        "amount": 22000
+      },
+      {
+        "dist_m": 647,
+        "amount": 22000
+      },
+      {
+        "dist_m": 939,
+        "amount": 22000
+      },
+      {
+        "dist_m": 954,
+        "amount": 22000
+      },
+      {
+        "dist_m": 1013,
+        "amount": 22000
+      },
+      {
+        "dist_m": 1019,
+        "amount": 22000
+      },
+      {
+        "dist_m": 1044,
+        "amount": 22000
+      },
+      {
+        "dist_m": 1114,
+        "amount": 22000
+      },
+      {
+        "dist_m": 1117,
+        "amount": 22000
+      },
+      {
+        "dist_m": 1120,
+        "amount": 22000
+      },
+      {
+        "dist_m": 1328,
+        "amount": 22000
+      },
+      {
+        "dist_m": 1457,
+        "amount": 22000
+      },
+      {
+        "dist_m": 1510,
+        "amount": 22000
+      },
+      {
+        "dist_m": 1518,
+        "amount": 22000
+      }
+    ]
+  },
+  {
+    "map": "TheMaw",
+    "nest": [
+      -390.0,
+      -630.0
+    ],
+    "patches": 31,
+    "nearest_m": 54,
+    "median_m": 1107,
+    "within_1000m": 12,
+    "within_1500m": 22,
+    "top": [
+      {
+        "dist_m": 54,
+        "amount": 22000
+      },
+      {
+        "dist_m": 110,
+        "amount": 22000
+      },
+      {
+        "dist_m": 271,
+        "amount": 22000
+      },
+      {
+        "dist_m": 297,
+        "amount": 22000
+      },
+      {
+        "dist_m": 356,
+        "amount": 22000
+      },
+      {
+        "dist_m": 375,
+        "amount": 22000
+      },
+      {
+        "dist_m": 491,
+        "amount": 22000
+      },
+      {
+        "dist_m": 570,
+        "amount": 22000
+      },
+      {
+        "dist_m": 631,
+        "amount": 22000
+      },
+      {
+        "dist_m": 755,
+        "amount": 22000
+      },
+      {
+        "dist_m": 784,
+        "amount": 22000
+      },
+      {
+        "dist_m": 949,
+        "amount": 22000
+      },
+      {
+        "dist_m": 1011,
+        "amount": 22000
+      },
+      {
+        "dist_m": 1086,
+        "amount": 22000
+      },
+      {
+        "dist_m": 1086,
+        "amount": 22000
+      },
+      {
+        "dist_m": 1107,
+        "amount": 22000
+      },
+      {
+        "dist_m": 1141,
+        "amount": 22000
+      },
+      {
+        "dist_m": 1162,
+        "amount": 22000
+      },
+      {
+        "dist_m": 1312,
+        "amount": 22000
+      },
+      {
+        "dist_m": 1323,
+        "amount": 22000
+      }
+    ]
+  },
+  {
+    "map": "WhisperingPlains",
+    "nest": [
+      -1140.0,
+      1125.0
+    ],
+    "patches": 105,
+    "nearest_m": 94,
+    "median_m": 1904,
+    "within_1000m": 15,
+    "within_1500m": 36,
+    "top": [
+      {
+        "dist_m": 94,
+        "amount": 22000
+      },
+      {
+        "dist_m": 110,
+        "amount": 22000
+      },
+      {
+        "dist_m": 112,
+        "amount": 22000
+      },
+      {
+        "dist_m": 156,
+        "amount": 22000
+      },
+      {
+        "dist_m": 503,
+        "amount": 22000
+      },
+      {
+        "dist_m": 514,
+        "amount": 22000
+      },
+      {
+        "dist_m": 530,
+        "amount": 22000
+      },
+      {
+        "dist_m": 612,
+        "amount": 22000
+      },
+      {
+        "dist_m": 640,
+        "amount": 22000
+      },
+      {
+        "dist_m": 665,
+        "amount": 22000
+      },
+      {
+        "dist_m": 742,
+        "amount": 22000
+      },
+      {
+        "dist_m": 756,
+        "amount": 22000
+      },
+      {
+        "dist_m": 782,
+        "amount": 22000
+      },
+      {
+        "dist_m": 927,
+        "amount": 22000
+      },
+      {
+        "dist_m": 984,
+        "amount": 22000
+      },
+      {
+        "dist_m": 1028,
+        "amount": 22000
+      },
+      {
+        "dist_m": 1034,
+        "amount": 22000
+      },
+      {
+        "dist_m": 1074,
+        "amount": 22000
+      },
+      {
+        "dist_m": 1101,
+        "amount": 22000
+      },
+      {
+        "dist_m": 1101,
+        "amount": 22000
+      }
+    ]
+  }
+]
