@@ -804,7 +804,12 @@ namespace Si_RTS_AI.Faction
             return false;
         }
 
-        internal static void ClearOrderedForNewRound() { _ordered.Clear(); _inFlight.Clear(); }
+        internal static void ClearOrderedForNewRound()
+        {
+            _ordered.Clear(); _inFlight.Clear();
+            _consecutiveSearchFails = 0; _placementBackoffUntil = 0f;
+            _currentBackoffS = BACKOFF_MIN_S;
+        }
 
         internal static bool TryBuildStructureForPlanner(
             Team team,
@@ -876,6 +881,44 @@ namespace Si_RTS_AI.Faction
         }
 
         /// <summary>
+        /// Back off when the game refuses everything.
+        ///
+        /// Construction can be impossible for reasons the planner cannot see —
+        /// most importantly, ALIENS CANNOT BUILD AT ALL WHILE THE QUEEN IS OUT
+        /// OF THE NEST. On 2026-07-30 a player un-nested the Queen at the start
+        /// of a match and disconnected; the planner then queued placement
+        /// searches for the same handful of targets for minutes, failing every
+        /// one, while 81,000 cash piled up behind 3 shrimps. Seventeen of those
+        /// searches were still outstanding when the map was changed to reset it,
+        /// and resolving them against a dying scene took the server down.
+        ///
+        /// So: repeated failure means STOP ASKING for a while, not ask harder.
+        /// Any success clears it — this must never latch on a genuinely
+        /// temporary refusal such as a spot briefly out of chain reach.
+        /// </summary>
+        const int   BACKOFF_AFTER_FAILS = 6;
+        const float BACKOFF_MIN_S       = 10f;
+        const float BACKOFF_MAX_S       = 60f;
+
+        static int   _consecutiveSearchFails;
+        static float _placementBackoffUntil;
+        static float _currentBackoffS = BACKOFF_MIN_S;
+
+        static void NoteSearchFailed()
+        {
+            _consecutiveSearchFails++;
+            if (_consecutiveSearchFails < BACKOFF_AFTER_FAILS) return;
+
+            _placementBackoffUntil = Time.time + _currentBackoffS;
+            MelonLogger.Warning(
+                $"[PLAN/EXEC] {_consecutiveSearchFails} placement searches failed in a row — " +
+                $"construction looks blocked (is the Queen out of the Nest?). " +
+                $"Holding new placements for {_currentBackoffS:F0}s.");
+            _consecutiveSearchFails = 0;
+            _currentBackoffS = Mathf.Min(BACKOFF_MAX_S, _currentBackoffS * 2f);
+        }
+
+        /// <summary>
         /// Is it still safe to touch the objects a placement callback was handed?
         ///
         /// A queued placement search cannot be cancelled, and on a map change
@@ -911,6 +954,7 @@ namespace Si_RTS_AI.Faction
             if (cd == null) return false;
             string cdName = cd.ObjectInfo?.DisplayName ?? "?";
             if (SearchInFlightNear(cdName, targetPos)) return false;
+            if (Time.time < _placementBackoffUntil) return false;
             var anchor = FindClosestStructureThatCanBuild(team, cd, targetPos);
             if (anchor == null) return false;
             _inFlight.Add(new InFlight { Name = cdName, Want = targetPos, At = Time.time });
@@ -919,6 +963,8 @@ namespace Si_RTS_AI.Faction
                 {
                     SearchDone(cdName, targetPos);
                     // SCENE TEARDOWN GUARD — see CallbackTargetsAlive.
+                    _consecutiveSearchFails = 0;
+                    _placementBackoffUntil = 0f;
                     if (!CallbackTargetsAlive(thisCd, cbTeam, cbStruct)) return;
                     try
                     {
@@ -987,6 +1033,7 @@ namespace Si_RTS_AI.Faction
                 onFail: (thisCd, cbTeam, cbStruct) =>
                 {
                     SearchDone(cdName, targetPos);
+                    NoteSearchFailed();
                     if (!CallbackTargetsAlive(thisCd, cbTeam, cbStruct)) return;
                     MelonLogger.Msg("[PLAN/EXEC] team=" + cbTeam.name +
                                     " placement search FAILED for " + (thisCd.ObjectInfo?.DisplayName ?? "?") +
