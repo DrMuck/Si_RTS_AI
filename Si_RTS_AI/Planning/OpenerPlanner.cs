@@ -92,6 +92,10 @@ namespace Si_RTS_AI.Planning
         /// one fewer site.
         /// </summary>
         const float REDUNDANT_DIR_PENALTY = 2000f;
+
+        /// <summary>Score per unit of biotics the chosen sites still hold. See
+        /// the derivation where it is applied.</summary>
+        const float RESERVE_VALUE_PER_BIOTIC = 0.04f;
         // Scored to the HANDOFF, not to some arbitrary later point.
         //
         // The Opener's job ends when Phase 2 takes over — around 3-4 minutes on
@@ -859,6 +863,8 @@ namespace Si_RTS_AI.Planning
             public float SpreadM;            // mean pairwise distance between sites
             public float NodePenalty;        // score cost of the chain
             public float SpreadBonus;
+            public long  BioticsTapped;
+            public float ReserveBonus;
             public readonly List<Step> Steps = new List<Step>();
 
             public string Describe()
@@ -873,6 +879,7 @@ namespace Si_RTS_AI.Planning
                   .Append(" sameDir=").Append(SpreadM.ToString("F2"))
                   .Append(" -nodes=").Append((int)NodePenalty)
                   .Append(" -sameDir=").Append((int)(-SpreadBonus))
+                  .Append(" +reserve=").Append((int)ReserveBonus)
                   .Append(" score=").Append((int)Score)
                   .Append(" cashLeft=").Append(CashAtHorizon)
                   .Append(" done@").Append((int)CompleteAtS).Append('s')
@@ -949,7 +956,37 @@ namespace Si_RTS_AI.Planning
             if (sites == null || sites.Count == 0) return null;
             int evalCount = 0;
 
-            int n = Mathf.Min(CANDIDATE_SITES, sites.Count);
+            // CANDIDATES BY WORTH, NOT BY DISTANCE ALONE.
+            //
+            // Sites arrive sorted by distance, and taking the nearest
+            // CANDIDATE_SITES is fine on a map where every patch holds the same
+            // amount — on NarakaCity all 107 hold 22,000, so worth/distance
+            // collapses to distance and this changes nothing.
+            //
+            // It fails badly where clusters exist. IndustrialQuarter has 172
+            // patches in 123 sites at clusterSize 2.1, and the nearest 8 covers
+            // a tiny radius: the opener took a 3-patch cluster at 21m and then
+            // SINGLE patches at 666m, 900m and 983m, each needing its own
+            // ~110m-per-hop chain — 17 Nodes for 5 Bio Caches. A richer cluster
+            // further out was never rejected; it was never a candidate.
+            //
+            // Ranking by biotics per metre puts a 4-patch cluster at 900m
+            // (88,000 / 900 = 98) ahead of a lone patch at 666m (22,000 / 666 =
+            // 33), which is the trade actually worth making: one Bio Cache, one
+            // chain, four patches.
+            var pool = new List<int>(sites.Count);
+            for (int i = 0; i < sites.Count; i++) pool.Add(i);
+            pool.Sort((a, b) =>
+            {
+                float va = sites[a].Biotics / Mathf.Max(1f, sites[a].DistFromNest);
+                float vb = sites[b].Biotics / Mathf.Max(1f, sites[b].DistFromNest);
+                return vb.CompareTo(va);
+            });
+            int n = Mathf.Min(CANDIDATE_SITES, pool.Count);
+            pool.RemoveRange(n, pool.Count - n);
+            // Back into distance order: the recursion builds combinations in the
+            // order a chain is actually laid, so it must not permute.
+            pool.Sort((a, b) => sites[a].DistFromNest.CompareTo(sites[b].DistFromNest));
             Plan best = null;
 
             // Keep the runners-up. Two candidate sets can be identical in cost
@@ -987,7 +1024,7 @@ namespace Si_RTS_AI.Planning
                 }
                 for (int i = start; i < n; i++)
                 {
-                    chosen.Add(i);
+                    chosen.Add(pool[i]);
                     Recurse(i + 1, want);
                     chosen.RemoveAt(chosen.Count - 1);
                 }
@@ -1004,8 +1041,9 @@ namespace Si_RTS_AI.Planning
 
             // The best opening that taps a site the winner ignored. This is the
             // "why not that patch?" question in one line, rather than a guess.
-            for (int sIdx = 0; sIdx < n; sIdx++)
+            for (int pi = 0; pi < n; pi++)
             {
+                int sIdx = pool[pi];
                 if (best != null && best.SiteIdx.Contains(sIdx)) continue;
                 Plan bestWith = null;
                 for (int i = 0; i < top.Count; i++)
@@ -1213,10 +1251,32 @@ namespace Si_RTS_AI.Planning
             plan.NodePenalty = NODE_SCORE_COST * plan.TotalNodes;
             plan.SpreadBonus = -RedundancyPenalty() * plan.SpreadM;
 
+            // WHAT THE SITES STILL HOLD.
+            //
+            // Income to the handoff cannot see a cluster's advantage: in the
+            // first 240s the limit is how many shrimps exist, not how much
+            // biotics is reachable, so a 3-patch site out-earns a 1-patch site
+            // by well under one percent. IndustrialQuarter 2026-07-30: the plan
+            // taking the western 3-patch cluster had the HIGHEST income of every
+            // candidate (43,894) and still lost by 1,335, because the node and
+            // direction penalties are charged per SITE — a cluster pays a lone
+            // patch's costs for three times the ground.
+            //
+            // So credit what a site still holds. Rated at a small fraction of
+            // its eventual cash value: 1,500 cash of Cyst bought ~2,895 score,
+            // about 1.93 per cash, and unmined biotics is valued here at 0.04 —
+            // roughly two percent of that — because it is far off and depends on
+            // shrimps that may never be built.
+            long bioticsTapped = 0;
+            for (int i = 0; i < siteIdx.Count; i++) bioticsTapped += MapProfile.Sites[siteIdx[i]].Biotics;
+            plan.BioticsTapped = bioticsTapped;
+            plan.ReserveBonus  = RESERVE_VALUE_PER_BIOTIC * bioticsTapped;
+
             plan.Score = plan.IncomeToHandoff
                        + rateAtHandoff * TERMINAL_TAIL_S
                        - plan.NodePenalty
-                       + plan.SpreadBonus;
+                       + plan.SpreadBonus
+                       + plan.ReserveBonus;
             plan.CashAtHorizon = s.cash;
             return plan;
         }
