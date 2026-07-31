@@ -1124,18 +1124,32 @@ namespace Si_RTS_AI.Planning
                     // planner's own dedup log. Construct's Success result is
                     // recorded centrally — consult it, or the beam builds a
                     // second Cyst 42m from the first, 20s later.
-                    // A NEW SITE NEEDS SHRIMPS TO STAND ON IT.
+                    // NO STAFFING GATE ON EXPANSION.
                     //
-                    // Opener steps are exempt: the opening is costed as a whole
-                    // and its sites are the ones the shrimps are being built
-                    // FOR. This gates the beam's Phase 2 expansion, which starts
-                    // the moment the opener's queue empties and does not ask
-                    // whether the patches already held are staffed. NarakaCity
-                    // 2026-07-30: a fifth Bio Cache at 16:25:53, 24s after the
-                    // opener finished, with shrimps=40 against totalCap=56.
+                    // There was one — expansion required existing capacity to be
+                    // 85% staffed — and it was the wrong answer to a real
+                    // complaint. The complaint (user, 2026-07-30) was that a 5th
+                    // Bio Cache "draws money important to build shrimps": a CASH
+                    // priority problem. A staffing ratio is not that, and it
+                    // inverts the timing that matters — a new site needs chain,
+                    // build and the Cyst-to-patch walk before it produces
+                    // anything, so expansion has to start AHEAD of demand.
+                    // Waiting until we are already full starts it late by
+                    // exactly that latency.
+                    //
+                    // It also deadlocked against the Phase 2 production
+                    // headroom: holding shrimps back for expansions lowered the
+                    // fill ratio, which blocked the expansion the headroom was
+                    // being held for. RiftBasin 2026-07-31 sat at 40/82 with the
+                    // growth model pointing east every tick and four Bio Cache
+                    // candidates refused as "understaffed40/82" — no expansion
+                    // east for the whole round.
+                    //
+                    // Shrimp production is protected where it belongs, by the
+                    // cash floor below, not by refusing to take ground.
                     if (!openerFiring && c.kind == ActionKind.PlaceBc
-                        && !ShrimpGroupPlanner.ExpansionWarranted(out int shrN, out int capN))
-                    { Skip("understaffed" + shrN + "/" + capN); return true; }
+                        && !EnoughCashLeftForShrimps(team, c.cost))
+                    { Skip("shrimpCash"); return true; }
 
                     if (c.kind == ActionKind.PlaceCyst && CystAlreadyComing(c.target))
                     { Skip("cystOrdered"); return true; }
@@ -1761,6 +1775,35 @@ namespace Si_RTS_AI.Planning
         /// dedup log, and 20s after the Opener's Cyst at (2620,1080) the beam
         /// added a second one 42m away on the same biotics.
         /// </summary>
+        /// <summary>
+        /// Would this purchase leave the running Cysts able to keep producing?
+        ///
+        /// This is what the old staffing gate was actually reaching for. A Bio
+        /// Cache costs 500 and earns nothing until shrimps stand on it, so it
+        /// must not consume the cash the existing producers need — but that is a
+        /// question about the BANK, not about how full the map is.
+        /// </summary>
+        static bool EnoughCashLeftForShrimps(Team team, int cost)
+        {
+            int producers = 0;
+            try
+            {
+                var structs = team?.Structures;
+                if (structs != null)
+                    for (int i = 0; i < structs.Count; i++)
+                    {
+                        var st = structs[i];
+                        if (st == null || st.ObjectInfo == null || st.IsDestroyed) continue;
+                        if ((st.ObjectInfo.DisplayName ?? "") == "Lesser Spawning Cyst") producers++;
+                    }
+            }
+            catch { }
+            int floor = producers * EcoSimulator.SHRIMP_COST;
+            int cash;
+            try { cash = team.TotalResources; } catch { return true; }
+            return cash - cost >= floor;
+        }
+
         static bool CystAlreadyComing(Vector3 pos)
         {
             const string CYST = "Lesser Spawning Cyst";

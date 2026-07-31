@@ -954,23 +954,6 @@ namespace Si_RTS_AI.Planning
         internal static int TeamShrimps { get; private set; }
 
         /// <summary>
-        /// Is another harvesting site worth building yet?
-        ///
-        /// A Bio Cache only earns through shrimps standing on it. While the
-        /// patches we already hold have unfilled slots, a further site adds
-        /// capacity nobody can staff and takes 500 that shrimps needed.
-        /// NarakaCity 2026-07-30: a fifth Bio Cache went up at 16:25:53 with
-        /// shrimps=40 against totalCap=56 — sixteen slots already empty. User:
-        /// "a fifth bio cache placed despite it isnt used early on. That draws
-        /// money important to build shrimps."
-        ///
-        /// Deliberately a FILL FRACTION rather than "completely full": waiting
-        /// for the last slot would stall expansion permanently, since the final
-        /// slots on a patch are the least worth filling.
-        /// </summary>
-        const float EXPANSION_FILL_FRACTION = 0.85f;
-
-        /// <summary>
         /// What one group on THIS map typically feeds — TeamCapacity averaged
         /// over the groups that still have any. Map-dependent by construction:
         /// it falls out of patch storage, patch distribution and how many
@@ -996,14 +979,6 @@ namespace Si_RTS_AI.Planning
         /// <summary>Live patches no Bio Cache serves yet — is there anywhere
         /// left to expand to at all?</summary>
         internal static int FreePatchCount => _freePatches != null ? _freePatches.Length : 0;
-
-        internal static bool ExpansionWarranted(out int shrimps, out int capacity)
-        {
-            shrimps = TeamShrimps;
-            capacity = TeamCapacity;
-            if (capacity <= 0) return true;              // nothing held yet
-            return shrimps >= capacity * EXPANSION_FILL_FRACTION;
-        }
 
         static void LogDiag(List<Group> groups, List<int> order, int shrimps, int totalCap, int moved)
         {
