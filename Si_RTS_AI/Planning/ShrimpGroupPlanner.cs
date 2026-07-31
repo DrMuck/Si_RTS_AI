@@ -157,7 +157,7 @@ namespace Si_RTS_AI.Planning
 
         // Snapshot published for AlienShrimpProducer so production respects
         // the same capacity model instead of a flat per-BC constant.
-        struct BcCap { public Vector3 Pos; public int Capacity; public int Current; public Vector3 Best; public bool HasProducer; }
+        struct BcCap { public Vector3 Pos; public int Capacity; public int Current; public Vector3 Best; public bool HasProducer; public int Patches; }
         static BcCap[] _capSnapshot = new BcCap[0];
 
         /// <summary>
@@ -411,6 +411,21 @@ namespace Si_RTS_AI.Planning
                 }
                 if (here < 0 || hereSq > GROUP_PATCH_RADIUS_M * GROUP_PATCH_RADIUS_M) continue;
                 if (snap[here].Capacity > 0) continue;      // still worth harvesting
+
+                // NO PATCHES IS NOT A DEPLETED PATCH.
+                //
+                // The Nest's group has Capacity 0 because it serves no biotics
+                // at all, not because its biotics ran out. Every shrimp spawns
+                // there, so treating it as stranded evacuated each new shrimp
+                // the moment it appeared — NarakaCity 2026-07-31 logged
+                // "1 stranded, 1 relocated" every production cycle — and since
+                // this pass assigns on a 15s cooldown while the regroup runs
+                // every 2s, the two disagreed and shrimps bounced.
+                //
+                // A freshly produced shrimp is not an emergency. Leave it to the
+                // normal allocation, which places free agents without spending
+                // the migration budget anyway.
+                if (snap[here].Patches == 0) continue;
 
                 stranded++;
 
@@ -926,7 +941,8 @@ namespace Si_RTS_AI.Planning
             {
                 snap[i] = new BcCap { Pos = groups[i].Anchor, Capacity = groups[i].Capacity,
                                       Current = groups[i].Current, Best = groups[i].BestPatch,
-                                      HasProducer = groups[i].HasProducer };
+                                      HasProducer = groups[i].HasProducer,
+                                      Patches = groups[i].Patches };
                 total += groups[i].Capacity;
             }
             _capSnapshot = snap;
