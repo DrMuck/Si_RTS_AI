@@ -68,6 +68,35 @@ namespace Si_RTS_AI.Planning
             catch (Exception ex) { MelonLogger.Warning("[NODEMGR] threw: " + ex.Message); }
         }
 
+        /// <summary>
+        /// Is this structure decaying — i.e. has the game cut it off?
+        ///
+        /// Read by reflection for the same reason as the Queen check: we compile
+        /// against netstandard reference stubs, so Il2Cpp generic GetComponent
+        /// is not reliably available here. Absence of the component, or any
+        /// interop failure, reports NOT decaying — a false "fine" costs a missed
+        /// repair, a false "cut" would trigger repairs on a healthy network.
+        /// </summary>
+        internal static bool IsDecaying(Structure st)
+        {
+            try
+            {
+                var comps = st.GetComponents(typeof(Component));
+                if (comps == null) return false;
+                for (int i = 0; i < comps.Length; i++)
+                {
+                    var c = comps[i];
+                    if (c == null) continue;
+                    if (c.GetType().Name != "Decay") continue;
+                    var p = c.GetType().GetProperty("enabled");
+                    if (p == null) return false;
+                    return p.GetValue(c, null) is bool b && b;
+                }
+            }
+            catch { }
+            return false;
+        }
+
         static List<Node> BuildGraph(Team team)
         {
             var g = new List<Node>();
@@ -118,6 +147,31 @@ namespace Si_RTS_AI.Planning
                     if (!seen[adj[k]]) { seen[adj[k]] = true; stack.Push(adj[k]); }
             }
 
+            // THE GAME ALREADY SAYS SO.
+            //
+            // A structure cut off from a Nest has its Decay component switched
+            // on — that is the authoritative statement, and it needs no graph.
+            // Read it directly and report it beside our computed orphan count,
+            // so the two can be compared: if they agree, detection can rely on
+            // Decay alone and the graph is only needed for cut vertices.
+            // User 2026-07-31: use it event-based to detect cut node lines.
+            int decaying = 0;
+            Vector3 firstDecaying = Vector3.zero;
+            try
+            {
+                var structs = team.Structures;
+                if (structs != null)
+                    for (int i = 0; i < structs.Count; i++)
+                    {
+                        var st = structs[i];
+                        if (st == null || st.IsDestroyed) continue;
+                        if (!IsDecaying(st)) continue;
+                        if (decaying == 0) firstDecaying = st.transform.position;
+                        decaying++;
+                    }
+            }
+            catch (Exception ex) { MelonLogger.Warning("[NODEMGR] decay read threw: " + ex.Message); }
+
             int orphans = 0;
             Vector3 firstOrphan = Vector3.zero;
             for (int i = 0; i < g.Count; i++)
@@ -130,10 +184,14 @@ namespace Si_RTS_AI.Planning
             sb.Append("[NODEMGR] structures=").Append(g.Count)
               .Append(" nests=").Append(nests)
               .Append(" orphaned=").Append(orphans)
+              .Append(" decaying=").Append(decaying)
               .Append(" singlePointsOfFailure=").Append(cuts.Count);
             if (orphans > 0)
                 sb.Append(" firstOrphan=(").Append(firstOrphan.x.ToString("F0")).Append(',')
                   .Append(firstOrphan.z.ToString("F0")).Append(')');
+            if (decaying > 0)
+                sb.Append(" firstDecaying=(").Append(firstDecaying.x.ToString("F0")).Append(',')
+                  .Append(firstDecaying.z.ToString("F0")).Append(')');
             // The most valuable loop is the cut vertex carrying the most behind
             // it; for now report a few so the pattern is visible.
             int shown = 0;
