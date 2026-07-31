@@ -957,6 +957,7 @@ namespace Si_RTS_AI.Planning
             public long  BioticsTapped;
             public float ReserveBonus;
             public bool  DoubledCyst;
+            public float TerminalValue;
             public readonly List<Step> Steps = new List<Step>();
 
             public string Describe()
@@ -968,6 +969,7 @@ namespace Si_RTS_AI.Planning
                   .Append(" cost=").Append(CostCash)
                   .Append(" income@").Append((int)SCORE_HORIZON_S).Append("s=").Append(IncomeToHandoff)
                   .Append(" rate=").Append(RateAtHandoff.ToString("F0")).Append("/s")
+                  .Append(" tail=").Append((int)TerminalValue)
                   .Append(" sameDir=").Append(SpreadM.ToString("F2"))
                   .Append(" -nodes=").Append((int)NodePenalty)
                   .Append(" -sameDir=").Append((int)(-SpreadBonus))
@@ -1038,6 +1040,32 @@ namespace Si_RTS_AI.Planning
                     if (d < REDUNDANT_ANGLE_DEG)
                         total += 1f - d / REDUNDANT_ANGLE_DEG;
                 }
+            return total;
+        }
+
+        /// <summary>
+        /// Biotics still in the ground under this plan's Bio Caches at handoff.
+        /// The ceiling on anything the terminal tail can credit.
+        /// </summary>
+        static float RemainingUnderPlan(EcoState s)
+        {
+            // Same radius the shrimp grouping uses to decide which patches a
+            // Bio Cache actually serves.
+            const float SERVICE_M = 200f;
+            float radSq = SERVICE_M * SERVICE_M;
+            float total = 0f;
+            for (int pi = 0; pi < s.patches.Count; pi++)
+            {
+                if (s.patches[pi].remaining <= 0) continue;
+                for (int bi = 0; bi < s.bcs.Count; bi++)
+                {
+                    float dx = s.bcs[bi].pos.x - s.patches[pi].pos.x;
+                    float dz = s.bcs[bi].pos.z - s.patches[pi].pos.z;
+                    if (dx * dx + dz * dz > radSq) continue;
+                    total += s.patches[pi].remaining;
+                    break;                       // count each patch once
+                }
+            }
             return total;
         }
 
@@ -1393,8 +1421,25 @@ namespace Si_RTS_AI.Planning
             plan.BioticsTapped = bioticsTapped;
             plan.ReserveBonus  = RESERVE_VALUE_PER_BIOTIC * bioticsTapped;
 
+            // THE TAIL CANNOT OUTLAST THE RESOURCE.
+            //
+            // Terminal value was rate-at-handoff projected flat for 240s, which
+            // assumes the ground keeps paying. It does not: a site worked by
+            // twice as many shrimps drains in half the time. At realistic early
+            // counts a 22,000 patch lasts 280-670s, so depletion falls OUTSIDE
+            // the 240s scoring window and was invisible — precisely the risk in
+            // doubling up on one patch (user, 2026-07-31: "one disadvantage of
+            // double cyst is faster depletion").
+            //
+            // So cap the tail by what is actually left. Earning `rate` for
+            // TERMINAL_TAIL_S is only possible while there is resource to earn
+            // it from; beyond that the income stops regardless of how many
+            // shrimps are standing there.
+            float remainingAtHandoff = RemainingUnderPlan(s);
+            plan.TerminalValue = Mathf.Min(rateAtHandoff * TERMINAL_TAIL_S, remainingAtHandoff);
+
             plan.Score = plan.IncomeToHandoff
-                       + rateAtHandoff * TERMINAL_TAIL_S
+                       + plan.TerminalValue
                        - plan.NodePenalty
                        + plan.SpreadBonus
                        + plan.ReserveBonus;
