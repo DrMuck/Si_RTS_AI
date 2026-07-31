@@ -970,6 +970,33 @@ namespace Si_RTS_AI.Planning
         /// </summary>
         const float EXPANSION_FILL_FRACTION = 0.85f;
 
+        /// <summary>
+        /// What one group on THIS map typically feeds — TeamCapacity averaged
+        /// over the groups that still have any. Map-dependent by construction:
+        /// it falls out of patch storage, patch distribution and how many
+        /// patches a Bio Cache reaches, all of which vary per map and are
+        /// editable via Si_MapBalance. Zero when nothing has capacity.
+        /// </summary>
+        internal static int TypicalGroupCapacity
+        {
+            get
+            {
+                var snap = _capSnapshot;
+                if (snap == null || snap.Length == 0) return 0;
+                int total = 0, n = 0;
+                for (int i = 0; i < snap.Length; i++)
+                {
+                    if (snap[i].Capacity <= 0) continue;
+                    total += snap[i].Capacity; n++;
+                }
+                return n > 0 ? total / n : 0;
+            }
+        }
+
+        /// <summary>Live patches no Bio Cache serves yet — is there anywhere
+        /// left to expand to at all?</summary>
+        internal static int FreePatchCount => _freePatches != null ? _freePatches.Length : 0;
+
         internal static bool ExpansionWarranted(out int shrimps, out int capacity)
         {
             shrimps = TeamShrimps;

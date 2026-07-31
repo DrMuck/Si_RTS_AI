@@ -67,6 +67,9 @@ namespace Si_RTS_AI.Planning
         public enum PlanPhase { Phase1_BaseEco, Phase2_Expand }
         static readonly Dictionary<Team, PlanPhase> _phaseByTeam = new Dictionary<Team, PlanPhase>();
         static PlanPhase _currentPhase = PlanPhase.Phase1_BaseEco;
+
+        /// <summary>Is the planner past base-eco and into expansion?</summary>
+        internal static bool CurrentPhaseIsExpand => _currentPhase == PlanPhase.Phase2_Expand;
         // Public accessor for other sub-planners (ShrimpRelocator etc.) that
         // need phase-aware behavior. This is the "shared context" that the
         // future money broker will formalize; for now it's a static read.

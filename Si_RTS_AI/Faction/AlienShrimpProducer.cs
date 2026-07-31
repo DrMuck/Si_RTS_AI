@@ -48,6 +48,14 @@ namespace Si_RTS_AI.Faction
         // ~200 on map counting in-flight queued shrimps between spawn and
         // arrival at the destination BC.
         const int   SHRIMP_HARD_CAP = 185;
+
+        /// <summary>
+        /// How many future expansion sites to hold unit-cap room for, so a
+        /// freshly built Cyst can staff its own patch instead of waiting for
+        /// migrants. Multiplied by what a site on THIS map actually feeds, and
+        /// capped at a quarter of the ceiling so it can never starve production.
+        /// </summary>
+        const int   EXPANSION_SITES_HELD = 2;
         // Money management: each queued Shrimp reserves its cost. User 2026-07-07
         // asked to shorten to 1-2 max to free cash for tech / other placements.
         // Went to 1: at 20 Cysts that frees ~1500 cash (75 × 20) — enough for a
@@ -152,6 +160,44 @@ namespace Si_RTS_AI.Faction
             }
             catch { }
             int effectiveCap = Math.Min(SHRIMP_HARD_CAP, mapCap);
+
+            // KEEP HEADROOM FOR EXPANSIONS THAT DO NOT EXIST YET.
+            //
+            // Filling to the cap early is self-defeating: a new expansion Cyst
+            // then cannot produce ANYTHING locally, so the only way to staff it
+            // is to walk shrimps in from older sites — which is the mass
+            // migration. NarakaCity 2026-07-31, shrimps against unit cap 185:
+            //
+            //     t~4min  shrimps=52   totalCap=52    reissued=30
+            //     t~6min  shrimps=87   totalCap=128   reissued=163
+            //     t~8min  shrimps=133  totalCap=140   reissued=476
+            //     t~10min shrimps=196  totalCap=205   reissued=939
+            //
+            // Production was capped out, patch capacity tracked just behind the
+            // shrimp count the whole way, and by 8min there was nowhere to put
+            // anyone — every depletion became a scramble. User 2026-07-31:
+            // "building too many shrimps early can hurt later in aggressive
+            // expansion, because the shrimp cap limit is reached too quick and
+            // it is not possible to build shrimps at the expansions."
+            //
+            // Only from Phase 2 — the opening should ramp flat out, since there
+            // is nothing to expand to yet.
+            // Sized from the MAP, not a constant. How many shrimps a site can
+            // feed falls out of patch storage, patch distribution and how many
+            // patches a Bio Cache reaches — all map-specific and editable via
+            // Si_MapBalance, so a fixed number is right nowhere. And no headroom
+            // at all if there is nothing left to expand to.
+            if (Planning.EcoPlanner.CurrentPhaseIsExpand
+                && Planning.ShrimpGroupPlanner.FreePatchCount > 0)
+            {
+                int perSite = Planning.ShrimpGroupPlanner.TypicalGroupCapacity;
+                if (perSite > 0)
+                {
+                    int headroom = Math.Min(EXPANSION_SITES_HELD * perSite, effectiveCap / 4);
+                    effectiveCap = Math.Max(1, effectiveCap - headroom);
+                }
+            }
+
             if (liveTotal + queuedTotal >= effectiveCap) return;
 
             // 4) For each Cyst that can produce Shrimp, find its nearest BC
