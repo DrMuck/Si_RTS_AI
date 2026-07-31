@@ -533,6 +533,8 @@ namespace Si_RTS_AI.Planning
 
         static void Run(Team team)
         {
+            float nowT = Time.time;
+            int placedFirstTime = 0;
             // ---- Patches ----
             var patches = new List<Patch>();
             try
@@ -679,10 +681,33 @@ namespace Si_RTS_AI.Planning
                         if (d < ntd) { ntd = d; nt = ti; }
                     }
                     if (nt >= 0) og.TargetLoad[nt]++;
+
+                    // PLACE EVERY SHRIMP ONCE, NOT JUST THE ONES WE MOVE.
+                    //
+                    // Only relocated shrimps ever got an _assign entry, so a
+                    // shrimp already standing in the right group was never
+                    // ordered, never drift-checked, and left entirely to vanilla
+                    // micro-AI — which is what wanders off the patch. Our own
+                    // numbers were clean while the wandering continued
+                    // (NarakaCity 2026-07-31: migrated=1, reissued=0 at 31
+                    // shrimps) precisely because we were not touching them.
+                    //
+                    // One order on first sight pins it to its group's target;
+                    // after that the existing drift check (REISSUE_DRIFT_M, on a
+                    // REISSUE_COOLDOWN_S timer) keeps it there without thrash.
+                    if (og.Capacity > 0 && !_assign.ContainsKey(u) && nt >= 0)
+                    {
+                        Vector3 tgt = og.Targets[nt];
+                        IssueMove(u, tgt);
+                        _assign[u] = new Assignment { Target = tgt, AssignedAt = nowT, LastOrderAt = nowT };
+                        placedFirstTime++;
+                    }
                 }
             }
             catch { return; }
             if (shrimps.Count == 0) return;
+            if (placedFirstTime > 0)
+                MelonLogger.Msg($"[SHRIMP-GRP] took control of {placedFirstTime} unassigned shrimps");
 
             // ---- Waterfill: spread to SOFT_TARGET first, then top up ----
             var order = new List<int>(groups.Count);
