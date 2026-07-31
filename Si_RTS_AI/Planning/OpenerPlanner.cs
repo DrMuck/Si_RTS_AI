@@ -956,13 +956,14 @@ namespace Si_RTS_AI.Planning
             public float SpreadBonus;
             public long  BioticsTapped;
             public float ReserveBonus;
+            public bool  DoubledCyst;
             public readonly List<Step> Steps = new List<Step>();
 
             public string Describe()
             {
                 var sb = new System.Text.StringBuilder();
                 sb.Append("sites=").Append(SiteIdx.Count)
-                  .Append(" cysts=").Append(CystCount)
+                  .Append(" cysts=").Append(CystCount).Append(DoubledCyst ? "(2x1site)" : "")
                   .Append(" nodes=").Append(TotalNodes)
                   .Append(" cost=").Append(CostCash)
                   .Append(" income@").Append((int)SCORE_HORIZON_S).Append("s=").Append(IncomeToHandoff)
@@ -1103,7 +1104,15 @@ namespace Si_RTS_AI.Planning
             {
                 if (chosen.Count == want)
                 {
-                    for (int cysts = 2; cysts <= chosen.Count; cysts++)
+                    // Allow ONE site to take a second Cyst. Reaching a further
+                    // biotics costs a Bio Cache, a Cyst and its node chain —
+                    // 3,000 on the last NarakaCity plan — while a second Cyst on
+                    // ground already held costs 1,500 and no nodes at all. Early
+                    // on the binding constraint is shrimp PRODUCTION, not patch
+                    // capacity: measured 3 shrimps against a per-patch ceiling of
+                    // 18, so doubling production where we already stand may beat
+                    // paying for reach. User idea, 2026-07-31.
+                    for (int cysts = 2; cysts <= chosen.Count + 1; cysts++)
                     {
                         var p = Evaluate(root, chosen, cysts);
                         evalCount++;
@@ -1294,6 +1303,27 @@ namespace Si_RTS_AI.Planning
                 // own Cyst to finish, so the Cyst's shrimp is already building
                 // while the BC goes up.
 
+            }
+
+            // The extra Cyst, when this candidate doubles up. It goes on the
+            // FIRST site: nearest, already reachable, and the place where extra
+            // production compounds for the longest.
+            plan.DoubledCyst = cystCount > siteIdx.Count;
+            if (plan.DoubledCyst && siteIdx.Count > 0)
+            {
+                if (!Afford(s, EcoSimulator.CYST_COST)) return null;
+                var site0 = MapProfile.Sites[siteIdx[0]];
+                Vector3 bc0 = OffsetFromSite(s, site0.Centroid, BC_PATCH_STANDOFF_M);
+                // Mirror the usual offset so the two Cysts do not contend for
+                // the same ground in the placement search.
+                Vector3 t2 = OffsetCystBeside(site0.Centroid, bc0, -CYST_BESIDE_M);
+                s.cysts.Add(new EcoState.Cyst { pos = t2, finished = false,
+                    readyAt = s.t + EcoSimulator.CYST_BUILD_S,
+                    nextSpawnAt = s.t + EcoSimulator.CYST_BUILD_S + EcoSimulator.SHRIMP_BUILD_S });
+                plan.Steps.Add(new Step { Kind = StepKind.Cyst, Target = t2,
+                                          Goal = site0.Centroid, Cost = EcoSimulator.CYST_COST });
+                s.cash -= EcoSimulator.CYST_COST;
+                cost += EcoSimulator.CYST_COST;
             }
 
             plan.CostCash = cost;
