@@ -273,12 +273,41 @@ namespace Si_RTS_AI.Planning
                     if (bcIdx < 0) bcIdx = ClosestFinishedBcIdx(s, c.pos);   // fallback
                     if (bcIdx >= 0)
                     {
-                        s.shrimpsPerBc.TryGetValue(bcIdx, out int cur);
-                        s.shrimpsPerBc[bcIdx] = cur + 1;
+                        // A NEW SHRIMP EARNS NOTHING UNTIL ITS FIRST LOAD LANDS.
+                        //
+                        // It was counted into shrimpsPerBc on the spawn tick and
+                        // credited full steady-state income from that instant,
+                        // which ignored two real delays: the walk from the Cyst
+                        // to the patch — hundreds of metres on the 3rd or 4th
+                        // site — and the fill-and-return before anything is
+                        // deposited. Both are largest exactly where it matters,
+                        // in a 240s window where most shrimps are young, and
+                        // they are the leading suspects for the model reporting
+                        // 42,418 earned at 240s against a real ~12,000.
+                        //
+                        // Per-shrimp STEADY-STATE rate was already about right
+                        // (5.5/s modelled against 6.0/s measured), so the error
+                        // is in shrimp-seconds of production, not in the harvest
+                        // maths — which is what this corrects.
+                        s.pendingShrimps.Add(new EcoState.PendingShrimp
+                        {
+                            bcIdx = bcIdx,
+                            activeAt = s.t + FirstDepositDelay(s, c.pos, bcIdx),
+                        });
                     }
                     c.nextSpawnAt += SHRIMP_BUILD_S;
                 }
                 s.cysts[i] = c;
+            }
+
+            // (2b) Promote shrimps whose first load has now landed.
+            for (int i = s.pendingShrimps.Count - 1; i >= 0; i--)
+            {
+                if (s.t < s.pendingShrimps[i].activeAt) continue;
+                int bi = s.pendingShrimps[i].bcIdx;
+                s.shrimpsPerBc.TryGetValue(bi, out int cur);
+                s.shrimpsPerBc[bi] = cur + 1;
+                s.pendingShrimps.RemoveAt(i);
             }
 
             // (3) Per-BC harvest -> cash + patch depletion.
@@ -440,13 +469,39 @@ namespace Si_RTS_AI.Planning
                 float cycle = 2f * d / SHRIMP_SPEED
                             + (float)CARRY_CAPACITY / HARVEST_RATE
                             + (float)CARRY_CAPACITY / DEPOSIT_RATE;
+                // Count shrimps already WALKING here too, or a burst of spawns
+                // all picks the same Bio Cache — none of them are in
+                // shrimpsPerBc yet, so each sees the same empty marginal slot.
                 s.shrimpsPerBc.TryGetValue(i, out int N);
+                for (int p = 0; p < s.pendingShrimps.Count; p++)
+                    if (s.pendingShrimps[p].bcIdx == i) N++;
                 float now  = IncomePerSec(N,     d, cycle);
                 float next = IncomePerSec(N + 1, d, cycle);
                 float marginal = next - now;
                 if (marginal > bestMarginal) { bestMarginal = marginal; best = i; }
             }
             return best;
+        }
+
+        /// <summary>
+        /// Seconds from spawning at a Cyst to that shrimp's FIRST deposit:
+        /// walk Cyst to patch, fill, walk patch to Bio Cache, unload.
+        ///
+        /// One way each leg, not the round trip — the steady-state cycle already
+        /// carries the return once the shrimp is producing.
+        /// </summary>
+        static float FirstDepositDelay(EcoState s, Vector3 cystPos, int bcIdx)
+        {
+            if (bcIdx < 0 || bcIdx >= s.bcs.Count) return 0f;
+            Vector3 bcPos = s.bcs[bcIdx].pos;
+
+            int pi = NearestActivePatchIdx(s, bcPos);
+            Vector3 patchPos = pi >= 0 ? s.patches[pi].pos : bcPos;
+
+            float toPatch = HorizontalDistance(cystPos, patchPos) / SHRIMP_SPEED;
+            float toBc    = HorizontalDistance(patchPos, bcPos)   / SHRIMP_SPEED;
+            return toPatch + (float)CARRY_CAPACITY / HARVEST_RATE
+                 + toBc    + (float)CARRY_CAPACITY / DEPOSIT_RATE;
         }
 
         static float IncomePerSec(int N, float d, float cycle)

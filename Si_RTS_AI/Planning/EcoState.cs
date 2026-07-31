@@ -46,6 +46,16 @@ namespace Si_RTS_AI.Planning
         // heuristic; adjusted by simulator when new shrimps spawn from cysts.
         public Dictionary<int, int> shrimpsPerBc = new Dictionary<int, int>();
 
+        /// <summary>
+        /// Shrimps that exist but have not yet delivered anything. A shrimp
+        /// spawns at its Cyst, walks to the patch, fills up, walks to the Bio
+        /// Cache and only then deposits — until that first load lands it earns
+        /// nothing, and it was previously credited full steady-state income from
+        /// the instant it spawned. See EcoSimulator where ActiveAt is computed.
+        /// </summary>
+        public struct PendingShrimp { public int bcIdx; public float activeAt; }
+        public List<PendingShrimp> pendingShrimps = new List<PendingShrimp>();
+
         public EcoState Clone()
         {
             var c = new EcoState
@@ -62,6 +72,7 @@ namespace Si_RTS_AI.Planning
                 cysts        = new List<Cyst>(cysts),
                 nodes        = new List<Node>(nodes),
                 shrimpsPerBc = new Dictionary<int, int>(shrimpsPerBc),
+                pendingShrimps = new List<PendingShrimp>(pendingShrimps),
             };
             return c;
         }
