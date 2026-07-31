@@ -54,7 +54,28 @@ namespace Si_RTS_AI.Planning
 
         static float _lastReportAt;
 
-        internal static void ResetForNewRound() { _lastReportAt = 0f; }
+        // Latest repair need, for the eco planner to act on. Stale after
+        // REPAIR_TTL_S so a fixed line stops being requested.
+        const float REPAIR_TTL_S = 45f;
+        static Vector3 _repairFrom, _repairTo;
+        static float   _repairAt = -1f;
+
+        /// <summary>
+        /// Where a Node must be rebuilt to reconnect a severed branch.
+        ///
+        /// Repair is not expansion and must not wait behind it: everything past
+        /// the break is ALREADY decaying, so the loss is running while we
+        /// deliberate. Verified against the game's own signal — NarakaCity
+        /// 2026-07-31, two Nodes killed, and graph reachability and the Decay
+        /// component named the same structures, (2380,935) then (2340,750).
+        /// </summary>
+        internal static bool TryGetRepair(out Vector3 from, out Vector3 to)
+        {
+            from = _repairFrom; to = _repairTo;
+            return _repairAt >= 0f && Time.time - _repairAt < REPAIR_TTL_S;
+        }
+
+        internal static void ResetForNewRound() { _lastReportAt = 0f; _repairAt = -1f; }
 
         internal static void Tick(Team team)
         {
@@ -161,7 +182,7 @@ namespace Si_RTS_AI.Planning
         const int   CANDIDATE_PAIRS = 24;
         const int   MIN_HOPS_SAVED  = 6;
 
-        static void ReportLoopCandidates(List<Node> g, System.Text.StringBuilder sb)
+        static void ReportLoopCandidates(List<Node> g, bool[] connected, System.Text.StringBuilder sb)
         {
             var pairs = new List<(float gap, int a, int b)>();
             for (int a = 0; a < g.Count; a++)
@@ -181,15 +202,50 @@ namespace Si_RTS_AI.Planning
             pairs.Sort((x, y) => x.gap.CompareTo(y.gap));
             if (pairs.Count > CANDIDATE_PAIRS) pairs.RemoveRange(CANDIDATE_PAIRS, pairs.Count - CANDIDATE_PAIRS);
 
+            // REPAIR AND LOOP ARE DIFFERENT JOBS.
+            //
+            // A pair straddling the connected boundary is not a loop — bridging
+            // it RECONNECTS something already dying, and its hop distance is
+            // infinite, which made it score as infinitely valuable and win every
+            // time. NarakaCity 2026-07-31, after two Nodes were killed:
+            // "LOOP (2475,1165)-(2380,935) closes=2147483647hops".
+            //
+            // Split them. Repair is urgent and picked by CHEAPEST bridge back to
+            // the live network; looping is preventive and picked by cycle length
+            // per Node spent.
             float bestScore = 0f; int bi = -1, bhops = 0, bnodes = 0; float bgap = 0f;
+            int ri = -1, rnodes = int.MaxValue; float rgap = 0f;
+
             for (int i = 0; i < pairs.Count; i++)
             {
-                int hops = HopDistance(g, pairs[i].a, pairs[i].b);
-                if (hops < MIN_HOPS_SAVED) continue;                 // already well joined
+                int a = pairs[i].a, b = pairs[i].b;
                 int nodes = NodesToBridge(pairs[i].gap);
-                float score = hops / (float)Mathf.Max(1, nodes);     // cycle length per Node spent
+
+                if (connected[a] != connected[b])
+                {
+                    if (nodes < rnodes) { rnodes = nodes; ri = i; rgap = pairs[i].gap; }
+                    continue;
+                }
+                if (!connected[a]) continue;                          // both already lost
+
+                int hops = HopDistance(g, a, b);
+                if (hops >= int.MaxValue) continue;                   // separate components
+                if (hops < MIN_HOPS_SAVED) continue;                  // already well joined
+                float score = hops / (float)Mathf.Max(1, nodes);      // cycle length per Node
                 if (score > bestScore)
                 { bestScore = score; bi = i; bhops = hops; bnodes = nodes; bgap = pairs[i].gap; }
+            }
+
+            if (ri >= 0)
+            {
+                var C = g[pairs[ri].a].Pos; var D = g[pairs[ri].b].Pos;
+                bool aLive = connected[pairs[ri].a];
+                var live = aLive ? C : D; var lost = aLive ? D : C;
+                _repairFrom = live; _repairTo = lost; _repairAt = Time.time;
+                sb.Append(" | REPAIR from (").Append(live.x.ToString("F0")).Append(',')
+                  .Append(live.z.ToString("F0")).Append(") to (").Append(lost.x.ToString("F0"))
+                  .Append(',').Append(lost.z.ToString("F0")).Append(')')
+                  .Append(" gap=").Append((int)rgap).Append("m nodes=").Append(rnodes);
             }
             if (bi < 0) return;
 
@@ -289,7 +345,7 @@ namespace Si_RTS_AI.Planning
             for (int i = 0; i < cuts.Count && shown < 3; i++, shown++)
                 sb.Append(" cut@(").Append(g[cuts[i]].Pos.x.ToString("F0")).Append(',')
                   .Append(g[cuts[i]].Pos.z.ToString("F0")).Append(')');
-            ReportLoopCandidates(g, sb);
+            ReportLoopCandidates(g, seen, sb);
             MelonLogger.Msg(sb.ToString());
         }
 

@@ -1339,6 +1339,28 @@ namespace Si_RTS_AI.Planning
                 if (_currentPhase == PlanPhase.Phase2_Expand)
                     GrowthModel.LogShadow(state);
 
+                // REPAIR FIRST — A SEVERED BRANCH IS ALREADY DYING.
+                //
+                // Everything past a break decays, Bio Caches and Cysts included,
+                // so this cannot queue behind expansion. One Node per tick
+                // toward the break, re-derived each time from live positions.
+                if (!openerDrove
+                    && NodeManager.TryGetRepair(out Vector3 repFrom, out Vector3 repTo)
+                    && NextNodeTowards(state, repTo, out Vector3 repHop))
+                {
+                    int beforeRep = fired;
+                    TryFireAction(new Candidate
+                    {
+                        kind = ActionKind.PlaceNode,
+                        target = repHop,
+                        cost = EcoSimulator.NODE_COST,
+                        patchIdx = -1,
+                    });
+                    if (fired > beforeRep)
+                        MelonLogger.Msg($"[PLAN/EXEC] REPAIR node at ({repHop.x:F0},{repHop.z:F0}) " +
+                                        $"reconnecting ({repTo.x:F0},{repTo.z:F0})");
+                }
+
                 // REACH FOLLOWS THE SHRIMPS.
                 //
                 // Shrimp migration asks for expansion by publishing a hint, and
