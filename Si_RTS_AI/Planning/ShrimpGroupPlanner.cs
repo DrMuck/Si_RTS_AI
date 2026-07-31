@@ -131,6 +131,15 @@ namespace Si_RTS_AI.Planning
         // Max walk into a group that has its own Cyst: it will fill itself.
         const float SELF_SUFFICIENT_MAX_WALK_S = 25f;
 
+        /// <summary>
+        /// How far a newly produced shrimp may be sent. Roughly one patch
+        /// spacing — far enough to reach a neighbouring group that needs it,
+        /// not far enough to cross the base. Groups beyond this are meant to be
+        /// staffed by their own Cyst, which is what the Phase 2 production
+        /// headroom exists to make possible.
+        /// </summary>
+        const float FREE_AGENT_MAX_WALK_S = 30f;
+
         // Per-unit gates.
         // A shrimp that just arrived somewhere is protected from being made a
         // donor again for this long — without it, a group that overshoots by
@@ -1045,7 +1054,22 @@ namespace Si_RTS_AI.Planning
         {
             float mDst = MarginalIps(dst, dst.Current + 1);
             if (mDst <= 0f) return false;
-            if (src == null) return true;              // free agent: nothing to lose
+            if (src == null)
+            {
+                // A FRESH SHRIMP STILL PAYS FOR THE WALK.
+                //
+                // This returned true unconditionally — "nothing to lose" —
+                // which let a shrimp born at one Cyst be sent clear across the
+                // base to any group with a deficit, because with no source
+                // group there was nothing to weigh the distance against. That
+                // is the wandering seen early on NarakaCity.
+                //
+                // The walk is the loss: 600m at 9m/s is 67 seconds not
+                // harvesting, which is precisely the first-deposit latency the
+                // simulator models. Somewhere nearer with room is worth more
+                // than a marginally better patch far away.
+                return distM / SHRIMP_SPEED <= FREE_AGENT_MAX_WALK_S;
+            }
 
             float mSrc = MarginalIps(src, src.Current);
             if (mSrc <= 0f) return true;               // source earns nothing at the margin
