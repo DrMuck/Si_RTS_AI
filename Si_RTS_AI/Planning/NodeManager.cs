@@ -127,6 +127,97 @@ namespace Si_RTS_AI.Planning
             return g;
         }
 
+        /// <summary>Nodes needed to bridge a gap, 0 if already in reach.</summary>
+        static int NodesToBridge(float gapM)
+        {
+            float reach = EcoSimulator.NODE_REACH_M;
+            if (gapM <= reach) return 0;
+            float hop = Mathf.Max(1f, reach - 40f);      // same drift margin the chain uses
+            return Mathf.CeilToInt((gapM - reach) / hop);
+        }
+
+        /// <summary>
+        /// The cheapest worthwhile LOOP: a short bridge that closes a long
+        /// cycle.
+        ///
+        /// Looping has to happen BEFORE anything is cut, so cut vertices alone
+        /// are the wrong trigger — by the time one matters the branch is already
+        /// severed. And it has to be cheap: every bridging Node costs 200, so a
+        /// loop is only worth building where two branches already come close
+        /// (user, 2026-07-31).
+        ///
+        /// The measure that captures both is the ratio of NETWORK distance to
+        /// PHYSICAL distance. Two structures 200m apart but 14 hops apart in the
+        /// graph are on different branches that nearly touch: one or two Nodes
+        /// there converts a long dead-end into a ring. Two structures 200m apart
+        /// and 2 hops apart are already effectively joined and a link buys
+        /// nothing.
+        ///
+        /// Bounded work: only pairs within MAX_BRIDGE_M are considered, the
+        /// closest CANDIDATE_PAIRS of those are scored, and each score is one
+        /// BFS. This runs on the game thread at the report cadence.
+        /// </summary>
+        const float MAX_BRIDGE_M   = 600f;
+        const int   CANDIDATE_PAIRS = 24;
+        const int   MIN_HOPS_SAVED  = 6;
+
+        static void ReportLoopCandidates(List<Node> g, System.Text.StringBuilder sb)
+        {
+            var pairs = new List<(float gap, int a, int b)>();
+            for (int a = 0; a < g.Count; a++)
+            {
+                if (g[a].Name != "Node" && !g[a].IsNest && g[a].Name != "Bio Cache") continue;
+                for (int b = a + 1; b < g.Count; b++)
+                {
+                    if (g[b].Name != "Node" && !g[b].IsNest && g[b].Name != "Bio Cache") continue;
+                    if (g[a].Adj.Contains(b)) continue;              // already joined
+                    float dx = g[a].Pos.x - g[b].Pos.x, dz = g[a].Pos.z - g[b].Pos.z;
+                    float gap = Mathf.Sqrt(dx * dx + dz * dz);
+                    if (gap > MAX_BRIDGE_M) continue;
+                    pairs.Add((gap, a, b));
+                }
+            }
+            if (pairs.Count == 0) return;
+            pairs.Sort((x, y) => x.gap.CompareTo(y.gap));
+            if (pairs.Count > CANDIDATE_PAIRS) pairs.RemoveRange(CANDIDATE_PAIRS, pairs.Count - CANDIDATE_PAIRS);
+
+            float bestScore = 0f; int bi = -1, bhops = 0, bnodes = 0; float bgap = 0f;
+            for (int i = 0; i < pairs.Count; i++)
+            {
+                int hops = HopDistance(g, pairs[i].a, pairs[i].b);
+                if (hops < MIN_HOPS_SAVED) continue;                 // already well joined
+                int nodes = NodesToBridge(pairs[i].gap);
+                float score = hops / (float)Mathf.Max(1, nodes);     // cycle length per Node spent
+                if (score > bestScore)
+                { bestScore = score; bi = i; bhops = hops; bnodes = nodes; bgap = pairs[i].gap; }
+            }
+            if (bi < 0) return;
+
+            var A = g[pairs[bi].a].Pos; var B = g[pairs[bi].b].Pos;
+            sb.Append(" | LOOP (").Append(A.x.ToString("F0")).Append(',').Append(A.z.ToString("F0"))
+              .Append(")-(").Append(B.x.ToString("F0")).Append(',').Append(B.z.ToString("F0")).Append(')')
+              .Append(" gap=").Append((int)bgap).Append("m nodes=").Append(bnodes)
+              .Append(" closes=").Append(bhops).Append("hops");
+        }
+
+        /// <summary>Hops between two vertices, -1 if unreachable.</summary>
+        static int HopDistance(List<Node> g, int from, int to)
+        {
+            var dist = new int[g.Count];
+            for (int i = 0; i < g.Count; i++) dist[i] = -1;
+            var q = new Queue<int>();
+            dist[from] = 0; q.Enqueue(from);
+            while (q.Count > 0)
+            {
+                int v = q.Dequeue();
+                if (v == to) return dist[v];
+                var adj = g[v].Adj;
+                for (int k = 0; k < adj.Count; k++)
+                    if (dist[adj[k]] < 0) { dist[adj[k]] = dist[v] + 1; q.Enqueue(adj[k]); }
+            }
+            return int.MaxValue;                                     // different components
+        }
+
         static void Report(Team team)
         {
             var g = BuildGraph(team);
@@ -198,6 +289,7 @@ namespace Si_RTS_AI.Planning
             for (int i = 0; i < cuts.Count && shown < 3; i++, shown++)
                 sb.Append(" cut@(").Append(g[cuts[i]].Pos.x.ToString("F0")).Append(',')
                   .Append(g[cuts[i]].Pos.z.ToString("F0")).Append(')');
+            ReportLoopCandidates(g, sb);
             MelonLogger.Msg(sb.ToString());
         }
 
