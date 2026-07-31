@@ -1116,6 +1116,7 @@ namespace Si_RTS_AI.Planning
             // invisible. Ties go to whichever is enumerated first, so a win
             // means a strictly higher score; this shows by how much.
             var top = new List<Plan>(RUNNERS_UP + 1);
+            Plan bestDoubled = null, bestSingle = null;
             void Consider(Plan p)
             {
                 int at = top.Count;
@@ -1146,6 +1147,8 @@ namespace Si_RTS_AI.Planning
                         evalCount++;
                         if (p == null) continue;
                         Consider(p);
+                        if (p.DoubledCyst) { if (bestDoubled == null || p.Score > bestDoubled.Score) bestDoubled = p; }
+                        else               { if (bestSingle  == null || p.Score > bestSingle.Score)  bestSingle  = p; }
                         if (best == null || p.Score > best.Score) best = p;
                     }
                     return;
@@ -1166,6 +1169,16 @@ namespace Si_RTS_AI.Planning
 
             for (int i = 0; i < top.Count; i++)
                 MelonLogger.Msg($"[OPENER/ALT] #{i + 1} {top[i].Describe()}");
+
+            // The doubled-Cyst option, always shown even when it loses — it was
+            // added to answer a specific question and a silent absence from the
+            // top six answers nothing.
+            if (bestDoubled != null)
+                MelonLogger.Msg($"[OPENER/2X] best doubled: {bestDoubled.Describe()}" +
+                                $" | vs best single {(int)(bestSingle?.Score ?? 0)}" +
+                                $" ({(int)(bestDoubled.Score - (bestSingle?.Score ?? 0))})");
+            else
+                MelonLogger.Msg("[OPENER/2X] no doubled-Cyst plan was affordable");
 
             // The best opening that taps a site the winner ignored. This is the
             // "why not that patch?" question in one line, rather than a guess.
