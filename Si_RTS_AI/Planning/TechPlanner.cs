@@ -125,6 +125,25 @@ namespace Si_RTS_AI.Planning
                 if (!tierMaxed && _techCds.Count > 0 && cheapest != int.MaxValue)
                 {
                     int target = cheapest + MIN_ECO_RESERVE;
+
+                    // THE COMMITTED OPENING OUTRANKS THIS RESERVE.
+                    //
+                    // The opening is a costed plan whose total was checked
+                    // against the bank before it was accepted, so reserving cash
+                    // out from under it mid-way breaks a commitment already
+                    // made. NarakaCity 2026-07-31: three sites were up at t=94s
+                    // with cash=1800, the 4th needed 500+1500, and reserved=2000
+                    // held it off until the Cortex fired — the user saw the 4th
+                    // Cyst arrive only after tech was ready.
+                    //
+                    // So while the opening is live, reserve only what is left
+                    // above what it still owes. Tech is not deferred, it just
+                    // takes surplus rather than taking priority for the ~2
+                    // minutes the opening lasts.
+                    int openerOwes = OpenerPlanner.OutstandingCost;
+                    if (openerOwes > 0)
+                        target = Mathf.Min(target, Mathf.Max(0, ctx.Cash - openerOwes));
+
                     if (cortexCount > 0 || committedCysts >= 3)
                         ctx.CashReservations[SourceId] = target;
                 }
@@ -148,7 +167,8 @@ namespace Si_RTS_AI.Planning
                                     $"perShrimp={perShrimp:F2}/s producers={producers} " +
                                     $"committedCysts={committedCysts} " +
                                     $"dtTo15={dtStr} projected@dl={projected} " +
-                                    $"reserved={reservedNow} cortex={cortexCount} tier={tier}/{maxTier} " +
+                                    $"reserved={reservedNow} openerOwes={OpenerPlanner.OutstandingCost} " +
+                                    $"cortex={cortexCount} tier={tier}/{maxTier} " +
                                     $"t={now:F0}s");
                     AppendCsvRow(now, ctx.Cash, teamIncome, perShrimp, shrimps,
                                  producers, committedCysts, dtTo15, projected, reservedNow,

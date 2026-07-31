@@ -229,6 +229,25 @@ namespace Si_RTS_AI.Planning
             for (int i = 0; i < _queue.Count; i++) if (!_stepDone[i]) yield return i;
         }
 
+        /// <summary>
+        /// Cash the committed opening still needs. Zero once the queue is done.
+        ///
+        /// The opening is a costed plan — Evaluate rejects any candidate whose
+        /// total exceeds the bank — so a reservation taken out from under it
+        /// mid-way breaks a commitment that was already checked. Exposed so the
+        /// tech reserve can hold only genuine surplus while the opening runs.
+        /// </summary>
+        internal static int OutstandingCost
+        {
+            get
+            {
+                if (_queue.Count == 0) return 0;
+                int total = 0;
+                foreach (int i in PendingSteps()) total += _queue[i].Cost;
+                return total;
+            }
+        }
+
         internal static Step StepAt(int i) => _queue[i];
 
         /// <summary>
