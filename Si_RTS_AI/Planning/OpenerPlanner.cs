@@ -526,6 +526,33 @@ namespace Si_RTS_AI.Planning
                 if (gap <= reach) continue;          // this one can build; try the next
 
                 float hop = Mathf.Max(1f, EcoSimulator.NODE_REACH_M - 40f);
+
+                // A BIO CACHE ABOUT TO GO UP MAY ANCHOR THIS CHAIN FOR FREE.
+                //
+                // Sites near the Nest need no nodes at all — the patch is inside
+                // build range — and once such a Bio Cache exists it anchors the
+                // chain onward. Hopping from the Nest toward the 3rd or 4th site
+                // before placing it spends nodes on ground that Bio Cache would
+                // have covered for nothing (user, 2026-07-30).
+                //
+                // Only when it genuinely helps, which is the user's own caveat:
+                // the Bio Cache must sit at least one full hop closer to the goal
+                // than the anchor we would otherwise use — i.e. predominantly in
+                // the direction of the expansion, not merely somewhere nearby.
+                // And only when it can actually be built right now, so a site
+                // that is itself unreachable cannot deadlock the chain.
+                if (BetterAnchorComing(team, from, goal, hop, out Vector3 bcPos))
+                {
+                    if (Time.time - _lastWaitLogAt > 10f)
+                    {
+                        _lastWaitLogAt = Time.time;
+                        MelonLogger.Msg($"[OPENER] holding chain toward ({goal.x:F0},{goal.z:F0}) — " +
+                                        $"a Bio Cache at ({bcPos.x:F0},{bcPos.z:F0}) anchors it " +
+                                        $"{Vector3.Distance(from, goal) - Vector3.Distance(bcPos, goal):F0}m closer");
+                    }
+                    continue;
+                }
+
                 Vector3 dir = goal - from;
                 float len = Mathf.Sqrt(dir.x * dir.x + dir.z * dir.z);
                 if (len < 1f) return;
@@ -576,6 +603,33 @@ namespace Si_RTS_AI.Planning
         /// finished ones; accepted orders supply the ones still going up, which
         /// anchor a node just as well.
         /// </summary>
+        /// <summary>
+        /// Is a Bio Cache from our own plan about to make this chain cheaper?
+        ///
+        /// True only when a pending Bio Cache step is at least one hop closer to
+        /// the goal than the anchor we would use now, AND is itself already
+        /// placeable — a site we cannot reach yet must never hold up a chain,
+        /// which is how the old WaitForBetterAnchor could stall.
+        /// </summary>
+        static bool BetterAnchorComing(Team team, Vector3 from, Vector3 goal,
+                                       float hop, out Vector3 bcPos)
+        {
+            bcPos = Vector3.zero;
+            float fromGap = Vector3.Distance(from, goal);
+            float reach = EcoSimulator.BcPlaceReachM + 40f;
+
+            for (int j = 0; j < _queue.Count; j++)
+            {
+                if (_queue[j].Kind != StepKind.Bc || _stepDone[j]) continue;
+                Vector3 t = _queue[j].Target;
+                if (Vector3.Distance(t, goal) > fromGap - hop) continue;   // not toward the goal
+                if (!NearestFinished(team, t, out _, out float d) || d > reach) continue;  // not buildable yet
+                bcPos = t;
+                return true;
+            }
+            return false;
+        }
+
         static bool NearestFinished(Team team, Vector3 to, out Vector3 pos, out float dist)
         {
             pos = Vector3.zero; dist = float.MaxValue;

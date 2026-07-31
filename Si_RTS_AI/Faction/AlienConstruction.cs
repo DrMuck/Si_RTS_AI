@@ -955,6 +955,10 @@ namespace Si_RTS_AI.Faction
             string cdName = cd.ObjectInfo?.DisplayName ?? "?";
             if (SearchInFlightNear(cdName, targetPos)) return false;
             if (Time.time < _placementBackoffUntil) return false;
+            // Direct read of the state the game enforces: no docked Queen, no
+            // construction. Cheaper and far more honest than the failure
+            // counting below, which only infers it after six refusals.
+            if (!Perception.QueenStatus.CanBuild(team)) return false;
             var anchor = FindClosestStructureThatCanBuild(team, cd, targetPos);
             if (anchor == null) return false;
             _inFlight.Add(new InFlight { Name = cdName, Want = targetPos, At = Time.time });
