@@ -620,8 +620,23 @@ namespace Si_RTS_AI.Planning
 
             for (int j = 0; j < _queue.Count; j++)
             {
-                if (_queue[j].Kind != StepKind.Bc || _stepDone[j]) continue;
+                if (_queue[j].Kind != StepKind.Bc) continue;
                 Vector3 t = _queue[j].Target;
+
+                // NOT _stepDone — that means REQUESTED, not placed.
+                //
+                // TryFireAction queues an async placement search and marks the
+                // step done immediately, so between that instant and Construct
+                // returning Success the Bio Cache is in neither the step state
+                // nor the order record. NarakaCity 2026-07-31: the plan issued
+                // at 14:27:16.023, the chain hopped off the NEST at .035, and
+                // the Bio Cache that should have anchored it landed at .213 —
+                // 178ms too late to be seen, so two nodes went in beside it.
+                //
+                // Skip only Bio Caches that ALREADY anchor, since NearestFinished
+                // counts those; everything else is still "coming".
+                if (Faction.AlienConstruction.WasOrderedNear("Bio Cache", t, 200f)) continue;
+                if (StructureNear(team, "Bio Cache", t, 200f)) continue;
                 if (Vector3.Distance(t, goal) > fromGap - hop) continue;   // not toward the goal
                 if (!NearestFinished(team, t, out _, out float d) || d > reach) continue;  // not buildable yet
                 bcPos = t;
