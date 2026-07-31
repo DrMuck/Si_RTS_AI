@@ -669,6 +669,22 @@ namespace Si_RTS_AI.Planning
             pos = Vector3.zero; dist = float.MaxValue;
             var structs = team.Structures;
             if (structs == null) return false;
+            // BRANCH FROM A BASE STRUCTURE UNLESS A NODE IS GENUINELY CLOSER.
+            //
+            // Picking the nearest anchor to the goal lets a chain start from
+            // another chain's TIP whenever that tip is even slightly closer,
+            // which produces a dog-leg and hangs one branch off another.
+            // NarakaCity 2026-08-01: the western chain toward (1744,1478)
+            // started from the north-west chain's node at 608m instead of the
+            // Bio Cache at 668m — 60m closer, less than a single 110m hop, so it
+            // bought nothing and cost a detour. It also made the western branch
+            // die with the northern one, which is the fragility the NodeManager
+            // is meant to remove rather than create.
+            //
+            // So Nest and Bio Caches are preferred outright; a Node has to beat
+            // the best of them by a full hop to be worth branching from.
+            float baseDist = float.MaxValue; Vector3 basePos = Vector3.zero;
+            float nodeDist = float.MaxValue; Vector3 nodePos = Vector3.zero;
             for (int i = 0; i < structs.Count; i++)
             {
                 var st = structs[i];
@@ -678,8 +694,16 @@ namespace Si_RTS_AI.Planning
                 Vector3 q = st.transform.position;
                 float dx = q.x - to.x, dz = q.z - to.z;
                 float d = Mathf.Sqrt(dx * dx + dz * dz);
-                if (d < dist) { dist = d; pos = q; }
+                if (n == "Node") { if (d < nodeDist) { nodeDist = d; nodePos = q; } }
+                else             { if (d < baseDist) { baseDist = d; basePos = q; } }
             }
+            float hopM = Mathf.Max(1f, EcoSimulator.NODE_REACH_M - 40f);
+            if (baseDist < float.MaxValue && nodeDist >= baseDist - hopM)
+            { dist = baseDist; pos = basePos; }
+            else if (nodeDist < float.MaxValue)
+            { dist = nodeDist; pos = nodePos; }
+            else if (baseDist < float.MaxValue)
+            { dist = baseDist; pos = basePos; }
             // Structures that are ordered and far enough along to anchor, but
             // not yet listed as complete. A Node measured 20s to completion
             // against a 12s build-up, so waiting for the list costs ~8s a hop.
