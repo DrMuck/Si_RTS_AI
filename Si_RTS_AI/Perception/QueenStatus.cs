@@ -30,7 +30,7 @@ namespace Si_RTS_AI.Perception
     /// </summary>
     internal static class QueenStatus
     {
-        internal enum State { Buildable, QueenAway, QueenLost, Unknown }
+        internal enum State { Buildable, QueenAway, QueenLost, NoNest, Unknown }
 
         const float POLL_S = 1f;
 
@@ -50,7 +50,7 @@ namespace Si_RTS_AI.Perception
         internal static bool CanBuild(Team team)
         {
             var s = Evaluate(team);
-            return s != State.QueenAway && s != State.QueenLost;
+            return s != State.QueenAway && s != State.QueenLost && s != State.NoNest;
         }
 
         internal static State Current => _last;
@@ -70,6 +70,9 @@ namespace Si_RTS_AI.Perception
                 if (s == State.QueenAway)
                     MelonLogger.Warning("[QUEEN] not docked in the Nest — aliens cannot build. " +
                                         "Holding all construction until she returns.");
+                else if (s == State.NoNest)
+                    MelonLogger.Warning("[QUEEN] no Nest — nothing can be built. Holding all " +
+                                        "construction; the base is lost or not yet spawned.");
                 else if (s == State.QueenLost)
                     MelonLogger.Warning("[QUEEN] no Queen found for the alien team — construction " +
                                         "is impossible for the rest of the round.");
@@ -115,9 +118,24 @@ namespace Si_RTS_AI.Perception
                     }
                 }
 
-                // A Nest with no queen compartment we could read, or no Nest at
-                // all: say nothing rather than guess.
-                return sawNest ? State.Unknown : State.Unknown;
+                // NO NEST, NO CONSTRUCTION.
+                //
+                // Everything chains back to a Nest, so without one nothing can
+                // be built at all — this is not an unknown, it is a definite no.
+                // Treating it as unknown meant the planner kept issuing
+                // placement searches into a dead base until the failure backoff
+                // caught up. NarakaCity 2026-08-01: "nests=0 orphaned=65
+                // decaying=73" while the planner was still requesting Cysts and
+                // Nodes.
+                //
+                // Also covers the pre-spawn window at round start, where holding
+                // off costs nothing.
+                if (!sawNest) return State.NoNest;
+
+                // A Nest is standing but its queen compartment could not be
+                // read: say nothing rather than guess, and let construction
+                // proceed.
+                return State.Unknown;
             }
             catch (Exception ex)
             {
