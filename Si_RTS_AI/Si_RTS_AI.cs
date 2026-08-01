@@ -8,7 +8,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 
-[assembly: MelonInfo(typeof(Si_RTS_AI.Si_RTS_AI), "Si_RTS_AI", "0.11.6-pause-while-queen-away", "DrMuck")]
+[assembly: MelonInfo(typeof(Si_RTS_AI.Si_RTS_AI), "Si_RTS_AI", "0.12.0-threat-map-shadow", "DrMuck")]
 [assembly: MelonGame("Bohemia Interactive", "Silica")]
 
 namespace Si_RTS_AI
@@ -248,6 +248,8 @@ namespace Si_RTS_AI
                     tShrimpState = TimedMs(() => Perception.ShrimpStateSampler.Tick(team));
                     Perception.BuildTimeline.Tick(team);
                     if ((team.name ?? "").Contains("Alien")) Perception.QueenStatus.Evaluate(team);
+                    Perception.ThreatMap.Observe(team);
+                    Perception.ThreatMap.Tick(team);
                     Planning.NodeManager.Tick(team);
                     tEcoRate     = TimedMs(() => Perception.EcoRateSampler.Tick(team));
                     RecentModWork.AddLayer(tLayer);
@@ -382,6 +384,7 @@ namespace Si_RTS_AI
             Planning.GrowthModel.ResetForNewRound();
             Perception.QueenStatus.ResetForNewRound();
             Planning.NodeManager.ResetForNewRound();
+            Perception.ThreatMap.ResetForNewRound();
             Perception.BuildTimeline.ReportHookState();
             Faction.SuppressCombat.ResetForNewRound();
             Faction.HumanConstruction.ResetForNewRound();
