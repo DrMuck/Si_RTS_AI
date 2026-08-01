@@ -123,7 +123,27 @@ namespace Si_RTS_AI.Planning
         // User (CrimsonPeak): "expansion stalls again from like 9min ...
         // looks like that". Diagnostic confirmed: beam picked Noop over
         // any expansion because BC bonus 5500 − 10s×1500/s income = −9500.
-        const float PHASE2_NODE_BONUS  = 15000f;   // was 6000
+        /// <summary>
+        /// A NODE IS WORTH A SHARE OF THE BIO CACHE IT ENABLES, NOT A WHOLE ONE.
+        ///
+        /// This was equal to PHASE2_BC_BONUS, so a chain of seven Nodes scored
+        /// 105,000 against the 15,000 Bio Cache it led to — the chain became the
+        /// reward rather than the means. Observed on CrimsonPeak 2026-08-01:
+        /// "more than 7 nodes were placed in advance" toward the south and
+        /// middle, 1,400 cash and the time to lay it, which could have funded a
+        /// northern expansion that actually earned.
+        ///
+        /// A Node produces no income by itself. Its entire value is the Bio
+        /// Cache it unlocks, shared across however many the chain needs, so it
+        /// is priced as the Bio Cache bonus over a typical chain length. That
+        /// keeps chains worth building — a Node still far outscores its 200 cash
+        /// — while making the beam prefer FINISHING one to extending it.
+        ///
+        /// It was also inconsistent with the Opener, which CHARGES 400 a Node.
+        /// Both now agree that reach is a cost paid for a payoff, not a payoff.
+        /// </summary>
+        const int   TYPICAL_CHAIN_NODES = 4;
+        const float PHASE2_NODE_BONUS  = 15000f / TYPICAL_CHAIN_NODES;   // was 15000, = BC bonus
         const float PHASE2_CYST_BONUS  = 15000f;   // was 6000 — MAX; scaled by handoff
         const float PHASE2_BC_BONUS    = 15000f;   // was 5500
         // Cluster-aware Cyst thresholds — biotics-weighted handoff score of
