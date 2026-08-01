@@ -293,6 +293,20 @@ namespace Si_RTS_AI.Planning
         {
             if (ShadowOnly || team == null || _queue.Count == 0) return;
             if (!global::Si_RTS_AI.TestHarnessNs.TestHarness.IsRoundActive) return;
+
+            // PAUSE, DO NOT SPEND, WHILE THE QUEEN IS AWAY.
+            //
+            // AlienConstruction refuses the placement, but that refusal is too
+            // deep: the attempt counter and the retry timer are incremented
+            // BEFORE the call, so a Queen out of the Nest silently burns each
+            // Cyst step's 10-attempt budget and the step then gives up for
+            // good — permanent damage from a temporary condition.
+            //
+            // Returning here freezes the opening instead: no attempts, no retry
+            // timers, no stall accounting. It resumes exactly where it was when
+            // she docks.
+            if (!Perception.QueenStatus.CanBuild(team)) return;
+
             float now = Time.time;
             try { TickChain(team); }
             catch (Exception ex) { MelonLogger.Warning("[OPENER] chain threw: " + ex.Message); }

@@ -759,6 +759,13 @@ namespace Si_RTS_AI.Planning
             // and the whole map rotation wedged.
             if (!TestHarnessNs.TestHarness.IsRoundActive) return;
 
+            // Frozen while the Queen is out of the Nest, or there is no Nest.
+            // Not just "placements refused" — the whole planner stops, so the
+            // repeat-suppression windows, stall timers and skip accounting do
+            // not advance against a condition we cannot influence. It picks up
+            // unchanged when she docks.
+            if (!Perception.QueenStatus.CanBuild(team)) return;
+
             // Human-commander opt-out. When a real player takes over as
             // commander of an alien team, IsCommanderEnabled goes false
             // (game disables the AI commander). Without this gate the
