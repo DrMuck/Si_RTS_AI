@@ -40,6 +40,31 @@ namespace Si_RTS_AI.Perception.MapLayers
             return (a, e);
         }
 
+        /// <summary>
+        /// How far this object actually sees, from the game.
+        ///
+        /// The constants below are guesses, and a guess that is too GENEROUS is
+        /// the damaging direction: ground gets marked explored that was never
+        /// seen, so the planner believes it has already looked somewhere it has
+        /// not, and biotics sitting there stay unknown while the map appears
+        /// surveyed. Reported on MonumentValley 2026-08-01 — much of the map
+        /// showing as explored while biotics inside it were missing.
+        ///
+        /// FogOfWarViewDistance is the per-object truth and follows any balance
+        /// mod. The constants remain only as a fallback for objects that do not
+        /// report one.
+        /// </summary>
+        static float VisionOf(BaseGameObject o, float fallbackM)
+        {
+            try
+            {
+                float v = o.FogOfWarViewDistance;
+                if (v > 1f) return v;
+            }
+            catch { }
+            return fallbackM;
+        }
+
         static void RebuildActive(Team team, LayerB active)
         {
             active.Clear();
@@ -53,7 +78,7 @@ namespace Si_RTS_AI.Perception.MapLayers
                     {
                         var s = structs[i];
                         if (s == null || s.ObjectInfo == null || s.IsDestroyed) continue;
-                        active.SetDiskAtWorld(s.transform.position, STRUCT_VISION_M);
+                        active.SetDiskAtWorld(s.transform.position, VisionOf(s, STRUCT_VISION_M));
                     }
             }
             catch { }
@@ -66,10 +91,10 @@ namespace Si_RTS_AI.Perception.MapLayers
                     {
                         var u = units[i];
                         if (u == null || u.ObjectInfo == null || u.IsDestroyed) continue;
-                        float r = UNIT_VISION_M;
                         string name = u.ObjectInfo.DisplayName ?? "";
-                        if (name == "Harvester" || name == "HoverHarvester" || name == "HeavyHarvester")
-                            r = HARV_VISION_M;
+                        float fallback = (name == "Harvester" || name == "HoverHarvester"
+                                          || name == "HeavyHarvester") ? HARV_VISION_M : UNIT_VISION_M;
+                        float r = VisionOf(u, fallback);
                         active.SetDiskAtWorld(u.transform.position, r);
                     }
             }

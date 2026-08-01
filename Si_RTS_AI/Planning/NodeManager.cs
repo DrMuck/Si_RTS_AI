@@ -36,6 +36,12 @@ namespace Si_RTS_AI.Planning
     {
         const float REPORT_EVERY_S = 30f;
 
+        /// <summary>Slack over the expected build time before an order with no
+        /// structure counts as stalled rather than merely slow.</summary>
+        const float STALL_GRACE_S  = 20f;
+        const float STALL_RADIUS_M = 60f;
+        static readonly List<Vector3> _orderScratch = new List<Vector3>(16);
+
         /// <summary>How far apart two structures can be and still chain. Read
         /// per kind, since a Bio Cache reaches further than a Node.</summary>
         static float ReachOf(string name)
@@ -112,6 +118,27 @@ namespace Si_RTS_AI.Planning
                     var p = c.GetType().GetProperty("enabled");
                     if (p == null) return false;
                     return p.GetValue(c, null) is bool b && b;
+                }
+            }
+            catch { }
+            return false;
+        }
+
+        static bool StructureNearPos(Team team, string name, Vector3 pos, float radiusM)
+        {
+            try
+            {
+                var structs = team?.Structures;
+                if (structs == null) return false;
+                float r2 = radiusM * radiusM;
+                for (int i = 0; i < structs.Count; i++)
+                {
+                    var st = structs[i];
+                    if (st == null || st.ObjectInfo == null || st.IsDestroyed) continue;
+                    if ((st.ObjectInfo.DisplayName ?? "") != name) continue;
+                    Vector3 q = st.transform.position;
+                    float dx = q.x - pos.x, dz = q.z - pos.z;
+                    if (dx * dx + dz * dz <= r2) return true;
                 }
             }
             catch { }
@@ -319,6 +346,34 @@ namespace Si_RTS_AI.Planning
             }
             catch (Exception ex) { MelonLogger.Warning("[NODEMGR] decay read threw: " + ex.Message); }
 
+            // ORDERED BUT NEVER BUILT.
+            //
+            // The graph is made of team.Structures, which holds only COMPLETED
+            // structures — so a Node that was ordered and never started
+            // building is invisible to it, and invisible to the Decay check
+            // too, since there is no structure to carry a Decay component.
+            // That is exactly the case seen on MonumentValley 2026-08-01: nodes
+            // that never began because the chain ahead of them was cut before
+            // their build progress started.
+            //
+            // The accepted Construct is the evidence. If an order is older than
+            // the build should have taken and nothing stands there, it stalled.
+            int stalled = 0;
+            Vector3 firstStalled = Vector3.zero;
+            try
+            {
+                float overdue = Perception.BuildTimeline.MeasuredTotalS("Node") + STALL_GRACE_S;
+                _orderScratch.Clear();
+                Faction.AlienConstruction.CollectOrdersOlderThan("Node", overdue, _orderScratch);
+                for (int i = 0; i < _orderScratch.Count; i++)
+                {
+                    if (StructureNearPos(team, "Node", _orderScratch[i], STALL_RADIUS_M)) continue;
+                    if (stalled == 0) firstStalled = _orderScratch[i];
+                    stalled++;
+                }
+            }
+            catch (Exception ex) { MelonLogger.Warning("[NODEMGR] stall check threw: " + ex.Message); }
+
             int orphans = 0;
             Vector3 firstOrphan = Vector3.zero;
             for (int i = 0; i < g.Count; i++)
@@ -332,10 +387,14 @@ namespace Si_RTS_AI.Planning
               .Append(" nests=").Append(nests)
               .Append(" orphaned=").Append(orphans)
               .Append(" decaying=").Append(decaying)
+              .Append(" stalled=").Append(stalled)
               .Append(" singlePointsOfFailure=").Append(cuts.Count);
             if (orphans > 0)
                 sb.Append(" firstOrphan=(").Append(firstOrphan.x.ToString("F0")).Append(',')
                   .Append(firstOrphan.z.ToString("F0")).Append(')');
+            if (stalled > 0)
+                sb.Append(" firstStalled=(").Append(firstStalled.x.ToString("F0")).Append(',')
+                  .Append(firstStalled.z.ToString("F0")).Append(')');
             if (decaying > 0)
                 sb.Append(" firstDecaying=(").Append(firstDecaying.x.ToString("F0")).Append(',')
                   .Append(firstDecaying.z.ToString("F0")).Append(')');
