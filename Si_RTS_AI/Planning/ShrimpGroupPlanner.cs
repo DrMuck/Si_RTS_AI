@@ -800,9 +800,11 @@ namespace Si_RTS_AI.Planning
                 var g = groups[gi];
                 if (g.Patches == 0) { g.Capacity = 0; g.Value = 0f; continue; }
 
-                int capByPatches   = g.Patches * PER_PATCH_CAPACITY;
+                int perPatch = PerPatchCapacityNow();
+                int capByPatches   = g.Patches * perPatch;
                 int capByRemaining = (int)(g.Remaining / (PER_SHRIMP_HARVEST_PER_SEC * MIN_LIFE_S));
-                g.Capacity = Mathf.Clamp(Mathf.Min(capByPatches, capByRemaining), 0, HARD_CAP);
+                g.Capacity = Mathf.Clamp(Mathf.Min(capByPatches, capByRemaining), 0,
+                                         Mathf.Max(perPatch, HARD_CAP));
 
                 float cycle = 2f * g.BestPatchDist / SHRIMP_SPEED
                             + (float)CARRY / HARVEST_RATE
@@ -1136,6 +1138,34 @@ namespace Si_RTS_AI.Planning
                 if (!covered) free.Add(patches[pi].pos);
             }
             _freePatches = free.ToArray();
+        }
+
+        /// <summary>
+        /// How many shrimps one patch should carry, by phase.
+        ///
+        /// The game's own crowding curve, which the simulator already models,
+        /// makes the case: efficiency per shrimp is 1.00 up to 6, 0.85 up to 12,
+        /// 0.70 up to 18. So eighteen on a patch each work at 0.70 while ten
+        /// work at 0.85 — about a fifth more output per shrimp.
+        ///
+        /// EARLY that trade is still worth taking: there are only two or three
+        /// patches, everywhere else is a long walk, and ramping fast matters
+        /// more than efficiency. MID-GAME there is somewhere else to go, and
+        /// packing a patch does three bad things at once — it wastes output, it
+        /// drains that patch faster, and it makes the eventual depletion a
+        /// bigger migration. User 2026-08-02: "18 is fine in the starting
+        /// phases, towards midterm aim for about 10".
+        ///
+        /// Phase 2 is the same threshold the rest of the planner switches on, so
+        /// the change lands when expansion has actually given them somewhere to
+        /// spread to rather than at an arbitrary clock time.
+        /// </summary>
+        const int PER_PATCH_CAPACITY_LATE = 10;
+
+        static int PerPatchCapacityNow()
+        {
+            try { return EcoPlanner.CurrentPhaseIsExpand ? PER_PATCH_CAPACITY_LATE : PER_PATCH_CAPACITY; }
+            catch { return PER_PATCH_CAPACITY; }
         }
 
         static void PublishCapacities(List<Group> groups)
