@@ -1405,7 +1405,7 @@ namespace Si_RTS_AI.Planning
                     && _currentPhase == PlanPhase.Phase2_Expand
                     && state.cash >= LOOP_CASH_FLOOR
                     && NodeManager.TryGetLoop(out Vector3 loopFrom, out Vector3 loopTo, out int loopNodes)
-                    && NextNodeTowards(state, loopTo, out Vector3 loopHop))
+                    && NextLoopHop(state, loopFrom, loopTo, out Vector3 loopHop))
                 {
                     int beforeLoop = fired;
                     TryFireAction(new Candidate
@@ -3040,6 +3040,61 @@ namespace Si_RTS_AI.Planning
 
         /// <summary>Cash that must be spare before insurance is worth buying.</summary>
         const int   LOOP_CASH_FLOOR = 15000;
+
+        /// <summary>
+        /// The next gap to fill when CLOSING a loop between two of our own
+        /// structures.
+        ///
+        /// NextNodeTowards cannot do this. It measures from the nearest anchor
+        /// TO THE GOAL — and a loop's far end IS one of our structures, so the
+        /// gap is zero, it concludes the target is already in reach and returns
+        /// false. That is why loops were proposed nineteen times and built zero
+        /// times: the scoring was right, the placement never ran.
+        ///
+        /// A loop is different geometry: walk the straight line from one end
+        /// toward the other and fill the first step that has nothing on it. Each
+        /// tick lays one, so a three-node bridge closes over three passes.
+        /// </summary>
+        static bool NextLoopHop(EcoState s, Vector3 from, Vector3 to, out Vector3 pos)
+        {
+            pos = Vector3.zero;
+            Vector3 d = to - from;
+            float len = Mathf.Sqrt(d.x * d.x + d.z * d.z);
+            if (len < 1f) return false;
+
+            float hop = Mathf.Max(1f, EcoSimulator.NODE_REACH_M - NODE_DRIFT_MARGIN_M);
+            Vector3 unit = d / len;
+
+            for (float t = hop; t < len; t += hop)
+            {
+                Vector3 candidate = from + unit * t;
+                // Already filled by this loop, an earlier chain, or anything
+                // else standing there.
+                if (AnyStructureNear(s, candidate, LOOP_FILL_RADIUS_M)) continue;
+                // Must be placeable: something finished has to be in node reach.
+                if (!IsChainReachable(candidate, s, EcoSimulator.NODE_REACH_M)) continue;
+                pos = candidate;
+                return true;
+            }
+            return false;    // every step is filled — the loop is closed
+        }
+
+        const float LOOP_FILL_RADIUS_M = 70f;
+
+        static bool AnyStructureNear(EcoState s, Vector3 p, float radiusM)
+        {
+            float r2 = radiusM * radiusM;
+            bool near(Vector3 q)
+            {
+                float dx = q.x - p.x, dz = q.z - p.z;
+                return dx * dx + dz * dz <= r2;
+            }
+            if (s.nestPos != Vector3.zero && near(s.nestPos)) return true;
+            for (int i = 0; i < s.nodes.Count; i++) if (near(s.nodes[i].pos)) return true;
+            for (int i = 0; i < s.bcs.Count; i++)   if (near(s.bcs[i].pos))   return true;
+            for (int i = 0; i < s.cysts.Count; i++) if (near(s.cysts[i].pos)) return true;
+            return false;
+        }
 
         static bool NextNodeTowards(EcoState s, Vector3 goal, out Vector3 pos)
         {
