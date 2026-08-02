@@ -141,11 +141,35 @@ namespace Si_RTS_AI.Planning
         const float FREE_AGENT_MAX_WALK_S = 30f;
 
         /// <summary>
-        /// How much nearer a group with its own Cyst has to be to win. At 0.65 a
-        /// producer-less patch is preferred while it is under ~1.5x the walk —
-        /// worth going out of the way for, not worth crossing the map for.
+        /// What each kind of destination is WORTH, as a multiplier on the time
+        /// it costs. Lower is better. They are ordered by how much the choice
+        /// helps beyond the one shrimp being moved:
+        ///
+        ///   1.00  a group already producing — it fills itself anyway, so a
+        ///         walker adds least
+        ///   0.65  a group with capacity but no Cyst — genuinely needs bodies
+        ///   0.45  untapped ground — the only option that CREATES capacity, and
+        ///         it drags a Bio Cache and a node chain along with it
+        ///
+        /// The ordering matters more than the exact numbers: whenever total
+        /// capacity is falling behind the shrimp count, which is the recurring
+        /// failure here, only the third option actually changes that.
         /// </summary>
-        const float NO_PRODUCER_DISCOUNT = 0.65f;
+        const float VALUE_NO_PRODUCER = 0.65f;
+        const float VALUE_UNTAPPED    = 0.45f;
+
+        /// <summary>
+        /// How long after asking a Bio Cache actually appears on new ground —
+        /// build time plus the chain that has to reach it. Measured rather than
+        /// assumed where possible.
+        /// </summary>
+        static float ExpansionLeadS()
+        {
+            float bc = Perception.BuildTimeline.MeasuredTotalS("Bio Cache");
+            if (bc <= 0f) bc = EcoSimulator.BC_BUILD_S;
+            return bc + CHAIN_ALLOWANCE_S;
+        }
+        const float CHAIN_ALLOWANCE_S = 25f;
 
         /// <summary>
         /// Untapped ground judged on plain distance.
@@ -523,16 +547,21 @@ namespace Si_RTS_AI.Planning
                 // it is worth SOME extra walk, not any amount of it. Scored as
                 // an effective distance so the two trade off, which is the same
                 // correction the spread term and the staffing gate needed.
+                // SCORED AS TIME-UNTIL-PRODUCTIVE, THEN DISCOUNTED BY WHAT IT OPENS.
+                //
+                // Distance alone cannot compare a standing group against untapped
+                // ground: one is available on arrival, the other has to be built.
+                // Time is the common unit, and it is what the shrimp actually
+                // loses.
                 int dst = -1; float dstScore = float.MaxValue;
                 for (int gi = 0; gi < snap.Length; gi++)
                 {
                     if (snap[gi].Capacity - snap[gi].Current <= 0) continue;
                     float dx = snap[gi].Best.x - p.x, dz = snap[gi].Best.z - p.z;
-                    float d = Mathf.Sqrt(dx * dx + dz * dz);
-                    float score = d * (snap[gi].HasProducer ? 1f : NO_PRODUCER_DISCOUNT);
+                    float walkS = Mathf.Sqrt(dx * dx + dz * dz) / SHRIMP_SPEED;
+                    float score = walkS * (snap[gi].HasProducer ? 1f : VALUE_NO_PRODUCER);
                     if (score < dstScore) { dstScore = score; dst = gi; }
                 }
-                float dstSq = dstScore * dstScore;
                 // UNTAKEN GROUND COMPETES WITH DEVELOPED GROUND.
                 //
                 // A patch with no Bio Cache has no group, so it was invisible
@@ -555,7 +584,19 @@ namespace Si_RTS_AI.Planning
                 // a shrimp arriving early has nowhere to deposit until the
                 // expansion lands. It still wins when it is much closer, or when
                 // nothing else has room.
-                float freeScore = Mathf.Sqrt(freshSq) * UNTAPPED_PENALTY;
+                // Untapped ground: the walk and the Bio Cache build run in
+                // PARALLEL, so the cost is whichever finishes last — not their
+                // sum. Measured on NarakaCity 2026-08-02, the request at
+                // 14:14:02 had a Bio Cache standing at 14:14:58, so a shrimp
+                // walking a minute lost nothing waiting for it.
+                //
+                // It then carries the strongest discount of the three, because
+                // it is the only choice that CREATES capacity. The recurring
+                // failure in this system is total capacity falling behind the
+                // shrimp count as patches deplete — filling an existing slot
+                // never fixes that, and taking new ground does.
+                float freeWalkS = Mathf.Sqrt(freshSq) / SHRIMP_SPEED;
+                float freeScore = Mathf.Max(freeWalkS, ExpansionLeadS()) * VALUE_UNTAPPED;
                 if (freeIdx >= 0 && (dst < 0 || freeScore < dstScore))
                 {
                     _hint = new ExpansionHint { Pos = freeP[freeIdx], Shrimps = stranded, AtTime = now };
