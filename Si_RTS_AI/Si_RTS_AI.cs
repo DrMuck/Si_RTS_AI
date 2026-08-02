@@ -8,7 +8,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 
-[assembly: MelonInfo(typeof(Si_RTS_AI.Si_RTS_AI), "Si_RTS_AI", "0.12.3-real-vision-radius", "DrMuck")]
+[assembly: MelonInfo(typeof(Si_RTS_AI.Si_RTS_AI), "Si_RTS_AI", "0.12.4-null-team-crash", "DrMuck")]
 [assembly: MelonGame("Bohemia Interactive", "Silica")]
 
 namespace Si_RTS_AI
@@ -758,7 +758,7 @@ namespace Si_RTS_AI
 
         static PlayerActionTally GetActionTally(Team team)
         {
-            if (team == null) team = _placeholderTeam;
+            if (team == null) return _unteamedActions;
             if (!_actions.TryGetValue(team, out var t))
             {
                 t = new PlayerActionTally();
@@ -769,7 +769,7 @@ namespace Si_RTS_AI
 
         static SpawnTally GetSpawnTally(Team team)
         {
-            if (team == null) team = _placeholderTeam;
+            if (team == null) return _unteamedSpawns;
             if (!_spawns.TryGetValue(team, out var t))
             {
                 t = new SpawnTally();
@@ -778,9 +778,23 @@ namespace Si_RTS_AI
             return t;
         }
 
-        // Sentinel key used when a team is null — we still want to count events
-        // rather than drop them, and the log line will show team=Team?.
-        static readonly Team _placeholderTeam = null!;
+        // BUCKET, NOT A KEY, FOR TEAM-LESS EVENTS.
+        //
+        // This was a "sentinel key" that was itself null — `static readonly Team
+        // _placeholderTeam = null!` — so `if (team == null) team =
+        // _placeholderTeam` assigned null to null and the very next line did
+        // Dictionary.TryGetValue(null), which throws ArgumentNullException. The
+        // `null!` is what hid it: the compiler was told not to warn about the
+        // one thing that mattered.
+        //
+        // It fired on every structure or unit that spawns before its team is
+        // assigned — the handlers run from Structure.Awake() — 27 times in the
+        // 2026-08-01 server log.
+        //
+        // Counting still happens, into a plain bucket, so the events are not
+        // dropped and no dictionary ever sees a null key.
+        static readonly SpawnTally        _unteamedSpawns  = new SpawnTally();
+        static readonly PlayerActionTally _unteamedActions = new PlayerActionTally();
 
         internal static void AppendToRound(string line)
         {
