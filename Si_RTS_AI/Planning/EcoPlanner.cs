@@ -1388,6 +1388,34 @@ namespace Si_RTS_AI.Planning
                                         $"reconnecting ({repTo.x:F0},{repTo.z:F0})");
                 }
 
+                // CLOSE A LOOP, BUT ONLY OUT OF SURPLUS.
+                //
+                // A loop earns nothing — it is insurance against a branch being
+                // severed — so it sits below expansion and repair and only
+                // spends money that has nowhere better to go. Mid-game there is
+                // plenty: 56,000-79,000 unspent on NarakaCity 2026-08-02 while
+                // 82 of 174 structures were single points of failure and the
+                // network held no cycle at all.
+                if (!openerDrove && fired == 0
+                    && _currentPhase == PlanPhase.Phase2_Expand
+                    && state.cash >= LOOP_CASH_FLOOR
+                    && NodeManager.TryGetLoop(out Vector3 loopFrom, out Vector3 loopTo, out int loopNodes)
+                    && NextNodeTowards(state, loopTo, out Vector3 loopHop))
+                {
+                    int beforeLoop = fired;
+                    TryFireAction(new Candidate
+                    {
+                        kind = ActionKind.PlaceNode,
+                        target = loopHop,
+                        cost = EcoSimulator.NODE_COST,
+                        patchIdx = -1,
+                    });
+                    if (fired > beforeLoop)
+                        MelonLogger.Msg($"[PLAN/EXEC] LOOP node at ({loopHop.x:F0},{loopHop.z:F0}) " +
+                                        $"closing ({loopFrom.x:F0},{loopFrom.z:F0})-" +
+                                        $"({loopTo.x:F0},{loopTo.z:F0}), {loopNodes} node(s)");
+                }
+
                 // REACH FOLLOWS THE SHRIMPS.
                 //
                 // Shrimp migration asks for expansion by publishing a hint, and
@@ -3004,6 +3032,9 @@ namespace Si_RTS_AI.Planning
         /// also stops that error compounding along the chain.
         /// </summary>
         const float NODE_DRIFT_MARGIN_M = 40f;
+
+        /// <summary>Cash that must be spare before insurance is worth buying.</summary>
+        const int   LOOP_CASH_FLOOR = 15000;
 
         static bool NextNodeTowards(EcoState s, Vector3 goal, out Vector3 pos)
         {

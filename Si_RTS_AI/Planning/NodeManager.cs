@@ -64,6 +64,9 @@ namespace Si_RTS_AI.Planning
         // REPAIR_TTL_S so a fixed line stops being requested.
         const float REPAIR_TTL_S = 45f;
         static Vector3 _repairFrom, _repairTo;
+        static Vector3 _loopFrom, _loopTo;
+        static int     _loopNodes;
+        static float   _loopAt = -1f;
         static float   _repairAt = -1f;
 
         /// <summary>
@@ -81,7 +84,27 @@ namespace Si_RTS_AI.Planning
             return _repairAt >= 0f && Time.time - _repairAt < REPAIR_TTL_S;
         }
 
-        internal static void ResetForNewRound() { _lastReportAt = 0f; _repairAt = -1f; }
+        internal static void ResetForNewRound()
+        {
+            _lastReportAt = 0f; _repairAt = -1f; _loopAt = -1f;
+        }
+
+        /// <summary>
+        /// The loop worth closing, if any: a short bridge that turns a long
+        /// dead-end into a ring.
+        ///
+        /// Deliberately the LOWEST priority claim on cash. A loop earns nothing
+        /// — it is insurance against a branch being cut — so it must never
+        /// compete with expansion or repair. It is only worth taking when there
+        /// is genuine surplus, which mid-game there is: 56,000 to 79,000 sat
+        /// unspent on NarakaCity 2026-08-02 while 82 of 174 structures were
+        /// single points of failure.
+        /// </summary>
+        internal static bool TryGetLoop(out Vector3 from, out Vector3 to, out int nodes)
+        {
+            from = _loopFrom; to = _loopTo; nodes = _loopNodes;
+            return _loopAt >= 0f && Time.time - _loopAt < REPAIR_TTL_S;
+        }
 
         internal static void Tick(Team team)
         {
@@ -206,7 +229,11 @@ namespace Si_RTS_AI.Planning
         /// BFS. This runs on the game thread at the report cadence.
         /// </summary>
         const float MAX_BRIDGE_M   = 600f;
-        const int   CANDIDATE_PAIRS = 24;
+        /// <summary>How many pairs to look at before giving up, and how many
+        /// worthwhile ones to find before settling. The first bounds the work,
+        /// the second ends the search early when the answer is already clear.</summary>
+        const int   MAX_PAIRS_EXAMINED = 250;
+        const int   ENOUGH_CANDIDATES  = 12;
         const int   MIN_HOPS_SAVED  = 6;
 
         static void ReportLoopCandidates(List<Node> g, bool[] connected, System.Text.StringBuilder sb)
@@ -227,7 +254,6 @@ namespace Si_RTS_AI.Planning
             }
             if (pairs.Count == 0) return;
             pairs.Sort((x, y) => x.gap.CompareTo(y.gap));
-            if (pairs.Count > CANDIDATE_PAIRS) pairs.RemoveRange(CANDIDATE_PAIRS, pairs.Count - CANDIDATE_PAIRS);
 
             // REPAIR AND LOOP ARE DIFFERENT JOBS.
             //
@@ -243,8 +269,26 @@ namespace Si_RTS_AI.Planning
             float bestScore = 0f; int bi = -1, bhops = 0, bnodes = 0; float bgap = 0f;
             int ri = -1, rnodes = int.MaxValue; float rgap = 0f;
 
-            for (int i = 0; i < pairs.Count; i++)
+            // DO NOT STOP AT THE CLOSEST PAIRS.
+            //
+            // This used to score only the 24 physically closest pairs, and in a
+            // dense base those are already NEIGHBOURS — one or two hops apart —
+            // so every one failed the hop test and the search ended before
+            // reaching anything worth bridging. NarakaCity 2026-08-02 reported
+            // 82 cut vertices among 174 structures, a pure tree with no cycles
+            // anywhere, and still proposed no loop. The filter was removing
+            // exactly what it was looking for.
+            //
+            // Now it walks outward from the closest pair and stops once it has
+            // found ENOUGH VALID candidates, not once it has looked at enough
+            // pairs. BFS results are cached per source, so the extra work is a
+            // few dozen searches rather than one per pair.
+            var bfsCache = new Dictionary<int, int[]>();
+            int examined = 0, valid = 0;
+
+            for (int i = 0; i < pairs.Count && examined < MAX_PAIRS_EXAMINED && valid < ENOUGH_CANDIDATES; i++)
             {
+                examined++;
                 int a = pairs[i].a, b = pairs[i].b;
                 int nodes = NodesToBridge(pairs[i].gap);
 
@@ -255,7 +299,8 @@ namespace Si_RTS_AI.Planning
                 }
                 if (!connected[a]) continue;                          // both already lost
 
-                int hops = HopDistance(g, a, b);
+                int hops = HopDistanceCached(g, a, b, bfsCache);
+                if (hops >= MIN_HOPS_SAVED) valid++;
                 if (hops >= int.MaxValue) continue;                   // separate components
                 if (hops < MIN_HOPS_SAVED) continue;                  // already well joined
                 float score = hops / (float)Mathf.Max(1, nodes);      // cycle length per Node
@@ -274,13 +319,36 @@ namespace Si_RTS_AI.Planning
                   .Append(',').Append(lost.z.ToString("F0")).Append(')')
                   .Append(" gap=").Append((int)rgap).Append("m nodes=").Append(rnodes);
             }
-            if (bi < 0) return;
+            if (bi < 0) { _loopAt = -1f; return; }
 
             var A = g[pairs[bi].a].Pos; var B = g[pairs[bi].b].Pos;
+            _loopFrom = A; _loopTo = B; _loopNodes = bnodes; _loopAt = Time.time;
             sb.Append(" | LOOP (").Append(A.x.ToString("F0")).Append(',').Append(A.z.ToString("F0"))
               .Append(")-(").Append(B.x.ToString("F0")).Append(',').Append(B.z.ToString("F0")).Append(')')
               .Append(" gap=").Append((int)bgap).Append("m nodes=").Append(bnodes)
               .Append(" closes=").Append(bhops).Append("hops");
+        }
+
+        /// <summary>Hops from one vertex to another, reusing the BFS from that
+        /// source across every pair that shares it.</summary>
+        static int HopDistanceCached(List<Node> g, int from, int to, Dictionary<int, int[]> cache)
+        {
+            if (!cache.TryGetValue(from, out var dist))
+            {
+                dist = new int[g.Count];
+                for (int i = 0; i < g.Count; i++) dist[i] = -1;
+                var q = new Queue<int>();
+                dist[from] = 0; q.Enqueue(from);
+                while (q.Count > 0)
+                {
+                    int v = q.Dequeue();
+                    var adj = g[v].Adj;
+                    for (int k = 0; k < adj.Count; k++)
+                        if (dist[adj[k]] < 0) { dist[adj[k]] = dist[v] + 1; q.Enqueue(adj[k]); }
+                }
+                cache[from] = dist;
+            }
+            return dist[to] < 0 ? int.MaxValue : dist[to];
         }
 
         /// <summary>Hops between two vertices, -1 if unreachable.</summary>
