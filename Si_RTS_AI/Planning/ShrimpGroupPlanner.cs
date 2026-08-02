@@ -298,6 +298,8 @@ namespace Si_RTS_AI.Planning
             _capSnapshot = new BcCap[0];
             TeamCapacity = -1;
             _hint = default;
+            _committedAt = -1f;
+            _freePatches = new Vector3[0];
             MigratedThisRound = 0;
             ReissuedThisRound = 0;
         }
@@ -405,6 +407,50 @@ namespace Si_RTS_AI.Planning
                   .Append(Mathf.Sqrt(SqDist(free[i], from)).ToString("F0")).Append('m');
             }
             MelonLogger.Msg(sb.ToString());
+        }
+
+        /// <summary>
+        /// The untapped patch we are currently expanding toward.
+        ///
+        /// Held until a Bio Cache actually serves it, or until it goes stale —
+        /// a chain that cannot reach must eventually release, or one unreachable
+        /// patch would block every other expansion for the rest of the round.
+        /// </summary>
+        const float COMMITMENT_PULL = 0.35f;   // effective distance while committed
+        const float COMMITMENT_TTL_S = 150f;   // long enough for chain + Bio Cache
+
+        static Vector3 _committedPos;
+        static float   _committedAt = -1f;
+
+        static void Commit(Vector3 pos, float now)
+        {
+            if (IsCommittedExpansion(pos)) return;       // already ours, keep the original timestamp
+            _committedPos = pos; _committedAt = now;
+        }
+
+        static bool IsCommittedExpansion(Vector3 pos)
+        {
+            if (_committedAt < 0f) return false;
+            if (Time.time - _committedAt > COMMITMENT_TTL_S) return false;
+            float dx = _committedPos.x - pos.x, dz = _committedPos.z - pos.z;
+            return dx * dx + dz * dz < 1f;
+        }
+
+        /// <summary>Released once the patch is served — PublishFreePatches drops
+        /// it from the free list, so a commitment that no longer appears there
+        /// has been satisfied.</summary>
+        static void ExpireCommitmentIfServed()
+        {
+            if (_committedAt < 0f) return;
+            var free = _freePatches;
+            for (int i = 0; i < free.Length; i++)
+            {
+                float dx = free[i].x - _committedPos.x, dz = free[i].z - _committedPos.z;
+                if (dx * dx + dz * dz < 1f) return;      // still unserved, keep committing
+            }
+            MelonLogger.Msg($"[SHRIMP-SUP] expansion at ({_committedPos.x:F0},{_committedPos.z:F0}) " +
+                            $"is served — releasing commitment");
+            _committedAt = -1f;
         }
 
         static void WantExpansionNear(Vector3 from)
@@ -577,6 +623,21 @@ namespace Si_RTS_AI.Planning
                 {
                     float dx = freeP[fi].x - p.x, dz = freeP[fi].z - p.z;
                     float d = dx * dx + dz * dz;
+                    // STAY WITH THE EXPANSION WE ALREADY COMMITTED TO.
+                    //
+                    // The target was recomputed from scratch every pass, so it
+                    // jumped between patches and no single expansion was ever
+                    // carried through. NarakaCity 2026-08-02: shrimps sent to
+                    // (2268,2635) at 18:23:56 with two chain nodes laid toward
+                    // it, then at 18:25:24 the request moved to (1206,-693) and
+                    // a chain started there instead. NEITHER got a Bio Cache —
+                    // the ones built went to four other places — and the shrimps
+                    // were left harvesting at a patch with nowhere to deposit.
+                    //
+                    // A committed patch is preferred until it is actually served
+                    // or the commitment goes stale, so the chain, the Bio Cache
+                    // and the walkers all aim at one place long enough to finish.
+                    if (IsCommittedExpansion(freeP[fi])) d *= COMMITMENT_PULL;
                     if (d < freshSq) { freshSq = d; freeIdx = fi; }
                 }
                 // Untapped ground is scored WORSE than a standing group at the
@@ -600,6 +661,7 @@ namespace Si_RTS_AI.Planning
                 if (freeIdx >= 0 && (dst < 0 || freeScore < dstScore))
                 {
                     _hint = new ExpansionHint { Pos = freeP[freeIdx], Shrimps = stranded, AtTime = now };
+                    Commit(freeP[freeIdx], now);
                     IssueMove(u, freeP[freeIdx]);
                     _assign[u] = new Assignment { Target = freeP[freeIdx],
                                                   AssignedAt = now, LastOrderAt = now };
@@ -888,6 +950,7 @@ namespace Si_RTS_AI.Planning
             TeamShrimps = shrimps.Count;
             PublishCapacities(groups);
             PublishFreePatches(patches, groups);
+            ExpireCommitmentIfServed();
 
             // ---- Sticky re-issue: pull drifters back to their assignment ----
             float now = Time.time;
