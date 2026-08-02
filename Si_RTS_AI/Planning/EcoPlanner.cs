@@ -1396,7 +1396,12 @@ namespace Si_RTS_AI.Planning
                 // plenty: 56,000-79,000 unspent on NarakaCity 2026-08-02 while
                 // 82 of 174 structures were single points of failure and the
                 // network held no cycle at all.
-                if (!openerDrove && fired == 0
+                // NOT gated on "nothing else fired". That was the condition, and
+                // during Phase 2 something almost always fires, so loops never
+                // got a turn: NarakaCity 2026-08-02 proposed a loop 19 times
+                // with 50,000 cash in hand and built none of them. The cash
+                // floor is the surplus test — an idle tick is not.
+                if (!openerDrove
                     && _currentPhase == PlanPhase.Phase2_Expand
                     && state.cash >= LOOP_CASH_FLOOR
                     && NodeManager.TryGetLoop(out Vector3 loopFrom, out Vector3 loopTo, out int loopNodes)

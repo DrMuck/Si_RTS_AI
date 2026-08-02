@@ -56,6 +56,14 @@ namespace Si_RTS_AI.Faction
         /// capped at a quarter of the ceiling so it can never starve production.
         /// </summary>
         const int   EXPANSION_SITES_HELD = 2;
+
+        /// <summary>
+        /// Fraction of the map's CURRENT live capacity worth producing toward.
+        /// The gap absorbs the decay that happens while the shrimps are being
+        /// built and walking — without it the fleet is permanently just over
+        /// what the ground can feed, which is what generates the migration.
+        /// </summary>
+        const float SUSTAINABLE_FRACTION = 0.90f;
         // Money management: each queued Shrimp reserves its cost. User 2026-07-07
         // asked to shorten to 1-2 max to free cash for tech / other placements.
         // Went to 1: at 20 Cysts that frees ~1500 cash (75 × 20) — enough for a
@@ -159,6 +167,21 @@ namespace Si_RTS_AI.Faction
                 if (tc > 0) mapCap = tc;
             }
             catch { }
+            // PRODUCE AGAINST CAPACITY THAT WILL STILL EXIST.
+            //
+            // TeamCapacity is what the live biotics can feed RIGHT NOW, and it
+            // falls continuously as patches drain — so producing up to it
+            // guarantees being over it minutes later, with the surplus turning
+            // into migration. NarakaCity 2026-08-02 at 10min: shrimps=141
+            // against totalCap=130, migrated=112, reissued=607, with one group
+            // holding 15 shrimps on a patch already at cap=0.
+            //
+            // Those eleven surplus shrimps are not idle, they are the churn:
+            // they have nowhere to be, so every pass re-homes them and every
+            // depletion sends another wave. Holding a margin under current
+            // capacity costs a little income now and removes the wave.
+            if (mapCap != int.MaxValue) mapCap = Mathf.FloorToInt(mapCap * SUSTAINABLE_FRACTION);
+
             int effectiveCap = Math.Min(SHRIMP_HARD_CAP, mapCap);
 
             // KEEP HEADROOM FOR EXPANSIONS THAT DO NOT EXIST YET.
