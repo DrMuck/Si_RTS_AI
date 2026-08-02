@@ -3092,7 +3092,23 @@ namespace Si_RTS_AI.Planning
         /// the opener.
         /// </summary>
         const float BEARING_SECTOR_DEG   = 90f;
-        const float BEARING_SPREAD_BONUS = 2500f;
+        /// <summary>
+        /// Sized AGAINST the Bio Cache bonus, not picked independently.
+        ///
+        /// At a flat 2,500 this was an order of magnitude too small to redirect
+        /// anything. Measured NarakaCity 2026-08-02, 16 Bio Caches: 8 south (out
+        /// to 2,681m), 4 north-west, 2 north, 2 west (stopping at 1,177m). With
+        /// 8 already south a ninth scored 2500/9 = 278 against 2500/3 = 833 for
+        /// a third western one — a 556 difference inside scores in the tens of
+        /// thousands, so income swamped it and the front kept running south.
+        ///
+        /// Tying it to PHASE2_BC_BONUS makes an EMPTY sector worth about a whole
+        /// extra Bio Cache, and the same comparison becomes 1,667 against 5,000.
+        /// That is a real nudge without overriding income outright — and it
+        /// scales automatically if the Bio Cache bonus is ever recalibrated,
+        /// which the other Phase 2 constants still need.
+        /// </summary>
+        const float BEARING_SPREAD_BONUS = PHASE2_BC_BONUS;
 
         static float BearingSpreadBonus(EcoState s, Vector3 patchPos)
         {
