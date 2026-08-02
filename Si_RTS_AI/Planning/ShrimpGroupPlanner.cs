@@ -148,11 +148,22 @@ namespace Si_RTS_AI.Planning
         const float NO_PRODUCER_DISCOUNT = 0.65f;
 
         /// <summary>
-        /// Untapped ground has no Bio Cache yet, so a shrimp sent there waits
-        /// for the expansion before it can deposit anything. Priced above its
-        /// real distance to reflect that.
+        /// Untapped ground judged on plain distance.
+        ///
+        /// It was briefly priced at 1.35x on the reasoning that there is no Bio
+        /// Cache to deposit at yet — which misses that CHOOSING it is what
+        /// triggers the expansion. Verified end to end on NarakaCity 2026-08-02:
+        ///
+        ///   14:14:02  shrimps heading to UNTAPPED (1744,1478), asking to expand
+        ///   14:14:10  chain node at (1991,1597) toward it for 16 shrimps
+        ///   14:14:58  Bio Cache at (1755,1480)
+        ///
+        /// The Bio Cache lands while they walk, which is the intent (user
+        /// 2026-08-02: "would have been best to node there and build a biocache
+        /// while shrimps relocating"). Penalising it would suppress exactly the
+        /// behaviour that works.
         /// </summary>
-        const float UNTAPPED_PENALTY = 1.35f;
+        const float UNTAPPED_PENALTY = 1.0f;
 
         // Per-unit gates.
         // A shrimp that just arrived somewhere is protected from being made a
@@ -350,6 +361,28 @@ namespace Si_RTS_AI.Planning
         /// the patch list; this only records that the condition is live between
         /// those passes, so the reason a shrimp is idle is never invisible.
         /// </summary>
+        /// <summary>Nearest few unserved patches with distances, so a closer one
+        /// losing to a further one is visible rather than inferred.</summary>
+        static void LogFreePatchCandidates(Vector3 from, int chosen)
+        {
+            var free = _freePatches;
+            if (free == null || free.Length == 0) return;
+            var order = new List<int>(free.Length);
+            for (int i = 0; i < free.Length; i++) order.Add(i);
+            order.Sort((a, b) => SqDist(free[a], from).CompareTo(SqDist(free[b], from)));
+
+            var sb = new System.Text.StringBuilder("[SHRIMP-SUP] free patches:");
+            for (int k = 0; k < 4 && k < order.Count; k++)
+            {
+                int i = order[k];
+                sb.Append(' ').Append(i == chosen ? "*" : "")
+                  .Append('(').Append(free[i].x.ToString("F0")).Append(',')
+                  .Append(free[i].z.ToString("F0")).Append(')')
+                  .Append(Mathf.Sqrt(SqDist(free[i], from)).ToString("F0")).Append('m');
+            }
+            MelonLogger.Msg(sb.ToString());
+        }
+
         static void WantExpansionNear(Vector3 from)
         {
             _strandedNoRoom++;
@@ -533,6 +566,10 @@ namespace Si_RTS_AI.Planning
                     if (now - _lastHintLogAt > 20f)
                     {
                         _lastHintLogAt = now;
+                        // Name the runners-up too. A closer free patch losing to
+                        // a further one is the thing that needs explaining, and
+                        // it cannot be diagnosed from the winner alone.
+                        LogFreePatchCandidates(p, freeIdx);
                         MelonLogger.Msg($"[SHRIMP-SUP] displaced shrimps heading to UNTAPPED " +
                                         $"({freeP[freeIdx].x:F0},{freeP[freeIdx].z:F0}) " +
                                         $"{Mathf.Sqrt(freshSq):F0}m away — asking for expansion there");
