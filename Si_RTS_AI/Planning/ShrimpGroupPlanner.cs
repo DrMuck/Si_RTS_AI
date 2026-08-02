@@ -140,6 +140,20 @@ namespace Si_RTS_AI.Planning
         /// </summary>
         const float FREE_AGENT_MAX_WALK_S = 30f;
 
+        /// <summary>
+        /// How much nearer a group with its own Cyst has to be to win. At 0.65 a
+        /// producer-less patch is preferred while it is under ~1.5x the walk —
+        /// worth going out of the way for, not worth crossing the map for.
+        /// </summary>
+        const float NO_PRODUCER_DISCOUNT = 0.65f;
+
+        /// <summary>
+        /// Untapped ground has no Bio Cache yet, so a shrimp sent there waits
+        /// for the expansion before it can deposit anything. Priced above its
+        /// real distance to reflect that.
+        /// </summary>
+        const float UNTAPPED_PENALTY = 1.35f;
+
         // Per-unit gates.
         // A shrimp that just arrived somewhere is protected from being made a
         // donor again for this long — without it, a group that overshoots by
@@ -462,20 +476,30 @@ namespace Si_RTS_AI.Planning
                 // will reach its own capacity without help, so sending walkers
                 // there wastes the walk and crowds a patch that was already
                 // spoken for. Untapped ground is worth more, even a bit further.
-                int dst = -1; float dstSq = float.MaxValue;
-                bool dstIsFresh = false;
+                // A PREFERENCE, NOT A PRECEDENCE.
+                //
+                // "No local producer" used to win OUTRIGHT, so a producer-less
+                // group 1500m away beat a good one 200m away and shrimps walked
+                // across the map. NarakaCity 2026-08-02: shrimps at
+                // (2189,738) sent far south when (1658,893) was the better
+                // home, and others sent to (1361,1549) instead of biotics just
+                // north of them.
+                //
+                // The reasoning behind the preference still holds — a group with
+                // its own Cyst fills itself, so walkers there are wasted — but
+                // it is worth SOME extra walk, not any amount of it. Scored as
+                // an effective distance so the two trade off, which is the same
+                // correction the spread term and the staffing gate needed.
+                int dst = -1; float dstScore = float.MaxValue;
                 for (int gi = 0; gi < snap.Length; gi++)
                 {
                     if (snap[gi].Capacity - snap[gi].Current <= 0) continue;
-                    bool fresh = !snap[gi].HasProducer;
                     float dx = snap[gi].Best.x - p.x, dz = snap[gi].Best.z - p.z;
-                    float d = dx * dx + dz * dz;
-                    // A group without its own producer wins outright; among
-                    // equals, the nearest.
-                    if (fresh && !dstIsFresh) { dstIsFresh = true; dstSq = d; dst = gi; continue; }
-                    if (fresh != dstIsFresh) continue;
-                    if (d < dstSq) { dstSq = d; dst = gi; }
+                    float d = Mathf.Sqrt(dx * dx + dz * dz);
+                    float score = d * (snap[gi].HasProducer ? 1f : NO_PRODUCER_DISCOUNT);
+                    if (score < dstScore) { dstScore = score; dst = gi; }
                 }
+                float dstSq = dstScore * dstScore;
                 // UNTAKEN GROUND COMPETES WITH DEVELOPED GROUND.
                 //
                 // A patch with no Bio Cache has no group, so it was invisible
@@ -493,7 +517,13 @@ namespace Si_RTS_AI.Planning
                     float d = dx * dx + dz * dz;
                     if (d < freshSq) { freshSq = d; freeIdx = fi; }
                 }
-                if (freeIdx >= 0 && (dst < 0 || freshSq < dstSq))
+                // Untapped ground is scored WORSE than a standing group at the
+                // same distance, not better: there is no Bio Cache there yet, so
+                // a shrimp arriving early has nowhere to deposit until the
+                // expansion lands. It still wins when it is much closer, or when
+                // nothing else has room.
+                float freeScore = Mathf.Sqrt(freshSq) * UNTAPPED_PENALTY;
+                if (freeIdx >= 0 && (dst < 0 || freeScore < dstScore))
                 {
                     _hint = new ExpansionHint { Pos = freeP[freeIdx], Shrimps = stranded, AtTime = now };
                     IssueMove(u, freeP[freeIdx]);
