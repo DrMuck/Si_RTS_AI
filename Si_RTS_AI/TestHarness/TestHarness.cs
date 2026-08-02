@@ -72,6 +72,7 @@ namespace Si_RTS_AI.TestHarnessNs
         static MelonPreferences_Entry<bool>?  _openerExecute;
         static MelonPreferences_Entry<int>?  _telemetryPort;
         static MelonPreferences_Entry<string>? _mapRotation;
+        static MelonPreferences_Entry<bool>?   _autoRotateMap;
         static MelonPreferences_Entry<string>? _configId;
         static MelonPreferences_Entry<bool>?   _ecoPlannerActive;
 
@@ -139,6 +140,8 @@ namespace Si_RTS_AI.TestHarnessNs
                 _scoutEnabled         = _cat.CreateEntry("ScoutEnabled",                  true,  "ScoutPlanner: conscript up to 2 starter Crabs as dedicated scouts and sweep a star of waypoints outward from the Nest, snapping each waypoint to the nearest undiscovered biotics patch. Reveals ground for FoW-gated BC placement. When false, Crabs stay under vanilla AI control.");
                 _scoutMaxUnits        = _cat.CreateEntry("ScoutMaxUnits",                 20,    "How many tier-0 units (Crab / Squid) ScoutPlanner fields. Each owns one arm of a uniform star from the Nest — 20 arms = one every 18 degrees. Existing units are conscripted first; the rest are built as cheap Crabs on a slow trickle.");
                 _openerExecute        = _cat.CreateEntry("OpenerExecute",                 true,  "Phase 1 OpenerPlanner drives the opening build order instead of the beam. False = shadow mode (logs its chosen opening, builds nothing). Abandons itself if a step stalls 45s.");
+                _autoRotateMap        = _cat.CreateEntry("HeadlessTest_AutoRotateMap", false,
+                    "Load the next map in HeadlessTest_MapRotation after a force-end, instead of restarting the same one. OFF by default: it calls GameLevelLoader.StartLoadLevelCoroutine, which is not a verified API here, and a bad load on a live server is worse than a repeated map. Turn on for unattended soak runs, where staying on one map defeats the point of the rotation.");
                 _mapRotation          = _cat.CreateEntry("HeadlessTest_MapRotation",         "NorthPolarCap,NarakaCity,WhisperingPlains", "Comma-separated map names to cycle through for soak testing. Logged at scene load and echoed at round end — auto-cycling isn't wired yet, so restart the server with the next map name in this list to rotate. Guards against overfitting AI tuning to a single map.");
                 _configId             = _cat.CreateEntry("HeadlessTest_ConfigId",            "baseline", "Free-form tag identifying the AI-config version this soak run represents (e.g. 'baseline', 'utility_bc_v1'). Written to each benchmark row so 'python analyze.py | group_by(configId)' can diff A/B eco.");
                 _ecoPlannerActive     = _cat.CreateEntry("HeadlessTest_EcoPlannerActive",    false,   "Rolling-horizon eco planner action-execution switch. OFF (default): planner runs in shadow mode, logging [PLAN] recommendations only. ON: planner fires the winning action via HelperMethods.SpawnAtLocation when expected_gain exceeds the min-conviction threshold. Independent of AutoOverrideRtsai — works even when a human is commanding the alien team.");
@@ -247,6 +250,52 @@ namespace Si_RTS_AI.TestHarnessNs
                 int idx = rot.FindIndex(m => string.Equals(m, sceneName, StringComparison.OrdinalIgnoreCase));
                 string next = rot[(idx < 0 ? 0 : (idx + 1) % rot.Count)];
                 MelonLogger.Msg($"[RTSA/HT] MapRotation: current='{sceneName}' (index {idx}), configured={string.Join(",", rot)}. Restart with map='{next}' for next round to rotate.");
+            }
+        }
+
+        /// <summary>
+        /// Load the next map in the rotation. Silent no-op unless
+        /// HeadlessTest_AutoRotateMap is on.
+        ///
+        /// Uses GameLevelLoader.StartLoadLevelCoroutine(path, GameModeInfo,
+        /// bool) via reflection, with the GameModeInfo taken from the mode
+        /// currently running so the rotation cannot change game mode by
+        /// accident. Reflection because the signature is not verified here — if
+        /// it does not resolve, the round simply replays the same map, which is
+        /// the behaviour we already have.
+        /// </summary>
+        static void TryRotateMap()
+        {
+            if (_autoRotateMap?.Value != true) return;
+            try
+            {
+                var rot = ParseMapRotation();
+                if (rot.Count < 2) return;
+
+                string cur = Perception.MapLayers.GridWorld.CurrentMapName ?? "";
+                int idx = rot.FindIndex(m => string.Equals(m, cur, StringComparison.OrdinalIgnoreCase));
+                string next = rot[(idx < 0 ? 0 : idx + 1) % rot.Count];
+                if (string.Equals(next, cur, StringComparison.OrdinalIgnoreCase)) return;
+
+                var gm = GameMode.CurrentGameMode;
+                if (gm == null) { MelonLogger.Warning("[RTSA/HT] rotate: no current GameMode."); return; }
+
+                var infoField = gm.GetType().GetField("GameModeInfo");
+                object info = infoField?.GetValue(gm);
+                if (info == null) { MelonLogger.Warning("[RTSA/HT] rotate: no GameModeInfo on the current mode."); return; }
+
+                var loaderType = typeof(GameLevelLoader);
+                object loader = loaderType.GetProperty("Instance")?.GetValue(null, null);
+                var start = loaderType.GetMethod("StartLoadLevelCoroutine");
+                if (loader == null || start == null)
+                { MelonLogger.Warning("[RTSA/HT] rotate: StartLoadLevelCoroutine not resolvable — staying on this map."); return; }
+
+                MelonLogger.Msg($"[RTSA/HT] rotate: '{cur}' -> '{next}' ({idx + 1}/{rot.Count} in rotation).");
+                start.Invoke(loader, new object[] { next, info, false });
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Warning("[RTSA/HT] rotate threw, staying on this map: " + ex.Message);
             }
         }
 
@@ -728,6 +777,21 @@ namespace Si_RTS_AI.TestHarnessNs
                         _autoStartVsModeSet        = false;
                         _autoStartVsModeSetAt      = 0f;
                         _sceneLoadedAt             = Time.time;   // reset elapsed timer for ForceEndRound
+
+                        // ROTATE, RATHER THAN REPLAYING THE SAME MAP.
+                        //
+                        // A force-end restarts the round on the SAME scene, so a
+                        // soak session stays on one map indefinitely — observed
+                        // 2026-08-02, WhisperingPlains running back-to-back
+                        // rounds from 20:25 onward while the rotation list named
+                        // three maps. That defeats the reason the list exists,
+                        // which is not overfitting the AI to one map, and we
+                        // have been tuning against NarakaCity all day.
+                        //
+                        // Done HERE, at INIT, rather than inside ForceEndRound:
+                        // loading a scene while the old one is being torn down
+                        // is what produced an access violation earlier today.
+                        TryRotateMap();
                         // Also reset LayerReplay's round timer + snapshot
                         // cache so telemetry's /state roundTime doesn't
                         // accumulate across the re-arm (user saw 1800s
