@@ -3065,12 +3065,30 @@ namespace Si_RTS_AI.Planning
             float hop = Mathf.Max(1f, EcoSimulator.NODE_REACH_M - NODE_DRIFT_MARGIN_M);
             Vector3 unit = d / len;
 
+            // A gap under one hop still needs one node in the middle — stepping
+            // by hop alone would skip straight past it.
+            if (len <= hop)
+            {
+                Vector3 mid = from + unit * (len * 0.5f);
+                if (!AnyStructureNearExcept(s, mid, LOOP_FILL_RADIUS_M, from, to)
+                    && IsChainReachable(mid, s, EcoSimulator.NODE_REACH_M))
+                { pos = mid; return true; }
+                return false;
+            }
+
             for (float t = hop; t < len; t += hop)
             {
                 Vector3 candidate = from + unit * t;
                 // Already filled by this loop, an earlier chain, or anything
-                // else standing there.
-                if (AnyStructureNear(s, candidate, LOOP_FILL_RADIUS_M)) continue;
+                // else standing there — but NOT by the loop's own endpoints.
+                //
+                // The endpoints are structures, so a bridge whose node lands
+                // near the far end was rejected as "already filled" and could
+                // never be built. RiftBasin 2026-08-03: a 155m gap needing ONE
+                // node sat at still=9hops indefinitely, because the only
+                // candidate was 110m from one end and therefore 45m from the
+                // other, inside the 70m fill radius.
+                if (AnyStructureNearExcept(s, candidate, LOOP_FILL_RADIUS_M, from, to)) continue;
                 // Must be placeable: something finished has to be in node reach.
                 if (!IsChainReachable(candidate, s, EcoSimulator.NODE_REACH_M)) continue;
                 pos = candidate;
@@ -3080,6 +3098,32 @@ namespace Si_RTS_AI.Planning
         }
 
         const float LOOP_FILL_RADIUS_M = 70f;
+
+        /// <summary>As AnyStructureNear, but blind to the two structures the
+        /// bridge is being built BETWEEN — they are always near their own end of
+        /// it, and treating them as fill makes short bridges unbuildable.</summary>
+        static bool AnyStructureNearExcept(EcoState s, Vector3 p, float radiusM,
+                                           Vector3 skipA, Vector3 skipB)
+        {
+            float r2 = radiusM * radiusM;
+            bool isEndpoint(Vector3 q)
+            {
+                float ax = q.x - skipA.x, az = q.z - skipA.z;
+                float bx = q.x - skipB.x, bz = q.z - skipB.z;
+                return ax * ax + az * az < 4f || bx * bx + bz * bz < 4f;
+            }
+            bool near(Vector3 q)
+            {
+                if (isEndpoint(q)) return false;
+                float dx = q.x - p.x, dz = q.z - p.z;
+                return dx * dx + dz * dz <= r2;
+            }
+            if (s.nestPos != Vector3.zero && near(s.nestPos)) return true;
+            for (int i = 0; i < s.nodes.Count; i++) if (near(s.nodes[i].pos)) return true;
+            for (int i = 0; i < s.bcs.Count; i++)   if (near(s.bcs[i].pos))   return true;
+            for (int i = 0; i < s.cysts.Count; i++) if (near(s.cysts[i].pos)) return true;
+            return false;
+        }
 
         static bool AnyStructureNear(EcoState s, Vector3 p, float radiusM)
         {
