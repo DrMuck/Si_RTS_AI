@@ -790,6 +790,14 @@ namespace Si_RTS_AI.Planning
             /// so money goes to the frontier instead of buying production we
             /// already have within walking distance.</summary>
             public float      reloc;
+
+            /// <summary>The cluster this placement is heading FOR, as opposed to
+            /// where the structure itself lands. Front spacing must be measured
+            /// here: every branch leaving one knot starts within a hop of it, so
+            /// spacing the hops caps branching at one per knot no matter which
+            /// way the branches go. Spacing the destinations is the question we
+            /// actually meant to ask. Falls back to target when unset.</summary>
+            public Vector3    frontRef;
             // Biotics this placement would pull inside chain reach for the
             // first time. NarakaCity is why this exists — see
             // PHASE2_UNLOCK_VALUE_FRACTION.
@@ -1665,11 +1673,12 @@ namespace Si_RTS_AI.Planning
                             if (c.kind == ActionKind.Noop) continue;
                             if (firedHere.Count >= ESCAPE_MAX_FIRES) break;
 
+                            Vector3 cf = FrontOf(c);
                             bool tooClose = false;
                             for (int k = 0; k < firedHere.Count; k++)
                             {
-                                float ddx = firedHere[k].x - c.target.x;
-                                float ddz = firedHere[k].z - c.target.z;
+                                float ddx = firedHere[k].x - cf.x;
+                                float ddz = firedHere[k].z - cf.z;
                                 if (ddx * ddx + ddz * ddz < EXPAND_SPREAD_M * EXPAND_SPREAD_M)
                                 { tooClose = true; break; }
                             }
@@ -1677,7 +1686,7 @@ namespace Si_RTS_AI.Planning
 
                             int beforeEsc = fired;
                             TryFireAction(c);
-                            if (fired > beforeEsc) firedHere.Add(c.target);
+                            if (fired > beforeEsc) firedHere.Add(cf);
                         }
                         MelonLogger.Msg("[PLAN/ESCAPE] team=" + tn +
                                         " cash=" + state.cash + "/" + state.cap +
@@ -2082,6 +2091,11 @@ namespace Si_RTS_AI.Planning
         /// different directions. Roughly the spacing between neighbouring
         /// biotics, so two commits on the same patch cluster collapse to one.
         /// </summary>
+        /// <summary>Where a candidate's FRONT is, for spacing purposes — the
+        /// cluster it serves, not where the structure lands.</summary>
+        static Vector3 FrontOf(Candidate c) =>
+            c.frontRef == Vector3.zero ? c.target : c.frontRef;
+
         const float EXPAND_SPREAD_M = 450f;
         static readonly List<Vector3> _expandFiredThisTick = new List<Vector3>(8);
 
@@ -3039,6 +3053,7 @@ namespace Si_RTS_AI.Planning
                         kind = ActionKind.PlaceNode, target = nodePos,
                         cost = EcoSimulator.NODE_COST, patchIdx = -1,
                         unlocks = CountUnlockedPatches(s, nodePos),
+                        frontRef = patch.pos,
                     };
 
                     if (pioneer)
@@ -3082,7 +3097,7 @@ namespace Si_RTS_AI.Planning
                     var taken = new List<Vector3>(PIONEER_MAX);
                     for (int i = 0; i < pioneers.Count && taken.Count < PIONEER_MAX; i++)
                     {
-                        Vector3 t = pioneers[i].cand.target;
+                        Vector3 t = FrontOf(pioneers[i].cand);
                         bool clash = false;
                         for (int k = 0; k < taken.Count; k++)
                         {

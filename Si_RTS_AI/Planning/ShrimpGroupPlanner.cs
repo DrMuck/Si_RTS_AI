@@ -161,6 +161,14 @@ namespace Si_RTS_AI.Planning
         /// capacity is falling behind the shrimp count, which is the recurring
         /// failure here, only the third option actually changes that.
         /// </summary>
+        /// <summary>Multiplier for a destination that will fill its own spare
+        /// slots from local production sooner than a walker can arrive. Above
+        /// 1 because the walk is not merely unhelpful, it is waste: the shrimp
+        /// spends the walk earning nothing and arrives to a slot already
+        /// filled. Set so untapped ground (VALUE_UNTAPPED) wins comfortably at
+        /// comparable distance, which is what stops the pile-ups.</summary>
+        const float SELF_FILLING_PENALTY = 2.5f;
+
         const float VALUE_NO_PRODUCER = 0.65f;
         const float VALUE_UNTAPPED    = 0.45f;
 
@@ -348,6 +356,16 @@ namespace Si_RTS_AI.Planning
         class Group
         {
             public Vector3 Anchor;
+            /// <summary>Shrimps already walking here that have not arrived yet.
+            /// Current counts shrimps by where they PHYSICALLY are, so a shrimp
+            /// crossing the map still counts against the group it is leaving for
+            /// the whole journey and its destination looks empty the entire
+            /// time. Every shrimp evaluating that destination therefore sees the
+            /// same free slots and commits, and they arrive as a herd —
+            /// 2026-08-03: roughly 60 in one stream, and a pile-up at
+            /// (465,2062). Counting inbound walkers is what closes the loop
+            /// between deciding and arriving.</summary>
+            public int     Inbound;
             public int     Patches;
             public long    Remaining;
             public Vector3 BestPatch;        // nearest patch to the anchor
@@ -729,7 +747,16 @@ namespace Si_RTS_AI.Planning
                     float localFillS = snap[gi].HasProducer
                         ? spare * EcoSimulator.SHRIMP_BUILD_S
                         : float.MaxValue;          // no producer: never, on its own
-                    float value = localFillS > walkS ? VALUE_NO_PRODUCER : 1f;
+                    // A group that fills its own slot BEFORE a walker could
+                    // arrive gains nothing from the walker — the walk is pure
+                    // waste, and the slot is taken by local production by the
+                    // time they get there. That case scored 1f: no discount,
+                    // but no penalty either, so it still won on raw proximity
+                    // and shrimps kept converging on ground that was already
+                    // producing. Observed 2026-08-03: a large pile-up at
+                    // (465,2062) with a Cyst producing into it.
+                    float value = localFillS > walkS ? VALUE_NO_PRODUCER
+                                                     : SELF_FILLING_PENALTY;
 
                     float score = walkS * value;
                     if (score < dstScore) { dstScore = score; dst = gi; }
@@ -1002,6 +1029,22 @@ namespace Si_RTS_AI.Planning
                         if (d < bd) { bd = d; best = gi; }
                     }
                     ownerOf[u] = best;
+
+                    // Anyone under orders to somewhere else is already spoken
+                    // for at the far end.
+                    if (_assign.TryGetValue(u, out var inflight))
+                    {
+                        int destGi = -1; float dbd = float.MaxValue;
+                        for (int gi = 0; gi < groups.Count; gi++)
+                        {
+                            float ddx = groups[gi].Anchor.x - inflight.Target.x;
+                            float ddz = groups[gi].Anchor.z - inflight.Target.z;
+                            float dd = ddx * ddx + ddz * ddz;
+                            if (dd < dbd) { dbd = dd; destGi = gi; }
+                        }
+                        if (destGi >= 0 && destGi != best) groups[destGi].Inbound++;
+                    }
+
                     if (best < 0) continue;
                     var og = groups[best];
                     og.Current++;
@@ -1139,7 +1182,7 @@ namespace Si_RTS_AI.Planning
             for (int oi = 0; oi < order.Count; oi++)
             {
                 var gi = order[oi];
-                int deficit = groups[gi].Desired - groups[gi].Current;
+                int deficit = groups[gi].Desired - (groups[gi].Current + groups[gi].Inbound);
                 for (int k = 0; k < deficit && needs.Count < NEEDS_CAP; k++) needs.Add(gi);
             }
 
@@ -1338,7 +1381,8 @@ namespace Si_RTS_AI.Planning
             for (int i = 0; i < groups.Count; i++)
             {
                 snap[i] = new BcCap { Pos = groups[i].Anchor, Capacity = groups[i].Capacity,
-                                      Current = groups[i].Current, Best = groups[i].BestPatch,
+                                      Current = groups[i].Current + groups[i].Inbound,
+                                      Best = groups[i].BestPatch,
                                       HasProducer = groups[i].HasProducer,
                                       Patches = groups[i].Patches };
                 total += groups[i].AbsorbCapacity;
@@ -1441,7 +1485,7 @@ namespace Si_RTS_AI.Planning
         /// </summary>
         static bool MoveIsWorthIt(Group src, Group dst, float distM)
         {
-            float mDst = MarginalIps(dst, dst.Current + 1);
+            float mDst = MarginalIps(dst, dst.Current + dst.Inbound + 1);
             if (mDst <= 0f) return false;
             if (src == null)
             {
