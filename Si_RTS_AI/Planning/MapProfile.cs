@@ -260,7 +260,23 @@ namespace Si_RTS_AI.Planning
             // Depth: plan out to where 90% of the biotics actually live. On a
             // compact map that lands near the existing 2000m default; on
             // Naraka it comes out past 4km, which is the whole point.
-            MaxChainDepthM = Mathf.Clamp(P90PatchM * 1.1f, 1500f, 5000f);
+            // CEILING FROM THE MAP, NOT A MAGIC 5000.
+            //
+            // A fixed 5000m ceiling silently truncated the two biggest maps:
+            // Badlands and GreatErg both compute p90 x 1.1 = ~5650m and were cut
+            // to 5000m. Beyond that distance a patch is not even enumerated as a
+            // candidate, so from a CORNER spawn on a 6000x6000 map the 5000m arc
+            // cuts across as a diagonal — which is exactly what the user saw on
+            // Badlands 2026-08-03: one half expanded, the other untouched,
+            // divided north-west to south-east.
+            //
+            // The map's own diagonal is the honest ceiling: a chain should be
+            // able to reach anywhere on the map, and nowhere further. Small maps
+            // are unaffected — Citadel's diagonal is 4243m, well above what its
+            // patches ask for.
+            float mapDiagonalM = Perception.MapLayers.GridWorld.Width
+                               * Perception.MapLayers.GridWorld.CellSize * 1.4142f;
+            MaxChainDepthM = Mathf.Clamp(P90PatchM * 1.1f, 1500f, Mathf.Max(1500f, mapDiagonalM));
 
             // Aggression: how much of the map is out of comfortable reach. If
             // nearly everything is close, stay compact and let the beam's
