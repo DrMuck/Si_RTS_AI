@@ -53,6 +53,13 @@ namespace Si_RTS_AI.Planning
         // [PLAN/RATE] is kept so the achieved rate stays visible.
         public const float PLAN_CADENCE_S = 3f;
 
+        /// <summary>How often the candidate field is dumped. Long enough that
+        /// the extra enumeration is negligible, short enough to see a band open
+        /// or close within a round.</summary>
+        const float CAND_MAP_PERIOD_S = 30f;
+        const float CAND_MAP_BAND_M   = 500f;
+        static float _lastCandMapAt;
+
         static float _cycleSum, _snapMsSum, _lastRateReportAt;
         static int   _cycleN;
         // Wait for starter units + starting cash to actually be granted
@@ -943,6 +950,59 @@ namespace Si_RTS_AI.Planning
             // within 400m of any anchor was already reachable.
             _beamPhase = phase;
             _beamUnderTapped = CountTappedPatches(state) < PHASE1_MIN_TAPPED_PATCHES;
+
+            // WHERE COULD WE HAVE EXPANDED, AND HOW FAR WEST?
+            //
+            // The logs show what got BUILT and never what was considered and
+            // passed over, so a band that stops expanding has three completely
+            // different explanations that look identical from outside:
+            //   (1) no candidate was ever generated there — an enumeration gate
+            //       dropped it silently, as the pioneer range check did;
+            //   (2) a candidate existed and lost on score;
+            //   (3) a candidate existed, won, and never fired — rate cap or the
+            //       repeat-suppression window.
+            // They need opposite fixes, and guessing between them has been
+            // wrong twice: shrimp detours were (1) while I looked for (2), and
+            // plan cadence was (3) after I argued it was not.
+            //
+            // So dump the candidate field itself, bucketed by latitude, with
+            // how far west each band's candidates reach. Read against the
+            // built-structure map, a stalled band with NO line here is (1);
+            // with candidates present it is (2) or (3), and the skip counts
+            // separate those.
+            if (now - _lastCandMapAt > CAND_MAP_PERIOD_S)
+            {
+                _lastCandMapAt = now;
+                try
+                {
+                    var cands = EnumerateActions(state);
+                    var west  = new Dictionary<int, float>();
+                    var count = new Dictionary<int, int>();
+                    for (int i = 0; i < cands.Count; i++)
+                    {
+                        if (cands[i].kind != ActionKind.PlaceNode &&
+                            cands[i].kind != ActionKind.PlaceBc) continue;
+                        Vector3 t = cands[i].target;
+                        int band = Mathf.FloorToInt(t.z / CAND_MAP_BAND_M) * (int)CAND_MAP_BAND_M;
+                        if (!west.ContainsKey(band) || t.x < west[band]) west[band] = t.x;
+                        count.TryGetValue(band, out int c0);
+                        count[band] = c0 + 1;
+                    }
+
+                    var bands = new List<int>(west.Keys);
+                    bands.Sort();
+                    var sb = new System.Text.StringBuilder("[PLAN/CANDMAP] cash=");
+                    sb.Append(state.cash).Append(" bands:");
+                    for (int i = 0; i < bands.Count; i++)
+                        sb.Append(" z").Append(bands[i])
+                          .Append('[').Append(count[bands[i]])
+                          .Append(" west=").Append(west[bands[i]].ToString("F0")).Append(']');
+                    if (bands.Count == 0) sb.Append(" NONE");
+                    MelonLogger.Msg(sb.ToString());
+                }
+                catch (System.Exception ex)
+                { MelonLogger.Warning("[PLAN/CANDMAP] threw: " + ex.Message); }
+            }
 
             // Snapshot FoW layer on the main thread — GetExplored iterates
             // team.Structures/Units which is NOT thread-safe.
