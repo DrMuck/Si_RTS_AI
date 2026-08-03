@@ -30,10 +30,31 @@ namespace Si_RTS_AI.Planning
         // horizon 300 → 180, and pair with EcoSimulator.DT 1 → 2 and
         // BEAM_DEPTH 6 → 5 for a combined ~5-10× reduction in per-tick work.
         public const float PLAN_HORIZON_S = 180f;
-        // Cadence 5 → 8s: fires 60% less often. Combined with per-tick
-        // speedup, expected freeze drops from 3s/5s (60% load) to
-        // ~0.3s/8s (~4% load).
+        // THE ECONOMY'S THROUGHPUT CEILING.
+        //
+        // Measured 2026-08-03 across 102 builds in one round: median 6s between
+        // structures, p90 15s. That is not a game limit, it is this constant —
+        // the planner fires placements once per cycle, so the cycle time IS the
+        // build rate. A 35-minute round at 8s buys ~260 placements for the
+        // whole map, and it is why raising maxNodeFires, ESCAPE_MAX_FIRES and
+        // PIONEER_MAX changed WHAT we build without building any more of it.
+        //
+        // Was 8s for a real reason: the beam blocked the main thread 1-3.7s per
+        // tick and units visibly jumped. That reason has since expired — the
+        // beam now runs on a worker thread (Task.Run below) and the main thread
+        // only does the state snapshot, the FoW read and the firing.
+        //
+        // KEPT AT 8s. Raising the plan rate is the wrong lever: it would run
+        // the beam eight times more often to fire the same one or two
+        // placements each time, paying full CPU for a scheduling problem. The
+        // cycle is not the constraint — what a cycle is ALLOWED TO PLACE is.
+        // A node line needs several hops in a row, and firing one hop per cycle
+        // means an eight-node chain takes over a minute to reach anywhere.
+        // [PLAN/RATE] is kept so the achieved rate stays visible.
         public const float PLAN_CADENCE_S = 8f;
+
+        static float _cycleSum, _snapMsSum, _lastRateReportAt;
+        static int   _cycleN;
         // Wait for starter units + starting cash to actually be granted
         // before the first plan tick. Round start has a spawn-in period —
         // planning against a still-empty state produces sequences that
@@ -668,6 +689,17 @@ namespace Si_RTS_AI.Planning
         /// expanding west from one latitude and expanding west from three.</summary>
         const int PIONEER_MAX = 3;
 
+        /// <summary>Hops of one node line that may be laid in a single plan
+        /// cycle. A line only earns anything once it ARRIVES, so dribbling out
+        /// one node per 8s cycle pays the full cost of the chain while
+        /// deferring all of its return.</summary>
+        const int CHAIN_HOPS_PER_CYCLE = 3;
+
+        /// <summary>Within this distance two candidates are serving the same
+        /// front — i.e. they are hops of one line, not competing directions,
+        /// and front spacing must not separate them.</summary>
+        const float SAME_FRONT_M = 120f;
+
         /// <summary>Ceiling on simultaneously advancing fronts, however rich we
         /// are. Not a budget concern at that point but a coherence one — past
         /// this the chains outrun the shrimps that have to staff them.</summary>
@@ -890,8 +922,14 @@ namespace Si_RTS_AI.Planning
             // 3) Snapshot phase — all game-object reads happen here, on the
             //    main thread, quickly. Result feeds the background beam.
             EcoState state;
+            long snapTicks = System.Diagnostics.Stopwatch.GetTimestamp();
             try { state = EcoStateBuilder.Build(team); }
             catch (System.Exception ex) { MelonLogger.Warning("[PLAN] Build threw: " + ex.Message); return; }
+
+            // Achieved cadence, not requested cadence — with the in-flight
+            // guard these differ whenever the beam is the bottleneck, and that
+            // difference is the number worth knowing.
+            if (last > 0f) { _cycleSum += now - last; _cycleN++; }
 
             _currentTeam  = team;
             var phase = ComputePhase(team, state);
@@ -915,6 +953,20 @@ namespace Si_RTS_AI.Planning
             // 4) Kick off the beam on a worker thread. State/phase/FoW are
             //    passed as captured locals — no shared mutable game state
             //    from here down.
+            float snapMs = (System.Diagnostics.Stopwatch.GetTimestamp() - snapTicks)
+                         * 1000f / System.Diagnostics.Stopwatch.Frequency;
+            _snapMsSum += snapMs;
+
+            if (now - _lastRateReportAt > 60f && _cycleN > 0)
+            {
+                _lastRateReportAt = now;
+                MelonLogger.Msg("[PLAN/RATE] cycles=" + _cycleN +
+                                " achieved=" + (_cycleSum / _cycleN).ToString("F2") + "s" +
+                                " (asked " + PLAN_CADENCE_S.ToString("F0") + "s)" +
+                                " mainThread=" + (_snapMsSum / _cycleN).ToString("F1") + "ms/cycle");
+                _cycleSum = 0f; _snapMsSum = 0f; _cycleN = 0;
+            }
+
             var req = new PlanRequest { State = state, Phase = phase, Explored = explored, Team = team };
             _pendingPlan[team] = System.Threading.Tasks.Task.Run(() => RunBeamAsync(req));
         }
@@ -1577,10 +1629,17 @@ namespace Si_RTS_AI.Planning
                             if (c.kind == ActionKind.Noop) continue;
 
                             bool crowded = false;
+                            // Measured at the FRONT, like everywhere else: a
+                            // runner-up heading somewhere genuinely different is
+                            // not competing with the winner, it is the second
+                            // direction we also want. Measuring at the hop made
+                            // north and south look like one crowded decision
+                            // needing a compromise, when cash could fund both.
+                            Vector3 cfr = FrontOf(c);
                             for (int k = 0; k < _expandFiredThisTick.Count; k++)
                             {
-                                float dx = _expandFiredThisTick[k].x - c.target.x;
-                                float dz = _expandFiredThisTick[k].z - c.target.z;
+                                float dx = _expandFiredThisTick[k].x - cfr.x;
+                                float dz = _expandFiredThisTick[k].z - cfr.z;
                                 if (dx * dx + dz * dz < EXPAND_SPREAD_M * EXPAND_SPREAD_M)
                                 { crowded = true; break; }
                             }
@@ -1588,7 +1647,7 @@ namespace Si_RTS_AI.Planning
 
                             int before2 = fired;
                             TryFireAction(c);   // dedup handles same-target collisions
-                            if (fired > before2) _expandFiredThisTick.Add(c.target);
+                            if (fired > before2) _expandFiredThisTick.Add(FrontOf(c));
                             break;              // only the head of the runner-up
                         }
                     }
@@ -1673,14 +1732,22 @@ namespace Si_RTS_AI.Planning
                             if (c.kind == ActionKind.Noop) continue;
                             if (firedHere.Count >= ESCAPE_MAX_FIRES) break;
 
+                            // Spacing separates FRONTS. Two hops of the same
+                            // node line share a front by definition, and
+                            // rejecting them as "too close" is what limited a
+                            // line to one hop per cycle — an eight-node chain
+                            // then takes over a minute to arrive. Same front =
+                            // same line = let it extend; different front has to
+                            // clear EXPAND_SPREAD_M as before.
                             Vector3 cf = FrontOf(c);
                             bool tooClose = false;
                             for (int k = 0; k < firedHere.Count; k++)
                             {
                                 float ddx = firedHere[k].x - cf.x;
                                 float ddz = firedHere[k].z - cf.z;
-                                if (ddx * ddx + ddz * ddz < EXPAND_SPREAD_M * EXPAND_SPREAD_M)
-                                { tooClose = true; break; }
+                                float d2 = ddx * ddx + ddz * ddz;
+                                if (d2 < SAME_FRONT_M * SAME_FRONT_M) { tooClose = false; break; }
+                                if (d2 < EXPAND_SPREAD_M * EXPAND_SPREAD_M) { tooClose = true; break; }
                             }
                             if (tooClose) continue;
 
@@ -3107,6 +3174,45 @@ namespace Si_RTS_AI.Planning
                         if (clash) continue;
                         list.Add(pioneers[i].cand);
                         taken.Add(t);
+
+                        // LAY SEVERAL HOPS OF THE LINE, NOT ONE.
+                        //
+                        // Only the first hop was ever emitted, so a chain grew
+                        // by one node per plan cycle — at 8s a line long enough
+                        // to matter takes minutes to arrive, which is what the
+                        // "expansion stalls" reports have been describing. The
+                        // geometry of the following hops is already known: they
+                        // run straight from the previous one toward the same
+                        // cluster. Emitting them together lets the whole line be
+                        // funded and placed as one decision.
+                        Vector3 from = pioneers[i].cand.target;
+                        Vector3 goal = pioneers[i].cand.frontRef;
+                        for (int h = 1; h < CHAIN_HOPS_PER_CYCLE; h++)
+                        {
+                            float gx = goal.x - from.x, gz = goal.z - from.z;
+                            float gl = Mathf.Sqrt(gx * gx + gz * gz);
+                            if (gl < NodeHopDistance(reach)) break;   // last hop lands on the cluster
+
+                            Vector3 nxt = new Vector3(from.x + gx * (NodeHopDistance(reach) / gl),
+                                                      from.y,
+                                                      from.z + gz * (NodeHopDistance(reach) / gl));
+                            bool occupied = false;
+                            for (int ni = 0; ni < s.nodes.Count; ni++)
+                            {
+                                float ndx = s.nodes[ni].pos.x - nxt.x, ndz = s.nodes[ni].pos.z - nxt.z;
+                                if (ndx * ndx + ndz * ndz < 80f * 80f) { occupied = true; break; }
+                            }
+                            if (occupied) break;
+
+                            list.Add(new Candidate
+                            {
+                                kind = ActionKind.PlaceNode, target = nxt,
+                                cost = EcoSimulator.NODE_COST, patchIdx = -1,
+                                unlocks = CountUnlockedPatches(s, nxt),
+                                frontRef = goal,
+                            });
+                            from = nxt;
+                        }
                     }
                 }
 
