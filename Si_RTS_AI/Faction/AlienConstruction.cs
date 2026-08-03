@@ -1038,6 +1038,10 @@ namespace Si_RTS_AI.Faction
                 {
                     SearchDone(cdName, targetPos);
                     NoteSearchFailed();
+                    // Nothing was placed, so the planner's repeat-suppression
+                    // around this spot is protecting a structure that does not
+                    // exist. Release it now rather than after the timer.
+                    Planning.EcoPlanner.NoteSearchFailedAt(targetPos);
                     if (!CallbackTargetsAlive(thisCd, cbTeam, cbStruct)) return;
                     MelonLogger.Msg("[PLAN/EXEC] team=" + cbTeam.name +
                                     " placement search FAILED for " + (thisCd.ObjectInfo?.DisplayName ?? "?") +

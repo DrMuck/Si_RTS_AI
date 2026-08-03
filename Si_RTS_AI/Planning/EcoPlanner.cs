@@ -147,9 +147,15 @@ namespace Si_RTS_AI.Planning
         const float PHASE2_CYST_BONUS  = 15000f;   // was 6000 — MAX; scaled by handoff
         /// <summary>What a Cyst is still worth when shrimps could walk to the
         /// patch anyway. Not zero — walking costs time and the migration only
-        /// happens if shrimps are actually spare — but small enough that an
-        /// outlying Cyst outbids an interior one for the same money.</summary>
-        const float CYST_WALKABLE_FLOOR = 0.25f;
+        /// happens if shrimps are actually spare — but it must leave the Cyst
+        /// UNPROFITABLE, which 0.25 did not: 0.25 x 15,000 is 3,750 against a
+        /// 1,500 cost, so every walkable Cyst still cleared its own price and
+        /// v0.13.16 changed nothing observable (32 Cysts against 37 Bio Caches,
+        /// still one apiece). Set so the floor pays less than the Cyst costs,
+        /// which is what actually makes the Bio Cache win — the money goes to a
+        /// relocation sink that feeds the shrimp pile-up instead of buying
+        /// production next to production we already have.</summary>
+        const float CYST_WALKABLE_FLOOR = 0.05f;
         const float PHASE2_BC_BONUS    = 15000f;   // was 5500
         // Cluster-aware Cyst thresholds — biotics-weighted handoff score of
         // the target BC scales PHASE2_CYST_BONUS (0 → full).
@@ -662,6 +668,11 @@ namespace Si_RTS_AI.Planning
         /// expanding west from one latitude and expanding west from three.</summary>
         const int PIONEER_MAX = 3;
 
+        /// <summary>Ceiling on simultaneously advancing fronts, however rich we
+        /// are. Not a budget concern at that point but a coherence one — past
+        /// this the chains outrun the shrimps that have to staff them.</summary>
+        const int MAX_NODE_FIRES = 6;
+
         const float REPEAT_SUPPRESS_M = 60f;
         // Suppress must outlast the build cycle. Structures take ~20s to
         // build; with a 15s suppress window the same target got proposed and
@@ -1068,6 +1079,16 @@ namespace Si_RTS_AI.Planning
                 // structure already anchors, so the deferred Node fires on the
                 // very next tick without waiting out the BC's build.
                 bool firedBcThisTick = false;
+                var firedBcPos = new List<Vector3>(4);
+                bool NearAnyFiredBc(Vector3 t)
+                {
+                    for (int i = 0; i < firedBcPos.Count; i++)
+                    {
+                        float dx = firedBcPos[i].x - t.x, dz = firedBcPos[i].z - t.z;
+                        if (dx * dx + dz * dz < EcoSimulator.BC_REACH_M * EcoSimulator.BC_REACH_M) return true;
+                    }
+                    return false;
+                }
                 // Set while the Opener's committed plan is firing. The two
                 // pacing rules below exist to stop the BEAM committing cash to
                 // a shape it has not seen land yet; the Opener's chain was
@@ -1109,14 +1130,43 @@ namespace Si_RTS_AI.Planning
 
                 _skipReasons = "";
                 int nodeFiresThisTick = 0;
-                int maxNodeFires = (_currentPhase == PlanPhase.Phase2_Expand && !underTappedNow) ? 2 : 1;
+                // HOW MANY FRONTS MAY ADVANCE THIS TICK.
+                //
+                // Fixed at 2 for all of Phase 2, which is the right number when
+                // cash is tight and badly wrong when it is not. The cap exists
+                // to stop a starburst we cannot pay for — so it should be a
+                // BUDGET, not a constant. Observed live 2026-08-03: expansion
+                // visibly stalling at 7min, 16min22 and again at 17min while
+                // cash sat unspent, and "the simultaneous expansion at multiple
+                // sides seems to be clipped mid game" (user) — which is exactly
+                // what a fixed 2 does once three or four fronts are open.
+                //
+                // Funded from surplus over the shrimp reserve, and priced per
+                // FRONT rather than per node: a hop is only worth firing if we
+                // could also afford the Bio Cache it exists to enable.
+                int maxNodeFires;
+                if (_currentPhase == PlanPhase.Phase2_Expand && !underTappedNow)
+                {
+                    int frontCost = Mathf.Max(1, EcoSimulator.NODE_COST + EcoSimulator.BC_COST);
+                    int surplus   = Mathf.Max(0, state.cash - shrimpReserve);
+                    maxNodeFires  = Mathf.Clamp(surplus / frontCost, 2, MAX_NODE_FIRES);
+                }
+                else maxNodeFires = 1;
 
                 bool TryFireAction(Candidate c)
                 {
                     if (c.kind == ActionKind.Noop) return true;
                     if (!openerFiring)
                     {
-                        if (c.kind == ActionKind.PlaceNode && firedBcThisTick) { Skip("afterBc"); return true; }
+                        // A Bio Cache anchors further than a Node, so a Node
+                        // fired right after it is usually redundant — but only
+                        // NEAR it. This used to block every Node on any tick a
+                        // BC fired, anywhere on the map, which silently froze
+                        // every other front for that tick. With several fronts
+                        // open that is most ticks, and it compounds with the
+                        // fire cap above. Scope it to the BC's own reach.
+                        if (c.kind == ActionKind.PlaceNode && firedBcThisTick
+                            && NearAnyFiredBc(c.target)) { Skip("afterBc"); return true; }
                         if (c.kind == ActionKind.PlaceNode && nodeFiresThisTick >= maxNodeFires) { Skip("nodeRate"); return true; }
                     }
                     if (c.cost > cashLeft) return true;   // skip this one, try next
@@ -1243,7 +1293,7 @@ namespace Si_RTS_AI.Planning
                     fired++;
                     firedCash += c.cost;
                     cashLeft -= c.cost;
-                    if (c.kind == ActionKind.PlaceBc)   firedBcThisTick = true;
+                    if (c.kind == ActionKind.PlaceBc) { firedBcThisTick = true; firedBcPos.Add(c.target); }
                     if (c.kind == ActionKind.PlaceNode) nodeFiresThisTick++;
                     return true;
                 }
@@ -2285,6 +2335,36 @@ namespace Si_RTS_AI.Planning
         // searches for the same target while the first is still resolving.
         //
         // Returns true iff we successfully asked the game to build.
+        /// <summary>
+        /// A placement search came back empty — release the lockout.
+        ///
+        /// TryFire suppresses a repeat of the same kind within
+        /// REPEAT_SUPPRESS_M for REPEAT_SUPPRESS_S so an in-flight async search
+        /// is not re-requested while pending. That is right while it IS
+        /// pending, and wrong the moment it resolves to nothing: the ground
+        /// stays locked for the rest of the window even though we built
+        /// nothing there and never will. With expansion rate-limited per tick,
+        /// those dead windows are what the escape hatch keeps hitting —
+        /// 17 ticks in a row reporting every candidate "dedup" while cash sat
+        /// unspent (2026-08-03, v0.13.17).
+        ///
+        /// Clearing on failure only. On success the structure exists and the
+        /// live duplicate checks take over, which is a stronger test than a
+        /// timer.
+        /// </summary>
+        internal static void NoteSearchFailedAt(Vector3 target)
+        {
+            foreach (var kv in _fired)
+            {
+                var log = kv.Value;
+                for (int i = log.Count - 1; i >= 0; i--)
+                {
+                    float dx = log[i].pos.x - target.x, dz = log[i].pos.z - target.z;
+                    if (dx * dx + dz * dz < REPEAT_SUPPRESS_M * REPEAT_SUPPRESS_M) log.RemoveAt(i);
+                }
+            }
+        }
+
         static bool TryFire(Team team, Candidate c)
         {
             if (!_fired.TryGetValue(team, out var log)) { log = new List<FiredAction>(); _fired[team] = log; }
