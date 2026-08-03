@@ -404,6 +404,88 @@ namespace Si_RTS_AI.Planning
         /// </summary>
         /// <summary>Nearest few unserved patches with distances, so a closer one
         /// losing to a further one is visible rather than inferred.</summary>
+        /// <summary>
+        /// Demand signal: a shrimp walked past untapped ground to reach work.
+        ///
+        /// Reported repeatedly from replays as a shrimp bug — "a horde of
+        /// shrimps passing by an untapped biotics and heading for a further
+        /// away one" (2026-08-03, at 19:50, 20:30, 21:40 and 23:14). It is not
+        /// a shrimp bug. A shrimp can only be sent to a patch served by a Bio
+        /// Cache, because without one there is nowhere to deposit; an untapped
+        /// patch is not a legal destination and never appears among the
+        /// candidates. The shrimp is making the only choice available to it.
+        ///
+        /// The mistake is upstream: the economy never built a Bio Cache on the
+        /// closer patch. So rather than distorting the shrimp's choice, record
+        /// the near-miss as demand and let the eco planner bid for it — which
+        /// is the interaction the user proposed, the pile-up manager feeding
+        /// the expansion model instead of the two working blind to each other.
+        ///
+        /// Counts decay so a patch that stops being walked past stops bidding.
+        /// </summary>
+        static readonly Dictionary<int, float> _walkedPast = new Dictionary<int, float>();
+        static float _walkedPastDecayAt;
+
+        /// <summary>How much closer an untapped patch must be than the chosen
+        /// destination before the walk counts as a miss. Well past the point
+        /// where the detour is arguable.</summary>
+        const float WALKED_PAST_RATIO = 0.6f;
+
+        static void NoteWalkedPast(Vector3 from, Vector3 chosen)
+        {
+            var free = _freePatches;
+            if (free == null || free.Length == 0) return;
+
+            float toChosen = Mathf.Sqrt(SqDist(chosen, from));
+            if (toChosen < 1f) return;
+
+            int best = -1; float bestD = float.MaxValue;
+            for (int i = 0; i < free.Length; i++)
+            {
+                float d = Mathf.Sqrt(SqDist(free[i], from));
+                if (d < bestD) { bestD = d; best = i; }
+            }
+            if (best < 0 || bestD > toChosen * WALKED_PAST_RATIO) return;
+
+            _walkedPast.TryGetValue(best, out float c);
+            _walkedPast[best] = c + 1f;
+
+            MelonLogger.Msg("[SHRIMP-SUP] EXPANSION-MISS walked past (" +
+                            free[best].x.ToString("F0") + "," + free[best].z.ToString("F0") + ") at " +
+                            bestD.ToString("F0") + "m to reach (" +
+                            chosen.x.ToString("F0") + "," + chosen.z.ToString("F0") + ") at " +
+                            toChosen.ToString("F0") + "m — wants a Bio Cache, seen " +
+                            ((int)_walkedPast[best] + 1) + "x");
+        }
+
+        /// <summary>How badly shrimps want a Bio Cache near this point, 0 if
+        /// nobody has walked past it. Read by the eco planner's BC scoring.</summary>
+        internal static float WalkedPastDemand(Vector3 pos)
+        {
+            var free = _freePatches;
+            if (free == null || _walkedPast.Count == 0) return 0f;
+
+            float now = Time.time;
+            if (now - _walkedPastDecayAt > 30f)
+            {
+                _walkedPastDecayAt = now;
+                var keys = new List<int>(_walkedPast.Keys);
+                for (int k = 0; k < keys.Count; k++)
+                {
+                    float v = _walkedPast[keys[k]] * 0.5f;
+                    if (v < 0.5f) _walkedPast.Remove(keys[k]); else _walkedPast[keys[k]] = v;
+                }
+            }
+
+            float sum = 0f;
+            foreach (var kv in _walkedPast)
+            {
+                if (kv.Key < 0 || kv.Key >= free.Length) continue;
+                if (SqDist(free[kv.Key], pos) < 120f * 120f) sum += kv.Value;
+            }
+            return sum;
+        }
+
         static void LogFreePatchCandidates(Vector3 from, int chosen)
         {
             var free = _freePatches;
@@ -1119,6 +1201,7 @@ namespace Si_RTS_AI.Planning
                 if (donors[bestD].Value >= 0) movedWorking++;
                 donors.RemoveAt(bestD);
                 var target = dst.PickTarget();
+                NoteWalkedPast(donor.transform.position, target);
                 IssueMove(donor, target);
                 _assign[donor] = new Assignment { Target = target, AssignedAt = now, LastOrderAt = now };
                 dst.Current++;

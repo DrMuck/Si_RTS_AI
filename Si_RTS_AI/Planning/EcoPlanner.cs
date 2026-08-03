@@ -673,6 +673,12 @@ namespace Si_RTS_AI.Planning
         /// this the chains outrun the shrimps that have to staff them.</summary>
         const int MAX_NODE_FIRES = 6;
 
+        /// <summary>Value of one shrimp having walked past a patch to reach
+        /// work elsewhere. Deliberately a fraction of PHASE2_BC_BONUS: a single
+        /// detour is weak evidence, a horde of them is not, and the counts add
+        /// up while decaying so a patch nobody passes stops bidding.</summary>
+        const float WALKED_PAST_BC_VALUE = PHASE2_BC_BONUS * 0.10f;
+
         const float REPEAT_SUPPRESS_M = 60f;
         // Suppress must outlast the build cycle. Structures take ~20s to
         // build; with a 15s suppress window the same target got proposed and
@@ -2606,7 +2612,15 @@ namespace Si_RTS_AI.Planning
                     {
                         kind = ActionKind.PlaceBc, target = bcTarget,
                         shrimpPull = shrimpPull,
-                        spreadPull = BearingSpreadBonus(s, patch.pos),
+                        // Spread (ground we do not hold) plus DEMAND (ground
+                        // shrimps are already walking past to reach work).
+                        // The second is the pile-up manager bidding into the
+                        // expansion model: every shrimp that detours around an
+                        // untapped patch is evidence a Bio Cache there would
+                        // pay immediately, and it is evidence gathered from
+                        // real routing rather than predicted.
+                        spreadPull = BearingSpreadBonus(s, patch.pos)
+                                   + ShrimpGroupPlanner.WalkedPastDemand(patch.pos) * WALKED_PAST_BC_VALUE,
                         cost = EcoSimulator.BC_COST, patchIdx = p,
                         unlocks = CountUnlockedPatches(s, patch.pos),
                     };
