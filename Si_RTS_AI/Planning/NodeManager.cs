@@ -446,7 +446,29 @@ namespace Si_RTS_AI.Planning
         /// the ring closing — or when the commitment ages out, so a bridge that
         /// cannot be built does not block every other loop for the round.
         /// </summary>
-        const float LOOP_COMMIT_TTL_S = 240f;
+        /// <summary>
+        /// How long one loop commitment holds the single loop slot.
+        ///
+        /// Was 240s, which is what serialised loop building: one commitment at
+        /// a time for up to four minutes means about nine loops in a 36-minute
+        /// round, and nine was exactly what the 2026-08-03 round produced
+        /// against singlePointsOfFailure=102. Every other wanted bridge simply
+        /// never got a turn — the user's pairs at 450m and 519m are 2-3 nodes
+        /// of work that lost to a queue, not to a score.
+        ///
+        /// The TTL exists so a bridge that CANNOT be built does not block the
+        /// slot for the round; it was never meant to be how long a normal
+        /// bridge takes. A typical closure is 2-4 nodes: at CHAIN_HOPS_PER_CYCLE
+        /// per 8s cycle that is ordered within two cycles and standing well
+        /// inside a minute. 75s leaves generous headroom over that while
+        /// cycling the slot roughly three times faster.
+        ///
+        /// This is a stopgap. The real fix is several concurrent commitments —
+        /// MAX_CONCURRENT_LOOPS has been declared and unwired for weeks — and
+        /// that belongs to the rings layer of the branch planner, not to
+        /// another constant here.
+        /// </summary>
+        const float LOOP_COMMIT_TTL_S = 75f;
         static Vector3 _commitA, _commitB;
         static float   _commitAt = -1f;
 

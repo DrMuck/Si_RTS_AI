@@ -3641,7 +3641,19 @@ namespace Si_RTS_AI.Planning
             if (bestSq == float.MaxValue) return 1f;   // our first Cyst — always worth it
 
             float d = Mathf.Sqrt(bestSq);
-            return Mathf.Clamp01((d - walkReachM) / walkReachM);
+            float iso = Mathf.Clamp01((d - walkReachM) / walkReachM);
+
+            // ALREADY BEING STAFFED BY MIGRATION.
+            //
+            // Distance to the nearest Cyst answers "could shrimps walk here".
+            // The sharper question is whether they ALREADY ARE — a patch that
+            // migration is about to fill needs no producer, because the shrimps
+            // are on their way and 1,500 buys nothing that was not arriving
+            // anyway. Observed 2026-08-03 at (1075,-224): expansion correctly
+            // followed shrimps that were long-distance harvesting, then put a
+            // Lesser Cyst on top of the very migration that justified it.
+            float staffed = ShrimpGroupPlanner.StaffedFraction(pos);
+            return Mathf.Min(iso, Mathf.Clamp01(1f - staffed));
         }
 
         static float BearingSpreadBonus(EcoState s, Vector3 patchPos)

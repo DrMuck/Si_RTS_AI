@@ -247,6 +247,45 @@ namespace Si_RTS_AI.Planning
         static BcCap[] _capSnapshot = new BcCap[0];
 
         /// <summary>
+        /// How well staffed the ground around this point already is, counting
+        /// shrimps ON it and shrimps WALKING TO it — 0 for empty ground, 1 or
+        /// more when everything it can feed is already spoken for.
+        ///
+        /// Read by the Cyst scorer. A patch that migration is about to fill
+        /// does not need a producer: the shrimps are already coming, and 1,500
+        /// spent there buys nothing that was not arriving anyway. Observed
+        /// 2026-08-03 at (1075,-224) — the expansion correctly followed shrimps
+        /// that were long-distance harvesting, and then built a Lesser Cyst on
+        /// top of the migration that had prompted it.
+        ///
+        /// The Inbound half is what makes this answerable at all. Before it,
+        /// occupancy counted shrimps by where they physically stood, so a group
+        /// with sixty walkers en route still read as empty and looked like it
+        /// needed its own production.
+        /// </summary>
+        internal static float StaffedFraction(Vector3 pos)
+        {
+            var snap = _capSnapshot;
+            if (snap == null || snap.Length == 0) return 0f;
+
+            int best = -1; float bestSq = float.MaxValue;
+            for (int i = 0; i < snap.Length; i++)
+            {
+                float dx = snap[i].Pos.x - pos.x, dz = snap[i].Pos.z - pos.z;
+                float d2 = dx * dx + dz * dz;
+                if (d2 < bestSq) { bestSq = d2; best = i; }
+            }
+            // Too far to be the same site — this is untouched ground.
+            if (best < 0 || bestSq > STAFFING_MATCH_M * STAFFING_MATCH_M) return 0f;
+            if (snap[best].Capacity <= 0) return 1f;   // nothing left to feed anyone
+            return snap[best].Current / (float)snap[best].Capacity;
+        }
+
+        /// <summary>How close a group must be to count as the same site as a
+        /// proposed Cyst. Roughly a Bio Cache's own working radius.</summary>
+        const float STAFFING_MATCH_M = 200f;
+
+        /// <summary>
         /// Total shrimps the map's LIVE biotics can usefully feed right now —
         /// the sum of every group's capacity. -1 until the first tick.
         ///
