@@ -263,6 +263,12 @@ namespace Si_RTS_AI.Planning
         const int   MAX_PAIRS_EXAMINED = 250;
         const int   ENOUGH_CANDIDATES  = 12;
 
+        /// <summary>How far past the base bridge range a well-populated branch
+        /// may reach for help, and how many protected structures buy one extra
+        /// multiple of it.</summary>
+        const float MAX_BRIDGE_STRETCH  = 3f;
+        const int   PROTECT_PER_STRETCH = 30;
+
         /// <summary>
         /// How many loops may be under construction at once.
         ///
@@ -280,6 +286,13 @@ namespace Si_RTS_AI.Planning
         static void ReportLoopCandidates(List<Node> g, bool[] connected, System.Text.StringBuilder sb)
         {
             float maxBridge = MaxBridgeM;
+            var subtree = SubtreeSizes(g);
+            // A branch with a lot behind it justifies a longer reach for help.
+            // Scanning to the widest possible bridge and letting the score
+            // decide is cheaper than guessing one radius for every situation.
+            float scanBridge = Mathf.Min(maxBridge * MAX_BRIDGE_STRETCH,
+                                         Perception.MapLayers.GridWorld.Width
+                                         * Perception.MapLayers.GridWorld.CellSize);
             var pairs = new List<(float gap, int a, int b)>();
             for (int a = 0; a < g.Count; a++)
             {
@@ -290,7 +303,7 @@ namespace Si_RTS_AI.Planning
                     if (g[a].Adj.Contains(b)) continue;              // already joined
                     float dx = g[a].Pos.x - g[b].Pos.x, dz = g[a].Pos.z - g[b].Pos.z;
                     float gap = Mathf.Sqrt(dx * dx + dz * dz);
-                    if (gap > maxBridge) continue;
+                    if (gap > scanBridge) continue;
                     pairs.Add((gap, a, b));
                 }
             }
@@ -360,7 +373,22 @@ namespace Si_RTS_AI.Planning
                 if (hops >= MIN_HOPS_SAVED) valid++;
                 if (hops >= int.MaxValue) continue;                   // separate components
                 if (hops < MIN_HOPS_SAVED) continue;                  // already well joined
-                float score = hops / (float)Mathf.Max(1, nodes);      // cycle length per Node
+
+                // WHAT THE LOOP PROTECTS, NOT JUST HOW FAR ROUND IT IS.
+                //
+                // Both ends gain an alternative route, so the value is what
+                // hangs off them. A long branch carrying most of the map now
+                // outbids a cheap spur near the base, and earns a longer bridge
+                // in proportion — the user's rule from 2026-08-03: "an expansion
+                // line that has only one connection to nest within a long build
+                // distance would need to find another branch".
+                int protect = subtree[a] + subtree[b];
+                float allowed = maxBridge * (1f + protect / (float)PROTECT_PER_STRETCH);
+                if (pairs[i].gap > Mathf.Min(allowed, scanBridge)) continue;
+
+                // Protection per Node spent, with hops kept as a floor test so a
+                // pair that is already well connected is still ignored.
+                float score = (hops * protect) / (float)Mathf.Max(1, nodes);
                 if (score > bestScore)
                 { bestScore = score; bi = i; bhops = hops; bnodes = nodes; bgap = pairs[i].gap; }
             }
@@ -444,6 +472,46 @@ namespace Si_RTS_AI.Planning
                 if (d < bd) { bd = d; best = i; }
             }
             return best;
+        }
+
+        /// <summary>
+        /// How many structures hang off each vertex, counted away from the Nest.
+        ///
+        /// This is what a loop is actually worth. A bridge that saves a spur of
+        /// three structures and one that saves a forty-structure branch scored
+        /// the same under hops-per-node, so the giant middle branch on
+        /// NarakaCity 2026-08-03 — one connection to the Nest, everything behind
+        /// it — never outbid a cheap cosmetic loop near the base.
+        ///
+        /// Computed from the BFS tree rooted at the Nest: process vertices in
+        /// reverse discovery order and accumulate into the parent.
+        /// </summary>
+        static int[] SubtreeSizes(List<Node> g)
+        {
+            var size = new int[g.Count];
+            var parent = new int[g.Count];
+            var order = new List<int>(g.Count);
+            for (int i = 0; i < g.Count; i++) { parent[i] = -1; size[i] = 1; }
+
+            var q = new Queue<int>();
+            var seen = new bool[g.Count];
+            for (int i = 0; i < g.Count; i++)
+                if (g[i].IsNest && !seen[i]) { seen[i] = true; q.Enqueue(i); }
+
+            while (q.Count > 0)
+            {
+                int v = q.Dequeue();
+                order.Add(v);
+                var adj = g[v].Adj;
+                for (int k = 0; k < adj.Count; k++)
+                    if (!seen[adj[k]]) { seen[adj[k]] = true; parent[adj[k]] = v; q.Enqueue(adj[k]); }
+            }
+            for (int i = order.Count - 1; i >= 0; i--)
+            {
+                int v = order[i];
+                if (parent[v] >= 0) size[parent[v]] += size[v];
+            }
+            return size;
         }
 
         /// <summary>Hops from one vertex to another, reusing the BFS from that
