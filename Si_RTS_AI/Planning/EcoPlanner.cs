@@ -656,6 +656,12 @@ namespace Si_RTS_AI.Planning
         /// queueing behind each other.</summary>
         const int ESCAPE_MAX_FIRES = 3;
 
+        /// <summary>How many long-range chains may be opened toward clusters
+        /// beyond normal reach. This is the number of simultaneous fronts the
+        /// economy can drive into open ground, so it is the difference between
+        /// expanding west from one latitude and expanding west from three.</summary>
+        const int PIONEER_MAX = 3;
+
         const float REPEAT_SUPPRESS_M = 60f;
         // Suppress must outlast the build cycle. Structures take ~20s to
         // build; with a 15s suppress window the same target got proposed and
@@ -2823,6 +2829,8 @@ namespace Si_RTS_AI.Planning
                 // whole point of the minimum-biotics objective.
                 bool bridgeSingleShot = (needsBridge || underTapped) && _beamPhase != PlanPhase.Phase2_Expand;
 
+                var pioneers = new List<(float score, Candidate cand)>();
+
                 for (int p = 0; p < s.patches.Count; p++)
                 {
                     var patch = s.patches[p];
@@ -2849,7 +2857,32 @@ namespace Si_RTS_AI.Planning
                     for (int i = 0; i < s.bcs.Count; i++)   if (s.bcs[i].finished)   consider(s.bcs[i].pos);
                     for (int i = 0; i < s.cysts.Count; i++) if (s.cysts[i].finished) consider(s.cysts[i].pos);
                     for (int i = 0; i < s.nodes.Count; i++) consider(s.nodes[i].pos);
-                    if (bestDsq > outerSq) continue;   // patch is >2×reach away — need multi-hop chain, skip for now
+                    // BEYOND TWO HOPS: PIONEER, DO NOT GIVE UP.
+                    //
+                    // This used to `continue` — a patch further than 2x reach
+                    // from anything we own produced no candidate at all, so the
+                    // economy could only ever creep into ground that was already
+                    // nearly in reach. It could never DECIDE to drive a chain
+                    // across open ground toward a distant cluster, which is why
+                    // expansion reads as one travelling front: the only
+                    // candidates that exist are the ones just past the frontier
+                    // we already have. Badlands 2026-08-03: a western expansion
+                    // opened at (1120,807) because it was inside the band, while
+                    // (1609,-1372) and (831,2297) generated nothing.
+                    //
+                    // The emission below already places just ONE hop toward the
+                    // patch, so a far patch simply takes several ticks to reach
+                    // — multi-hop falls out for free. What the gate was really
+                    // protecting against was a starburst: every distant patch on
+                    // the map emitting a candidate at once. So pioneers are
+                    // collected and ranked by return instead of being emitted
+                    // blind, and only the best few survive.
+                    bool pioneer = bestDsq > outerSq;
+                    if (pioneer)
+                    {
+                        if (_beamPhase != PlanPhase.Phase2_Expand || bridgeSingleShot) continue;
+                        if (Mathf.Sqrt(bestDsq) > MapProfile.MaxChainDepthM) continue;
+                    }
 
                     if (bridgeSingleShot)
                     {
@@ -2907,12 +2940,52 @@ namespace Si_RTS_AI.Planning
                     }
                     if (nodeAlreadyHere) continue;
 
-                    list.Add(new Candidate
+                    var hop = new Candidate
                     {
                         kind = ActionKind.PlaceNode, target = nodePos,
                         cost = EcoSimulator.NODE_COST, patchIdx = -1,
                         unlocks = CountUnlockedPatches(s, nodePos),
-                    });
+                    };
+
+                    if (pioneer)
+                    {
+                        // Ranked on what the far cluster is worth once reached,
+                        // multiplied by how much unheld ground the hop claims.
+                        // Return alone would send every pioneer at the single
+                        // richest cluster; control gain is what spreads them out
+                        // to different quadrants, which is the whole point.
+                        var proi = EvaluateChainRoi(s, patch.pos, Mathf.Sqrt(bestDsq));
+                        if (proi.Roi <= 0f) continue;
+                        float gain = Perception.ControlMap.ControlGain(nodePos, EcoSimulator.BC_REACH_M);
+                        pioneers.Add((proi.Roi * Mathf.Max(gain, 0.05f), hop));
+                        continue;
+                    }
+
+                    list.Add(hop);
+                }
+
+                // Emit the best pioneers, kept apart so they open SEPARATE
+                // fronts rather than several hops down one corridor. Without the
+                // spacing check the top few by score are usually neighbours
+                // aimed at the same cluster, which would reproduce the single
+                // front this whole path exists to break.
+                if (pioneers.Count > 0)
+                {
+                    pioneers.Sort((a, b) => b.score.CompareTo(a.score));
+                    var taken = new List<Vector3>(PIONEER_MAX);
+                    for (int i = 0; i < pioneers.Count && taken.Count < PIONEER_MAX; i++)
+                    {
+                        Vector3 t = pioneers[i].cand.target;
+                        bool clash = false;
+                        for (int k = 0; k < taken.Count; k++)
+                        {
+                            float ddx = taken[k].x - t.x, ddz = taken[k].z - t.z;
+                            if (ddx * ddx + ddz * ddz < EXPAND_SPREAD_M * EXPAND_SPREAD_M) { clash = true; break; }
+                        }
+                        if (clash) continue;
+                        list.Add(pioneers[i].cand);
+                        taken.Add(t);
+                    }
                 }
 
                 // Bridging mode: emit the single closest Node candidate.
