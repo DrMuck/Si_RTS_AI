@@ -382,9 +382,31 @@ namespace Si_RTS_AI.Planning
                 // in proportion — the user's rule from 2026-08-03: "an expansion
                 // line that has only one connection to nest within a long build
                 // distance would need to find another branch".
-                int protect = subtree[a] + subtree[b];
-                float allowed = maxBridge * (1f + protect / (float)PROTECT_PER_STRETCH);
-                if (pairs[i].gap > Mathf.Min(allowed, scanBridge)) continue;
+                // WHAT WOULD ACTUALLY BE STRANDED IS THE SMALLER SIDE.
+                //
+                // This summed both subtrees, which is wrong twice over. Cutting
+                // the single path between a and b does not orphan everything on
+                // both sides — the Nest keeps one side and only the other is
+                // lost, so the loop is worth what the SMALLER side holds.
+                //
+                // And because subtree counts what hangs below a node, the sum
+                // is near-total for any pair close to the Nest and near-zero
+                // out on the branches. That fed the distance allowance below,
+                // so long bridges were permitted only near spawn and the
+                // allowance collapsed to maxBridge everywhere else — which is
+                // why loops were only ever CONSIDERED around the base. User
+                // 2026-08-03 listed three wanted interconnects at 588m, 730m
+                // and 776m, all mid-branch, none of which could be proposed.
+                int protect = Mathf.Min(subtree[a], subtree[b]);
+
+                // No distance allowance any more. A bridge already pays for its
+                // length in the score below, which divides protection by the
+                // nodes the bridge costs, so a long one has to protect
+                // proportionally more to win. A separate distance ceiling on
+                // top of that just reimposed the hardcoded limit the score was
+                // meant to replace. scanBridge remains as the sanity bound on
+                // what is even examined.
+                if (pairs[i].gap > scanBridge) continue;
 
                 // Protection per Node spent, with hops kept as a floor test so a
                 // pair that is already well connected is still ignored.
