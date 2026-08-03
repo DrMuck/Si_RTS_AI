@@ -229,20 +229,34 @@ namespace Si_RTS_AI.Planning
         /// BFS. This runs on the game thread at the report cadence.
         /// </summary>
         /// <summary>
-        /// How far apart two branches may be and still be worth bridging.
+        /// How far apart two branches may be and still be worth bridging —
+        /// DERIVED FROM THE MAP, not fixed.
         ///
-        /// 600m only ever found pairs near the opener base, where structures are
-        /// dense — which is exactly what the user observed across five replays
-        /// on 2026-08-03: "looping isn't really there, sometimes it happens but
-        /// only near at opener base", and on GreaterErg "this map requires
-        /// bigger loops".
+        /// A constant cannot be right here. The grid already measures each map's
+        /// playable extent and it varies threefold: BlackIsle 2000m, Citadel and
+        /// CrystalChasm 3000m, CrimsonPeak 4096m, Badlands and GreatErg 6000m.
+        /// Branches radiate from the Nest, so on a big map neighbouring branches
+        /// are simply further apart — which is why 600m only ever found pairs
+        /// near the opener base, and why the user reported GreatErg "requires
+        /// bigger loops" while small maps need nothing of the sort.
         ///
-        /// At a 110m hop, 1400m is about twelve Nodes. That is a real cost, so
-        /// it is not taken lightly — the score is hops-closed PER NODE, so a
-        /// cheap bridge still wins first and an expensive one only when it
-        /// closes a correspondingly long dead-end.
+        /// Expressed as a fraction of extent, that becomes ~440m on BlackIsle
+        /// and ~1320m on GreatErg without either being written down. The
+        /// fraction is dimensionless and the only judgement left; everything
+        /// with a unit comes from the map.
         /// </summary>
-        const float MAX_BRIDGE_M   = 1400f;
+        const float BRIDGE_FRACTION_OF_MAP = 0.22f;
+
+        static float MaxBridgeM
+        {
+            get
+            {
+                float extent = Perception.MapLayers.GridWorld.Width
+                             * Perception.MapLayers.GridWorld.CellSize;
+                // Never below a couple of Node hops, or nothing is bridgeable.
+                return Mathf.Max(EcoSimulator.NODE_REACH_M * 3f, extent * BRIDGE_FRACTION_OF_MAP);
+            }
+        }
         /// <summary>How many pairs to look at before giving up, and how many
         /// worthwhile ones to find before settling. The first bounds the work,
         /// the second ends the search early when the answer is already clear.</summary>
@@ -252,6 +266,7 @@ namespace Si_RTS_AI.Planning
 
         static void ReportLoopCandidates(List<Node> g, bool[] connected, System.Text.StringBuilder sb)
         {
+            float maxBridge = MaxBridgeM;
             var pairs = new List<(float gap, int a, int b)>();
             for (int a = 0; a < g.Count; a++)
             {
@@ -262,7 +277,7 @@ namespace Si_RTS_AI.Planning
                     if (g[a].Adj.Contains(b)) continue;              // already joined
                     float dx = g[a].Pos.x - g[b].Pos.x, dz = g[a].Pos.z - g[b].Pos.z;
                     float gap = Mathf.Sqrt(dx * dx + dz * dz);
-                    if (gap > MAX_BRIDGE_M) continue;
+                    if (gap > maxBridge) continue;
                     pairs.Add((gap, a, b));
                 }
             }
