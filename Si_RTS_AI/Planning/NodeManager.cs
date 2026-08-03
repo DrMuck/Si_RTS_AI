@@ -86,7 +86,7 @@ namespace Si_RTS_AI.Planning
 
         internal static void ResetForNewRound()
         {
-            _lastReportAt = 0f; _repairAt = -1f; _loopAt = -1f;
+            _lastReportAt = 0f; _repairAt = -1f; _loopAt = -1f; _commitAt = -1f;
         }
 
         /// <summary>
@@ -300,6 +300,21 @@ namespace Si_RTS_AI.Planning
             var bfsCache = new Dictionary<int, int[]>();
             int examined = 0, valid = 0;
 
+            // FINISH THE LOOP WE STARTED.
+            //
+            // The target was re-chosen from the current best every pass, so a
+            // four-node bridge got one node, then the next pass preferred a
+            // different pair and started another. NarakaCity 2026-08-02: seven
+            // Nodes laid across four different pairs, not one ring closed, and
+            // singlePointsOfFailure ROSE from 97 to 105 — every unfinished spur
+            // is itself a new cut vertex, so half-built loops make the network
+            // more fragile while spending money.
+            //
+            // A commitment is held until the ring actually closes, which is
+            // measurable: once the bridge is in, the two ends are a short hop
+            // apart instead of a long way round.
+            if (TryResumeCommittedLoop(g, connected, bfsCache, sb)) return;
+
             for (int i = 0; i < pairs.Count && examined < MAX_PAIRS_EXAMINED && valid < ENOUGH_CANDIDATES; i++)
             {
                 examined++;
@@ -337,10 +352,70 @@ namespace Si_RTS_AI.Planning
 
             var A = g[pairs[bi].a].Pos; var B = g[pairs[bi].b].Pos;
             _loopFrom = A; _loopTo = B; _loopNodes = bnodes; _loopAt = Time.time;
+            _commitA = A; _commitB = B; _commitAt = Time.time;
             sb.Append(" | LOOP (").Append(A.x.ToString("F0")).Append(',').Append(A.z.ToString("F0"))
               .Append(")-(").Append(B.x.ToString("F0")).Append(',').Append(B.z.ToString("F0")).Append(')')
               .Append(" gap=").Append((int)bgap).Append("m nodes=").Append(bnodes)
               .Append(" closes=").Append(bhops).Append("hops");
+        }
+
+        /// <summary>
+        /// Keep serving the loop already under construction.
+        ///
+        /// Returns true when a commitment is live and still unclosed, in which
+        /// case it is republished unchanged and no new search runs. Released
+        /// when the two ends come within MIN_HOPS_SAVED of each other — that IS
+        /// the ring closing — or when the commitment ages out, so a bridge that
+        /// cannot be built does not block every other loop for the round.
+        /// </summary>
+        const float LOOP_COMMIT_TTL_S = 240f;
+        static Vector3 _commitA, _commitB;
+        static float   _commitAt = -1f;
+
+        static bool TryResumeCommittedLoop(List<Node> g, bool[] connected,
+                                           Dictionary<int, int[]> cache,
+                                           System.Text.StringBuilder sb)
+        {
+            if (_commitAt < 0f) return false;
+            if (Time.time - _commitAt > LOOP_COMMIT_TTL_S)
+            {
+                MelonLogger.Msg("[NODEMGR] loop commitment aged out — searching again");
+                _commitAt = -1f; return false;
+            }
+
+            int a = NearestGraphIndex(g, _commitA), b = NearestGraphIndex(g, _commitB);
+            if (a < 0 || b < 0 || !connected[a] || !connected[b]) { _commitAt = -1f; return false; }
+
+            int hops = HopDistanceCached(g, a, b, cache);
+            if (hops < MIN_HOPS_SAVED)
+            {
+                MelonLogger.Msg($"[NODEMGR] loop ({_commitA.x:F0},{_commitA.z:F0})-" +
+                                $"({_commitB.x:F0},{_commitB.z:F0}) CLOSED — now {hops} hops apart");
+                _commitAt = -1f;
+                return false;
+            }
+
+            float gap = Vector3.Distance(_commitA, _commitB);
+            _loopFrom = _commitA; _loopTo = _commitB;
+            _loopNodes = NodesToBridge(gap); _loopAt = Time.time;
+            sb.Append(" | LOOP(committed) (").Append(_commitA.x.ToString("F0")).Append(',')
+              .Append(_commitA.z.ToString("F0")).Append(")-(").Append(_commitB.x.ToString("F0"))
+              .Append(',').Append(_commitB.z.ToString("F0")).Append(')')
+              .Append(" still=").Append(hops).Append("hops");
+            return true;
+        }
+
+        /// <summary>Index of the graph vertex standing at this position.</summary>
+        static int NearestGraphIndex(List<Node> g, Vector3 pos)
+        {
+            int best = -1; float bd = 60f * 60f;
+            for (int i = 0; i < g.Count; i++)
+            {
+                float dx = g[i].Pos.x - pos.x, dz = g[i].Pos.z - pos.z;
+                float d = dx * dx + dz * dz;
+                if (d < bd) { bd = d; best = i; }
+            }
+            return best;
         }
 
         /// <summary>Hops from one vertex to another, reusing the BFS from that
