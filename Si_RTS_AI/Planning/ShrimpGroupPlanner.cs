@@ -159,6 +159,14 @@ namespace Si_RTS_AI.Planning
         const float VALUE_UNTAPPED    = 0.45f;
 
         /// <summary>
+        /// How heavily to charge the stretch of the expansion lead that outlasts
+        /// the walk. Well under 1 because that time is not wasted the way walking
+        /// is: the Bio Cache is being built for the whole economy, and the patch
+        /// will still be there afterwards.
+        /// </summary>
+        const float LEAD_WEIGHT = 0.30f;
+
+        /// <summary>
         /// How long after asking a Bio Cache actually appears on new ground —
         /// build time plus the chain that has to reach it. Measured rather than
         /// assumed where possible.
@@ -657,8 +665,24 @@ namespace Si_RTS_AI.Planning
                 // failure in this system is total capacity falling behind the
                 // shrimp count as patches deplete — filling an existing slot
                 // never fixes that, and taking new ground does.
+                // THE WAIT IS A COST, NOT A FLOOR.
+                //
+                // This was max(walk, expansionLead) — and the lead is about 55s,
+                // so EVERY untapped patch inside ~500m scored identically. A
+                // patch 100m away lost its whole distance advantage and could be
+                // beaten by a served group 400m away, which is exactly the
+                // reported behaviour: shrimps sent to a far biotics instead of a
+                // near un-expanded one.
+                //
+                // Waiting for the Bio Cache is real, but it is not the same kind
+                // of cost as walking: the walk is time this shrimp spends idle,
+                // whereas the wait is shared with an expansion that benefits the
+                // whole economy and is partly spent walking anyway. So charge
+                // only the part of the lead that outlasts the walk, at a
+                // fraction — which keeps near patches genuinely near.
                 float freeWalkS = Mathf.Sqrt(freshSq) / SHRIMP_SPEED;
-                float freeScore = Mathf.Max(freeWalkS, ExpansionLeadS()) * VALUE_UNTAPPED;
+                float waitS     = Mathf.Max(0f, ExpansionLeadS() - freeWalkS);
+                float freeScore = (freeWalkS + waitS * LEAD_WEIGHT) * VALUE_UNTAPPED;
                 if (freeIdx >= 0 && (dst < 0 || freeScore < dstScore))
                 {
                     _hint = new ExpansionHint { Pos = freeP[freeIdx], Shrimps = stranded, AtTime = now };
