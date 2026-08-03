@@ -51,7 +51,7 @@ namespace Si_RTS_AI.Planning
         // A node line needs several hops in a row, and firing one hop per cycle
         // means an eight-node chain takes over a minute to reach anywhere.
         // [PLAN/RATE] is kept so the achieved rate stays visible.
-        public const float PLAN_CADENCE_S = 8f;
+        public const float PLAN_CADENCE_S = 3f;
 
         static float _cycleSum, _snapMsSum, _lastRateReportAt;
         static int   _cycleN;
