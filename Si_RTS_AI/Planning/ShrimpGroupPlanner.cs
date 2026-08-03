@@ -355,7 +355,8 @@ namespace Si_RTS_AI.Planning
                 TargetLoad[best]++;
                 return Targets[best];
             }
-            public int     Capacity;
+            public int     Capacity;        // spread limit — where shrimps should stand
+            public int     AbsorbCapacity;  // what the ground can hold — sizes production
             public bool    HasProducer;   // a Cyst of ours feeds this group
             public int     Desired;
             public int     Current;
@@ -800,11 +801,29 @@ namespace Si_RTS_AI.Planning
                 var g = groups[gi];
                 if (g.Patches == 0) { g.Capacity = 0; g.Value = 0f; continue; }
 
+                // TWO DIFFERENT CAPACITIES, FOR TWO DIFFERENT QUESTIONS.
+                //
+                // Capacity answers "how many shrimps should stand HERE" and gets
+                // the phase-dependent spread limit. AbsorbCapacity answers "how
+                // many shrimps can this map usefully hold at all" and must NOT,
+                // because the producer sizes the whole economy off it.
+                //
+                // Conflating them throttled the economy on sparse maps: with the
+                // Phase 2 limit of 10, serving 10 patches gives 100 capacity and
+                // production is then capped at 90% of that — 90 shrimps where 18
+                // per patch would have allowed 162. Less income, less expansion.
+                // NarakaCity 2026-08-03: under a third of the map taken in 35
+                // minutes, and the user's read was exactly this — "might need to
+                // allow more shrimps for each biotics in phase 2 expansion".
+                //
+                // Split, the spread limit still keeps patches uncrowded while
+                // production stays sized to what the ground can really absorb.
                 int perPatch = PerPatchCapacityNow();
-                int capByPatches   = g.Patches * perPatch;
                 int capByRemaining = (int)(g.Remaining / (PER_SHRIMP_HARVEST_PER_SEC * MIN_LIFE_S));
-                g.Capacity = Mathf.Clamp(Mathf.Min(capByPatches, capByRemaining), 0,
+                g.Capacity = Mathf.Clamp(Mathf.Min(g.Patches * perPatch, capByRemaining), 0,
                                          Mathf.Max(perPatch, HARD_CAP));
+                g.AbsorbCapacity = Mathf.Clamp(Mathf.Min(g.Patches * PER_PATCH_CAPACITY, capByRemaining),
+                                               0, PER_PATCH_CAPACITY * Mathf.Max(1, g.Patches));
 
                 float cycle = 2f * g.BestPatchDist / SHRIMP_SPEED
                             + (float)CARRY / HARVEST_RATE
@@ -1178,7 +1197,7 @@ namespace Si_RTS_AI.Planning
                                       Current = groups[i].Current, Best = groups[i].BestPatch,
                                       HasProducer = groups[i].HasProducer,
                                       Patches = groups[i].Patches };
-                total += groups[i].Capacity;
+                total += groups[i].AbsorbCapacity;
             }
             _capSnapshot = snap;
             TeamCapacity = total;

@@ -228,7 +228,21 @@ namespace Si_RTS_AI.Planning
         /// closest CANDIDATE_PAIRS of those are scored, and each score is one
         /// BFS. This runs on the game thread at the report cadence.
         /// </summary>
-        const float MAX_BRIDGE_M   = 600f;
+        /// <summary>
+        /// How far apart two branches may be and still be worth bridging.
+        ///
+        /// 600m only ever found pairs near the opener base, where structures are
+        /// dense — which is exactly what the user observed across five replays
+        /// on 2026-08-03: "looping isn't really there, sometimes it happens but
+        /// only near at opener base", and on GreaterErg "this map requires
+        /// bigger loops".
+        ///
+        /// At a 110m hop, 1400m is about twelve Nodes. That is a real cost, so
+        /// it is not taken lightly — the score is hops-closed PER NODE, so a
+        /// cheap bridge still wins first and an expensive one only when it
+        /// closes a correspondingly long dead-end.
+        /// </summary>
+        const float MAX_BRIDGE_M   = 1400f;
         /// <summary>How many pairs to look at before giving up, and how many
         /// worthwhile ones to find before settling. The first bounds the work,
         /// the second ends the search early when the answer is already clear.</summary>
