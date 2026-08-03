@@ -142,12 +142,12 @@ namespace Si_RTS_AI.Planning
 
         /// <summary>
         /// What each kind of destination is WORTH, as a multiplier on the time
-        /// it costs. Lower is better. They are ordered by how much the choice
-        /// helps beyond the one shrimp being moved:
+        /// it costs. Lower is better:
         ///
-        ///   1.00  a group already producing — it fills itself anyway, so a
-        ///         walker adds least
-        ///   0.65  a group with capacity but no Cyst — genuinely needs bodies
+        ///   1.00  a group that can fill its own free slots, from its own Cyst,
+        ///         sooner than a walker could arrive — a walker adds least
+        ///   0.65  a group that cannot: no Cyst at all, or far more free slots
+        ///         than one Cyst can supply in the time
         ///   0.45  untapped ground — the only option that CREATES capacity, and
         ///         it drags a Bio Cache and a node chain along with it
         ///
@@ -614,7 +614,28 @@ namespace Si_RTS_AI.Planning
                     if (snap[gi].Capacity - snap[gi].Current <= 0) continue;
                     float dx = snap[gi].Best.x - p.x, dz = snap[gi].Best.z - p.z;
                     float walkS = Mathf.Sqrt(dx * dx + dz * dz) / SHRIMP_SPEED;
-                    float score = walkS * (snap[gi].HasProducer ? 1f : VALUE_NO_PRODUCER);
+
+                    // "HAS A CYST" IS NOT THE SAME AS "DOES NOT NEED BODIES".
+                    //
+                    // A producing group was given no discount at all, on the
+                    // reasoning that it fills itself. True for a single patch;
+                    // badly wrong for a rich one. A three-patch cluster holds
+                    // 30-54 slots, and one Cyst at 15s a shrimp needs 450-810s
+                    // to fill them — while a displaced shrimp could walk there
+                    // in a minute. GreatErg 2026-08-03: a triple biotics in the
+                    // north-west was expanded to AND given a Cyst, and shrimps
+                    // whose own patch had emptied still went elsewhere.
+                    //
+                    // So ask the question that actually matters: can this group
+                    // fill the slot sooner on its own than a walker can reach
+                    // it? If not, the walker is worth sending.
+                    int spare = Mathf.Max(0, snap[gi].Capacity - snap[gi].Current);
+                    float localFillS = snap[gi].HasProducer
+                        ? spare * EcoSimulator.SHRIMP_BUILD_S
+                        : float.MaxValue;          // no producer: never, on its own
+                    float value = localFillS > walkS ? VALUE_NO_PRODUCER : 1f;
+
+                    float score = walkS * value;
                     if (score < dstScore) { dstScore = score; dst = gi; }
                 }
                 // UNTAKEN GROUND COMPETES WITH DEVELOPED GROUND.

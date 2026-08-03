@@ -262,6 +262,19 @@ namespace Si_RTS_AI.Planning
         /// the second ends the search early when the answer is already clear.</summary>
         const int   MAX_PAIRS_EXAMINED = 250;
         const int   ENOUGH_CANDIDATES  = 12;
+
+        /// <summary>
+        /// How many loops may be under construction at once.
+        ///
+        /// One at a time was the fix for loops that never finished, and it
+        /// worked — but a map with several long dead-ends then closes them one
+        /// after another, minutes apart. GreatErg 2026-08-03: southern branches
+        /// and north-eastern branches both wanted closing and only one was ever
+        /// in progress. Two lets independent rings proceed together while still
+        /// forbidding the scatter that left seven nodes across four unfinished
+        /// bridges.
+        /// </summary>
+        const int MAX_CONCURRENT_LOOPS = 2;
         const int   MIN_HOPS_SAVED  = 6;
 
         static void ReportLoopCandidates(List<Node> g, bool[] connected, System.Text.StringBuilder sb)
