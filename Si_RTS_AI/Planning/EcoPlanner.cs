@@ -644,6 +644,13 @@ namespace Si_RTS_AI.Planning
         // four-site opening is fully requested inside two.
         const int   OPENER_STEPS_PER_TICK = 6;
         const int   EXEC_MIN_GAIN     = 100;
+        /// <summary>How many separate fronts the escape hatch may open in one
+        /// tick. Bounded so a huge candidate list cannot drain the bank in a
+        /// single pass — cash still has to cover shrimps — but high enough that
+        /// north, middle and south can all advance in the same tick instead of
+        /// queueing behind each other.</summary>
+        const int ESCAPE_MAX_FIRES = 3;
+
         const float REPEAT_SUPPRESS_M = 60f;
         // Suppress must outlast the build cycle. Structures take ~20s to
         // build; with a 15s suppress window the same target got proposed and
@@ -1553,10 +1560,50 @@ namespace Si_RTS_AI.Planning
                             if (c.kind == ActionKind.PlaceNode) candNodes++;
                         }
                         cands.Sort((a, b) => KindPriority(a.kind).CompareTo(KindPriority(b.kind)));
+
+                        // FIRE ON EVERY FRONT, NOT JUST THE FIRST ONE.
+                        //
+                        // This used to `break` at the first success, so the
+                        // escape hatch advanced the economy by at most one
+                        // structure per tick regardless of how much ground was
+                        // open. The candidate list is dominated by Node hops
+                        // toward patches we cannot reach yet — one entry per
+                        // unreached patch — so those 40 entries ARE 40
+                        // directions we could be growing in. Taking one and
+                        // dropping 39 is what makes expansion advance as a
+                        // single travelling front instead of fanning out, and
+                        // it is why a Bio Cache candidate sitting at position 1
+                        // of 42 still never gets built: something ahead of it
+                        // fires and the loop ends. Badlands 2026-08-03 grew into
+                        // one south-west wedge with 89k cash unspent; NarakaCity
+                        // covered under a third of the map in 35 minutes.
+                        //
+                        // Now: keep firing down the priority order, but require
+                        // each new fire to be EXPAND_SPREAD_M away from the ones
+                        // already fired this tick. Same rule the beam's runner-up
+                        // path uses, and it is what makes this multi-front rather
+                        // than merely faster — near-duplicate hops off the same
+                        // frontier node get rejected, genuinely separate fronts
+                        // do not.
+                        var firedHere = new List<Vector3>(ESCAPE_MAX_FIRES);
                         foreach (var c in cands)
                         {
                             if (c.kind == ActionKind.Noop) continue;
-                            if (TryFireAction(c) && fired > 0) break;
+                            if (firedHere.Count >= ESCAPE_MAX_FIRES) break;
+
+                            bool tooClose = false;
+                            for (int k = 0; k < firedHere.Count; k++)
+                            {
+                                float ddx = firedHere[k].x - c.target.x;
+                                float ddz = firedHere[k].z - c.target.z;
+                                if (ddx * ddx + ddz * ddz < EXPAND_SPREAD_M * EXPAND_SPREAD_M)
+                                { tooClose = true; break; }
+                            }
+                            if (tooClose) continue;
+
+                            int beforeEsc = fired;
+                            TryFireAction(c);
+                            if (fired > beforeEsc) firedHere.Add(c.target);
                         }
                         MelonLogger.Msg("[PLAN/ESCAPE] team=" + tn +
                                         " cash=" + state.cash + "/" + state.cap +
@@ -3214,9 +3261,39 @@ namespace Si_RTS_AI.Planning
         /// </summary>
         const float BEARING_SPREAD_BONUS = PHASE2_BC_BONUS;
 
+        /// <summary>
+        /// MAP CONTROL, not compass bearing.
+        ///
+        /// The bearing version below is kept as a fallback but is no longer the
+        /// primary measure. Counting Bio Caches per 90-degree sector from the
+        /// Nest was a proxy for "somewhere we are not", and it fails in the two
+        /// ways a proxy usually does. It ignores DISTANCE — a patch 300m out
+        /// and one 2,500m out on the same bearing are the same sector, so once
+        /// a direction has any presence at all the whole wedge is discounted
+        /// out to the map edge. And it ignores SHAPE — on a long map the
+        /// sectors do not correspond to comparable amounts of ground.
+        ///
+        /// Control gain measures the ground itself: what fraction of the area
+        /// around this placement we do not already hold. Virgin ground pays the
+        /// full bonus, ground inside our own footprint pays nothing, and the
+        /// falloff between them is continuous rather than a bucket count. That
+        /// is what makes a LONGER chain into an empty quadrant beat a shorter
+        /// one into ground we already sit on — the case the single travelling
+        /// front kept getting wrong, and the reason expansion never opened a
+        /// second and third western line.
+        /// </summary>
         static float BearingSpreadBonus(EcoState s, Vector3 patchPos)
         {
             if (s.nestPos == Vector3.zero) return 0f;
+
+            // Measured over the Bio Cache's own reach, so "ground this claims"
+            // means the ground it would actually let us build from.
+            float gain = Perception.ControlMap.ControlGain(patchPos, EcoSimulator.BC_REACH_M);
+            if (gain > 0f) return BEARING_SPREAD_BONUS * gain;
+
+            // Grid not ready (pre-spawn, or a map whose extent has not resolved):
+            // fall back to the sector count rather than paying nothing, which
+            // would silently disable spread for the whole opening.
             float want = Mathf.Atan2(patchPos.x - s.nestPos.x,
                                      patchPos.z - s.nestPos.z) * Mathf.Rad2Deg;
             int sameSector = 0;
@@ -3226,8 +3303,6 @@ namespace Si_RTS_AI.Planning
                 float b = Mathf.Atan2(q.x - s.nestPos.x, q.z - s.nestPos.z) * Mathf.Rad2Deg;
                 if (Mathf.Abs(Mathf.DeltaAngle(want, b)) < BEARING_SECTOR_DEG * 0.5f) sameSector++;
             }
-            // First Bio Cache in a sector is worth the most; each further one
-            // there is worth progressively less.
             return BEARING_SPREAD_BONUS / (1f + sameSector);
         }
 

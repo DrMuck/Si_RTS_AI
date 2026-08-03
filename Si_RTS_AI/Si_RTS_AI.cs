@@ -8,7 +8,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 
-[assembly: MelonInfo(typeof(Si_RTS_AI.Si_RTS_AI), "Si_RTS_AI", "0.13.13-loops-weigh-what-they-protect", "DrMuck")]
+[assembly: MelonInfo(typeof(Si_RTS_AI.Si_RTS_AI), "Si_RTS_AI", "0.13.15-map-control-drives-expansion", "DrMuck")]
 [assembly: MelonGame("Bohemia Interactive", "Silica")]
 
 namespace Si_RTS_AI
@@ -250,6 +250,7 @@ namespace Si_RTS_AI
                     if ((team.name ?? "").Contains("Alien")) Perception.QueenStatus.Evaluate(team);
                     Perception.ThreatMap.Observe(team);
                     Perception.ThreatMap.Tick(team);
+                    Perception.ControlMap.Rebuild(team);
                     Planning.NodeManager.Tick(team);
                     tEcoRate     = TimedMs(() => Perception.EcoRateSampler.Tick(team));
                     RecentModWork.AddLayer(tLayer);
@@ -385,6 +386,7 @@ namespace Si_RTS_AI
             Perception.QueenStatus.ResetForNewRound();
             Planning.NodeManager.ResetForNewRound();
             Perception.ThreatMap.ResetForNewRound();
+            Perception.ControlMap.ResetForNewRound();
             Perception.BuildTimeline.ReportHookState();
             Faction.SuppressCombat.ResetForNewRound();
             Faction.HumanConstruction.ResetForNewRound();

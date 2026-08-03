@@ -437,6 +437,14 @@ namespace Si_RTS_AI.Planning
             _committedPos = pos; _committedAt = now;
         }
 
+        /// <summary>The live commitment if there is one, else this patch.</summary>
+        static Vector3 CommittedOr(Vector3 fallback)
+        {
+            if (_committedAt >= 0f && Time.time - _committedAt <= COMMITMENT_TTL_S)
+                return _committedPos;
+            return fallback;
+        }
+
         static bool IsCommittedExpansion(Vector3 pos)
         {
             if (_committedAt < 0f) return false;
@@ -653,21 +661,19 @@ namespace Si_RTS_AI.Planning
                 {
                     float dx = freeP[fi].x - p.x, dz = freeP[fi].z - p.z;
                     float d = dx * dx + dz * dz;
-                    // STAY WITH THE EXPANSION WE ALREADY COMMITTED TO.
+// EACH SHRIMP PICKS ITS OWN BEST DESTINATION.
                     //
-                    // The target was recomputed from scratch every pass, so it
-                    // jumped between patches and no single expansion was ever
-                    // carried through. NarakaCity 2026-08-02: shrimps sent to
-                    // (2268,2635) at 18:23:56 with two chain nodes laid toward
-                    // it, then at 18:25:24 the request moved to (1206,-693) and
-                    // a chain started there instead. NEITHER got a Bio Cache —
-                    // the ones built went to four other places — and the shrimps
-                    // were left harvesting at a patch with nowhere to deposit.
+                    // The expansion commitment used to be applied HERE, pulling
+                    // every displaced shrimp on the map toward the one committed
+                    // patch. That kept the expansion consistent — its actual
+                    // purpose — but it also dragged shrimps across closer
+                    // untapped ground to reach it, which is the repeated report
+                    // of "crossing closer biotics they could tap in right away".
                     //
-                    // A committed patch is preferred until it is actually served
-                    // or the commitment goes stale, so the chain, the Bio Cache
-                    // and the walkers all aim at one place long enough to finish.
-                    if (IsCommittedExpansion(freeP[fi])) d *= COMMITMENT_PULL;
+                    // The commitment belongs to the expansion REQUEST, not to
+                    // every shrimp's walk. It is applied to the hint below, so
+                    // one Bio Cache still gets finished, while a shrimp with
+                    // something better nearby simply goes there.
                     if (d < freshSq) { freshSq = d; freeIdx = fi; }
                 }
                 // Untapped ground is scored WORSE than a standing group at the
@@ -706,8 +712,12 @@ namespace Si_RTS_AI.Planning
                 float freeScore = (freeWalkS + waitS * LEAD_WEIGHT) * VALUE_UNTAPPED;
                 if (freeIdx >= 0 && (dst < 0 || freeScore < dstScore))
                 {
-                    _hint = new ExpansionHint { Pos = freeP[freeIdx], Shrimps = stranded, AtTime = now };
-                    Commit(freeP[freeIdx], now);
+                    // The REQUEST stays with whatever we already committed to, so
+                    // one Bio Cache gets finished rather than four being started.
+                    // The shrimp still walks to its own best patch above.
+                    Vector3 askFor = CommittedOr(freeP[freeIdx]);
+                    _hint = new ExpansionHint { Pos = askFor, Shrimps = stranded, AtTime = now };
+                    Commit(askFor, now);
                     IssueMove(u, freeP[freeIdx]);
                     _assign[u] = new Assignment { Target = freeP[freeIdx],
                                                   AssignedAt = now, LastOrderAt = now };
