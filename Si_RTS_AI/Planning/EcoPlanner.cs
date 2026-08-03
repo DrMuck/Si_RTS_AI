@@ -59,6 +59,7 @@ namespace Si_RTS_AI.Planning
         const float CAND_MAP_PERIOD_S = 30f;
         const float CAND_MAP_BAND_M   = 500f;
         static float _lastCandMapAt;
+        static int _pioSeen, _pioKillDepth, _pioKillRoi, _pioEmit;
 
         static float _cycleSum, _snapMsSum, _lastRateReportAt;
         static int   _cycleN;
@@ -998,6 +999,22 @@ namespace Si_RTS_AI.Planning
                           .Append('[').Append(count[bands[i]])
                           .Append(" west=").Append(west[bands[i]].ToString("F0")).Append(']');
                     if (bands.Count == 0) sb.Append(" NONE");
+
+                    // THE PIONEER BUCKET, ITEMISED.
+                    //
+                    // Distant ground can only reach the candidate list through
+                    // the pioneer path, and that path is gated on harvest
+                    // return alone (Roi > 0). A long chain earns little and
+                    // late, so the suspicion is that far patches are being
+                    // disqualified there while near ground still produces
+                    // candidates — which would explain both the empty field at
+                    // six figures of cash and why whichever arm first gets
+                    // inside 2x reach keeps expanding while the others never
+                    // start. seen/depth/roi/emit says whether that is true.
+                    sb.Append(" | pioneer seen=").Append(_pioSeen)
+                      .Append(" killDepth=").Append(_pioKillDepth)
+                      .Append(" killRoi=").Append(_pioKillRoi)
+                      .Append(" emitted=").Append(_pioEmit);
                     MelonLogger.Msg(sb.ToString());
                 }
                 catch (System.Exception ex)
@@ -3065,6 +3082,7 @@ namespace Si_RTS_AI.Planning
                 bool bridgeSingleShot = (needsBridge || underTapped) && _beamPhase != PlanPhase.Phase2_Expand;
 
                 var pioneers = new List<(float score, Candidate cand)>();
+                _pioSeen = _pioKillDepth = _pioKillRoi = _pioEmit = 0;
 
                 for (int p = 0; p < s.patches.Count; p++)
                 {
@@ -3115,8 +3133,9 @@ namespace Si_RTS_AI.Planning
                     bool pioneer = bestDsq > outerSq;
                     if (pioneer)
                     {
+                        _pioSeen++;
                         if (_beamPhase != PlanPhase.Phase2_Expand || bridgeSingleShot) continue;
-                        if (Mathf.Sqrt(bestDsq) > MapProfile.MaxChainDepthM) continue;
+                        if (Mathf.Sqrt(bestDsq) > MapProfile.MaxChainDepthM) { _pioKillDepth++; continue; }
                     }
 
                     if (bridgeSingleShot)
@@ -3191,7 +3210,8 @@ namespace Si_RTS_AI.Planning
                         // richest cluster; control gain is what spreads them out
                         // to different quadrants, which is the whole point.
                         var proi = EvaluateChainRoi(s, patch.pos, Mathf.Sqrt(bestDsq));
-                        if (proi.Roi <= 0f) continue;
+                        if (proi.Roi <= 0f) { _pioKillRoi++; continue; }
+                        _pioEmit++;
                         float gain = Perception.ControlMap.ControlGain(nodePos, EcoSimulator.BC_REACH_M);
 
                         // Shrimps walking past this patch is the strongest
