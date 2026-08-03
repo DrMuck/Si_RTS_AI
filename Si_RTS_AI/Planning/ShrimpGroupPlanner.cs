@@ -1461,7 +1461,24 @@ namespace Si_RTS_AI.Planning
             }
 
             float mSrc = MarginalIps(src, src.Current);
-            if (mSrc <= 0f) return true;               // source earns nothing at the margin
+            // SOURCE EARNS NOTHING — STILL NOT A FREE WALK.
+            //
+            // This returned true unconditionally, so a shrimp on a depleted or
+            // over-crowded patch was approved for a move of ANY length. Every
+            // other branch here is governed by a time budget; this one silently
+            // was not, and it is the hole every "relocation madness" report has
+            // come through. Measured 2026-08-03 over 114 logged detours: median
+            // walk 1,968m, p90 3,218m, max 3,875m — at SHRIMP_SPEED that is
+            // three and a half MINUTES of walking, median, past nearer ground.
+            // Worst single case walked 3,218m to reach (868,-1017) having
+            // passed an untapped patch 742m away.
+            //
+            // Zero opportunity cost means the move is worth making; it does not
+            // mean distance stopped mattering. Hold it to the same horizon the
+            // payback rule uses below, so "nothing to lose" buys a nearby patch
+            // rather than a trek across the map.
+            float walkS0 = distM / SHRIMP_SPEED;
+            if (mSrc <= 0f) return walkS0 <= MOVE_PAYBACK_LIMIT_S;
             if (mDst <= mSrc) return false;            // strictly no gain — do not walk
 
             float walkS = distM / SHRIMP_SPEED;

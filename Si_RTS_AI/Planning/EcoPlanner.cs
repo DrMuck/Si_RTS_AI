@@ -3051,7 +3051,20 @@ namespace Si_RTS_AI.Planning
                         var proi = EvaluateChainRoi(s, patch.pos, Mathf.Sqrt(bestDsq));
                         if (proi.Roi <= 0f) continue;
                         float gain = Perception.ControlMap.ControlGain(nodePos, EcoSimulator.BC_REACH_M);
-                        pioneers.Add((proi.Roi * Mathf.Max(gain, 0.05f), hop));
+
+                        // Shrimps walking past this patch is the strongest
+                        // evidence we have that it wants tapping — stronger
+                        // than ROI, which is estimated, because a detour is
+                        // observed. It has to be applied HERE and not only to
+                        // Bio Cache scoring: an unreachable patch never becomes
+                        // a BC candidate at all, so demand on it could never be
+                        // spent. (2026-08-03: (2268,2635) logged 114 detours,
+                        // one of them a 3,218m walk past it, and no Bio Cache
+                        // was ever proposed because nothing chained there.)
+                        float demand = ShrimpGroupPlanner.WalkedPastDemand(patch.pos);
+                        float wanted = 1f + Mathf.Min(demand, 10f) * 0.2f;
+
+                        pioneers.Add((proi.Roi * Mathf.Max(gain, 0.05f) * wanted, hop));
                         continue;
                     }
 
