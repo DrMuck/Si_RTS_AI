@@ -145,6 +145,11 @@ namespace Si_RTS_AI.Planning
         const int   TYPICAL_CHAIN_NODES = 4;
         const float PHASE2_NODE_BONUS  = 15000f / TYPICAL_CHAIN_NODES;   // was 15000, = BC bonus
         const float PHASE2_CYST_BONUS  = 15000f;   // was 6000 — MAX; scaled by handoff
+        /// <summary>What a Cyst is still worth when shrimps could walk to the
+        /// patch anyway. Not zero — walking costs time and the migration only
+        /// happens if shrimps are actually spare — but small enough that an
+        /// outlying Cyst outbids an interior one for the same money.</summary>
+        const float CYST_WALKABLE_FLOOR = 0.25f;
         const float PHASE2_BC_BONUS    = 15000f;   // was 5500
         // Cluster-aware Cyst thresholds — biotics-weighted handoff score of
         // the target BC scales PHASE2_CYST_BONUS (0 → full).
@@ -755,6 +760,13 @@ namespace Si_RTS_AI.Planning
             // "Lesser Cyst is HIGH VALUE on biotic clusters; not always
             // one Cyst per BC".
             public float      handoff;
+
+            /// <summary>For PlaceCyst: 0 when existing Cysts are close enough
+            /// that shrimps can simply walk to this patch, 1 when nothing can
+            /// reach it on foot and it must grow its own. Scales the Cyst bonus
+            /// so money goes to the frontier instead of buying production we
+            /// already have within walking distance.</summary>
+            public float      reloc;
             // Biotics this placement would pull inside chain reach for the
             // first time. NarakaCity is why this exists — see
             // PHASE2_UNLOCK_VALUE_FRACTION.
@@ -2177,7 +2189,16 @@ namespace Si_RTS_AI.Planning
                         // it's an isolated single-patch BC, no bonus.
                         float h = n.sequence[i].handoff;
                         float scale = Mathf.Clamp01((h - HANDOFF_CYST_MIN) / (HANDOFF_CYST_FULL - HANDOFF_CYST_MIN));
-                        cystBonusSum += scale * PHASE2_CYST_BONUS;
+
+                        // ...and then by whether shrimps could just walk here.
+                        // Handoff asks "is this patch cluster rich enough to
+                        // deserve a Cyst"; it never asked "do we already have
+                        // production within walking distance", which is the
+                        // question that decides whether the money does anything.
+                        // A rich cluster next door to an existing Cyst scored
+                        // full marks and bought very little.
+                        float relocScale = Mathf.Lerp(CYST_WALKABLE_FLOOR, 1f, n.sequence[i].reloc);
+                        cystBonusSum += scale * relocScale * PHASE2_CYST_BONUS;
                     }
                 }
                 if (_beamPhase == PlanPhase.Phase2_Expand)
@@ -2674,6 +2695,7 @@ namespace Si_RTS_AI.Planning
                         kind = ActionKind.PlaceCyst, target = cystTarget,
                         cost = EcoSimulator.CYST_COST, patchIdx = -1,
                         handoff = handoff,
+                        reloc = RelocationIsolation(cystTarget, s),
                     });
                 }
             }
@@ -3282,6 +3304,45 @@ namespace Si_RTS_AI.Planning
         /// front kept getting wrong, and the reason expansion never opened a
         /// second and third western line.
         /// </summary>
+        /// <summary>
+        /// Would a Cyst here buy production we can already walk to?
+        ///
+        /// Shrimps relocate. A Cyst placed among Cysts we already own adds
+        /// little, because the patches around it can be staffed by shrimps
+        /// walking over from a neighbour — the Cyst is paying 1,500 for
+        /// something migration provides for free. The same 1,500 spent on an
+        /// outlying Bio Cache buys production that genuinely cannot be
+        /// supplied any other way, because nothing is close enough to walk.
+        ///
+        /// Observed Badlands 2026-08-03: Cysts at (1360,1593), (1338,787),
+        /// (1970,-460), (2508,-643) and (1747,2731) all sat inside the worked
+        /// area while the western third of the map had no production at all.
+        ///
+        /// Returns 0 inside walking distance of an existing Cyst, rising to 1
+        /// at twice that. The distance is not a new constant: it is the walk
+        /// budget ShrimpGroupPlanner already applies when deciding whether a
+        /// free shrimp may relocate (FREE_AGENT_MAX_WALK_S at SHRIMP_SPEED),
+        /// so the planner pays for a Cyst exactly where the shrimp rules say
+        /// no one will arrive on foot.
+        /// </summary>
+        static float RelocationIsolation(Vector3 pos, EcoState s)
+        {
+            float walkReachM = EcoSimulator.SHRIMP_SPEED * ShrimpGroupPlanner.FreeAgentMaxWalkS;
+            if (walkReachM <= 1f) return 1f;
+
+            float bestSq = float.MaxValue;
+            for (int i = 0; i < s.cysts.Count; i++)
+            {
+                float dx = s.cysts[i].pos.x - pos.x, dz = s.cysts[i].pos.z - pos.z;
+                float d2 = dx * dx + dz * dz;
+                if (d2 < bestSq) bestSq = d2;
+            }
+            if (bestSq == float.MaxValue) return 1f;   // our first Cyst — always worth it
+
+            float d = Mathf.Sqrt(bestSq);
+            return Mathf.Clamp01((d - walkReachM) / walkReachM);
+        }
+
         static float BearingSpreadBonus(EcoState s, Vector3 patchPos)
         {
             if (s.nestPos == Vector3.zero) return 0f;

@@ -140,6 +140,12 @@ namespace Si_RTS_AI.Planning
         /// </summary>
         const float FREE_AGENT_MAX_WALK_S = 30f;
 
+        /// <summary>Exposed so the Cyst scorer can ask the same question the
+        /// shrimp rules answer: how far will anyone actually walk? Keeping one
+        /// definition means a Cyst is never paid for on ground the relocation
+        /// logic would have covered for free.</summary>
+        internal static float FreeAgentMaxWalkS => FREE_AGENT_MAX_WALK_S;
+
         /// <summary>
         /// What each kind of destination is WORTH, as a multiplier on the time
         /// it costs. Lower is better:
