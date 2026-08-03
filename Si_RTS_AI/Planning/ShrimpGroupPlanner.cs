@@ -109,6 +109,12 @@ namespace Si_RTS_AI.Planning
         // Ceiling for one group. Kept in step with AlienShrimpProducer.PER_BC_CAP.
         const int   HARD_CAP    = 18;
 
+        /// <summary>Least an incumbent group keeps when empty ground is
+        /// competing for the same shrimps. Above zero so a patch whose capacity
+        /// has fallen to 1-2 as it depletes is not stripped bare and abandoned
+        /// mid-harvest, which is the churn incumbency exists to prevent.</summary>
+        const int   INCUMBENT_FLOOR = 4;
+
         // A group must be able to feed its shrimps for at least this long,
         // else its capacity is cut. Drives graceful pre-depletion bleed-off.
         const float MIN_LIFE_S = 120f;
@@ -1112,6 +1118,12 @@ namespace Si_RTS_AI.Planning
             //
             // Relocation for real reasons still works: a depleted patch sets
             // Capacity 0, so its shrimps fall into the pool and are reassigned.
+            // Is there anywhere with real capacity and nobody working it?
+            bool anyEmptyWithCapacity = false;
+            for (int gi = 0; gi < groups.Count; gi++)
+                if (groups[gi].Capacity > 0 && groups[gi].Current == 0)
+                { anyEmptyWithCapacity = true; break; }
+
             for (int gi = 0; gi < groups.Count; gi++)
             {
                 var g = groups[gi];
@@ -1127,7 +1139,28 @@ namespace Si_RTS_AI.Planning
                 //
                 // HARD_CAP still applies, so a genuine pile-up (40 on one
                 // group was observed) still sheds down to a workable number.
-                int keep = g.Capacity > 0 ? Mathf.Min(g.Current, HARD_CAP) : 0;
+                // INCUMBENCY MUST NOT OUTBID EMPTY GROUND.
+                //
+                // Incumbents are paid first out of a pool shared by the whole
+                // team, and HARD_CAP let a group hold far more than it can use:
+                // observed 2026-08-03, [2605,-760] cur=14 against cap=2, keeping
+                // all fourteen. Every over-full group does the same, the pool
+                // empties, and groups with real capacity are last in line with
+                // nothing left — 23 of 38 groups sat completely EMPTY while 174
+                // shrimps crowded into 15 and streamed across the map.
+                //
+                // The anti-churn reason above is still right: a patch whose
+                // capacity is falling as it depletes is worth harvesting by the
+                // shrimps already standing on it, and moving them early is pure
+                // loss. But that argument only holds while there is nowhere
+                // better to be. When empty ground with real capacity exists, an
+                // incumbent keeps what it can actually use — plus a small floor
+                // so a depleting patch is not stripped bare mid-harvest — and
+                // the surplus goes where it can earn.
+                int ceiling = anyEmptyWithCapacity
+                    ? Mathf.Max(g.Capacity, INCUMBENT_FLOOR)
+                    : HARD_CAP;
+                int keep = g.Capacity > 0 ? Mathf.Min(g.Current, ceiling) : 0;
                 g.Desired += keep; pool -= keep;
             }
             if (pool < 0) pool = 0;
