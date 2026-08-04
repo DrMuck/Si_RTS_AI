@@ -2163,6 +2163,26 @@ namespace Si_RTS_AI.Planning
             bool rateHit = state.totalShrimps >= PHASE2_MIN_SHRIMPS
                         && incomeRate >= PHASE2_MIN_INCOME_RATE;
 
+            // A SECOND MEASURED ROUTE, BECAUSE ONE MEASURE CAN BE WRONG.
+            //
+            // v0.13.32 removed the time fallback, correctly — a clock says
+            // nothing about whether the base can pay. But it left promotion
+            // resting on a single sampled quantity, and when that sampler
+            // disagrees with reality the economy simply stops: observed on
+            // v0.14.3 with 42 shrimps working (threshold 15) and the round
+            // still in Phase 1, because incomeRate never reached 200.
+            //
+            // So corroborate it with counts, which are not sampled but simply
+            // true: a workforce well past the shrimp bar, standing on a base
+            // that has tapped the patches Phase 1 exists to tap. That is the
+            // same claim the rate test makes — this base is established —
+            // reached without depending on the estimator. Still a measurement
+            // goal, not a clock: a base that has neither the income nor the
+            // shrimps nor the patches stays in Phase 1 indefinitely, as it
+            // should.
+            bool establishedHit = state.totalShrimps >= PHASE2_MIN_SHRIMPS * 2
+                               && CountTappedPatches(state) >= PHASE1_MIN_TAPPED_PATCHES;
+
             // PHASE 2 IS NOT A CLOCK.
             //
             // timeFallbackHit promoted on elapsed time plus a low shrimp count,
@@ -2179,7 +2199,7 @@ namespace Si_RTS_AI.Planning
             // not make it ready — it just makes the fan-out unaffordable as
             // well as premature. User 2026-08-04: "we shouldn't reference it to
             // time anyways".
-            if (!rateHit)
+            if (!rateHit && !establishedHit)
             {
                 if (state.totalShrimps < PHASE2_MIN_SHRIMPS) return PlanPhase.Phase1_BaseEco;
                 if (state.cash < PHASE2_MIN_CASH) return PlanPhase.Phase1_BaseEco;
