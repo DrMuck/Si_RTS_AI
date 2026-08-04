@@ -145,7 +145,28 @@ namespace Si_RTS_AI.Planning
                     // on foot, it must grow its own or the Bio Cache sits idle.
                     float staffed = 0f;
                     try { staffed = ShrimpGroupPlanner.StaffedFraction(targets[best]); } catch { }
-                    float walkReachM = EcoSimulator.SHRIMP_SPEED * ShrimpGroupPlanner.FreeAgentMaxWalkS;
+                    // HOW FAR WILL SHRIMPS ACTUALLY COME TO THIS SITE?
+                    //
+                    // First shadow round said wantCyst=16/16, almost all
+                    // "nobody can walk here" — which would rebuild the 1:1
+                    // Cyst-to-Bio-Cache ratio we are trying to kill. The rule
+                    // was not wrong, the yardstick was: FreeAgentMaxWalkS is
+                    // the budget for an idle shrimp wandering to a nearby
+                    // patch (~270m), and a NEW expansion site is by definition
+                    // further from production than that. Every site therefore
+                    // failed the test. The proposals were 658-800m out.
+                    //
+                    // Walk TIME does not scale with map size — 900m costs the
+                    // same 100s anywhere. What scales is the comparison: on a
+                    // sparse map like NarakaCity the nearest alternative is
+                    // simply further away, so a longer relocation is the
+                    // reasonable choice rather than an extravagant one. That
+                    // is what P90PatchM measures, and using it means the
+                    // threshold follows the map instead of a constant tuned
+                    // against whichever map was open at the time.
+                    float freeAgentM = EcoSimulator.SHRIMP_SPEED * ShrimpGroupPlanner.FreeAgentMaxWalkS;
+                    float spacingM   = MapProfile.P90PatchM;
+                    float walkReachM = Mathf.Max(freeAgentM, spacingM * RELOCATION_SPACINGS);
 
                     float nearestCyst = float.MaxValue;
                     for (int c = 0; c < s.cysts.Count; c++)
@@ -217,6 +238,13 @@ namespace Si_RTS_AI.Planning
         /// 1 for the perpendicular case, so ribs outbid patches ahead of the
         /// trunk — which the trunk reaches anyway.</summary>
         const float PERPENDICULAR_PREFERENCE = 0.6f;
+
+        /// <summary>How many typical patch spacings a shrimp will relocate
+        /// across before a site is judged unreachable on foot. Shrimps have been
+        /// observed relocating well over 1,000m quite sensibly when the
+        /// alternative was further still, so this is a comparison against what
+        /// the map offers rather than a fixed distance.</summary>
+        const float RELOCATION_SPACINGS = 2f;
 
         static float SqDistXZ(Vector3 a, Vector3 b)
         {
