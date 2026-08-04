@@ -244,7 +244,7 @@ namespace Si_RTS_AI.Planning
         /// observed relocating well over 1,000m quite sensibly when the
         /// alternative was further still, so this is a comparison against what
         /// the map offers rather than a fixed distance.</summary>
-        const float RELOCATION_SPACINGS = 2f;
+        const float RELOCATION_SPACINGS = 3.5f;
 
         static float SqDistXZ(Vector3 a, Vector3 b)
         {
