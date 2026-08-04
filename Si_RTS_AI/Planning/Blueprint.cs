@@ -73,10 +73,45 @@ namespace Si_RTS_AI.Planning
         internal static void ResetForNewRound()
         {
             Items.Clear();
+            _attempts.Clear();
             Revision = 0; TerminalCount = CoveredCount = SiteCount = NodeCount = CystCount = PlanCost = 0;
             _lastPlanAt = -999f;
             BlueprintStore.ResetForNewRound();
         }
+
+        // ---- Asking the game twice a second is not persistence -------------
+        //
+        // The plan is held for 30s and the plan tick is 8s, so every item in it
+        // was being re-requested four times per refresh. The game refuses a
+        // repeat while its own placement search is pending, so the extra three
+        // are pure noise: 768 refused Node requests against 75 accepted ones in
+        // eight minutes on NarakaCity 2026-08-04, which also buried the fires
+        // that did land.
+        //
+        // A placement search resolves in milliseconds. If the structure is not
+        // standing 20 seconds later, asking again is right; asking every tick
+        // never was.
+
+        struct Attempt { public Kind kind; public Vector3 pos; public float at; }
+        static readonly List<Attempt> _attempts = new List<Attempt>(64);
+        const float RETRY_S = 20f;
+        const float RETRY_M = 45f;
+
+        internal static bool RecentlyAsked(Kind k, Vector3 p)
+        {
+            float now = Time.time;
+            bool hit = false;
+            for (int i = _attempts.Count - 1; i >= 0; i--)
+            {
+                if (now - _attempts[i].at > RETRY_S) { _attempts.RemoveAt(i); continue; }
+                if (hit || _attempts[i].kind != k) continue;
+                if (SqXZ(_attempts[i].pos, p) < RETRY_M * RETRY_M) hit = true;
+            }
+            return hit;
+        }
+
+        internal static void NoteAsked(Kind k, Vector3 p) =>
+            _attempts.Add(new Attempt { kind = k, pos = p, at = Time.time });
 
         // ---- Geometry the plan is built against ---------------------------
         //

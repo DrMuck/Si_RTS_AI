@@ -1891,37 +1891,37 @@ namespace Si_RTS_AI.Planning
                     {
                         var it = plan[i];
                         if (BlueprintAlreadyStanding(it, state)) continue;
+                        // Asked for recently and still not standing? Give the
+                        // game's placement search time to resolve rather than
+                        // re-asking every 8s tick — see Blueprint.RecentlyAsked.
+                        if (Blueprint.RecentlyAsked(it.kind, it.pos)) continue;
 
-                        if (it.kind == Blueprint.Kind.BioCache)
+                        if (it.kind == Blueprint.Kind.BioCache
+                            && inFlightBcs >= EcoPlannerConfig.Phase2MaxUncystedBcQueue) continue;
+
+                        var kind = it.kind == Blueprint.Kind.BioCache ? ActionKind.PlaceBc
+                                 : it.kind == Blueprint.Kind.Cyst     ? ActionKind.PlaceCyst
+                                                                      : ActionKind.PlaceNode;
+                        int cost = it.kind == Blueprint.Kind.BioCache ? EcoSimulator.BC_COST
+                                 : it.kind == Blueprint.Kind.Cyst     ? EcoSimulator.CYST_COST
+                                                                      : EcoSimulator.NODE_COST;
+
+                        int    beforeFired = fired;
+                        string beforeSkips = _skipReasons;
+                        TryFireAction(new Candidate
                         {
-                            if (inFlightBcs >= EcoPlannerConfig.Phase2MaxUncystedBcQueue) continue;
-                            int beforeBc = fired;
-                            TryFireAction(new Candidate
-                            {
-                                kind = ActionKind.PlaceBc, target = it.pos,
-                                cost = EcoSimulator.BC_COST, patchIdx = -1,
-                                frontRef = it.pos,
-                            });
-                            if (fired > beforeBc) inFlightBcs++;
-                        }
-                        else if (it.kind == Blueprint.Kind.Cyst)
-                        {
-                            TryFireAction(new Candidate
-                            {
-                                kind = ActionKind.PlaceCyst, target = it.pos,
-                                cost = EcoSimulator.CYST_COST, patchIdx = -1,
-                                frontRef = it.pos,
-                            });
-                        }
-                        else
-                        {
-                            TryFireAction(new Candidate
-                            {
-                                kind = ActionKind.PlaceNode, target = it.pos,
-                                cost = EcoSimulator.NODE_COST, patchIdx = -1,
-                                frontRef = it.pos,
-                            });
-                        }
+                            kind = kind, target = it.pos, cost = cost,
+                            patchIdx = -1, frontRef = it.pos,
+                        });
+
+                        // A LOCAL refusal (cash, reserve, reach, dedup) leaves a
+                        // skip reason and costs the game nothing, so it may be
+                        // retried next tick — cash arrives in seconds. Anything
+                        // that actually reached the game, whether it was queued
+                        // or refused there, waits out the retry window.
+                        if (_skipReasons.Length == beforeSkips.Length)
+                            Blueprint.NoteAsked(it.kind, it.pos);
+                        if (fired > beforeFired && it.kind == Blueprint.Kind.BioCache) inFlightBcs++;
                     }
                 }
                 else if (_currentPhase == PlanPhase.Phase2_Expand && FanOutAllowed(state))
