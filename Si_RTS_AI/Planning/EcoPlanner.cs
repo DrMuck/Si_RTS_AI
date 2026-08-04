@@ -691,6 +691,20 @@ namespace Si_RTS_AI.Planning
             return false;
         }
 
+        /// <summary>Is the structure standing for this item still going up?
+        /// A branch with a Bio Cache under construction is already spending,
+        /// and is not given a second front.</summary>
+        static bool BlueprintUnderConstruction(Blueprint.Item it, EcoState s)
+        {
+            const float M2 = 60f * 60f;
+            for (int i = 0; i < s.bcs.Count; i++)
+            {
+                float dx = s.bcs[i].pos.x - it.pos.x, dz = s.bcs[i].pos.z - it.pos.z;
+                if (dx * dx + dz * dz < M2) return !s.bcs[i].finished;
+            }
+            return false;
+        }
+
         /// <summary>Hop distance for one Node along the chain, margin applied.</summary>
         static float NodeHopDistance(float reach) =>
             Mathf.Max(reach - PLACEMENT_MARGIN_M, reach * NODE_HOP_MIN_FRACTION);
@@ -1898,11 +1912,49 @@ namespace Si_RTS_AI.Planning
                     int sitesAhead = BlueprintConfig.CystStrategyAuto ? ExpansionStrategy.SitesAhead : 4;
                     int sitesTouched = 0, lastSite = -1;
 
+                    // ONE FRONT PER BRANCH.
+                    //
+                    // DrMuck, 2026-08-05: "the early blueprint plannings looked
+                    // quite good and would have avoided the snake, but it seems
+                    // there was more build power allocated to the north."
+                    // Exactly right, and it is an execution failure rather than
+                    // a planning one — the plan held ribs in every direction and
+                    // the executor took the first four unbuilt sites IN ORDER,
+                    // which were all on the same branch. That branch then grew,
+                    // its tip became the cheapest anchor for the next replan,
+                    // and the plan reorganised itself around the line the
+                    // executor had just built.
+                    //
+                    // A branch already putting up a structure does not need a
+                    // second one. Holding each branch to one live site spends
+                    // the same money in three directions instead of one, and no
+                    // direction can monopolise the queue.
+                    // Held at the SITE level, not the item level: a branch may
+                    // lay the whole chain to ONE site in a tick — hops anchor
+                    // off each other while still building, so dribbling one per
+                    // tick would just pay the chain's cost and defer its return
+                    // — but it may not start a second site while that one is up
+                    // in the air.
+                    var branchSite = new Dictionary<int, int>();
+                    bool BranchFree(Blueprint.Item x) =>
+                        !branchSite.TryGetValue(x.branch, out int s2) || s2 == x.site;
+                    void ClaimBranch(Blueprint.Item x)
+                    {
+                        if (!branchSite.ContainsKey(x.branch)) branchSite[x.branch] = x.site;
+                    }
+
                     var plan = Blueprint.Items;
                     for (int i = 0; i < plan.Count; i++)
                     {
                         var it = plan[i];
-                        if (BlueprintAlreadyStanding(it, state)) continue;
+                        if (BlueprintAlreadyStanding(it, state))
+                        {
+                            // Standing but unfinished means this branch is
+                            // already spending — it does not get another front.
+                            if (it.kind == Blueprint.Kind.BioCache && BlueprintUnderConstruction(it, state))
+                                ClaimBranch(it);
+                            continue;
+                        }
 
                         // Items are grouped by site in build order, so counting
                         // site changes bounds how deep into the plan we commit.
@@ -1912,6 +1964,7 @@ namespace Si_RTS_AI.Planning
                         // counter would otherwise have shut them out entirely.
                         if (it.kind != Blueprint.Kind.Cyst)
                         {
+                            if (!BranchFree(it)) continue;
                             if (it.site != lastSite) { lastSite = it.site; sitesTouched++; }
                             if (sitesTouched > sitesAhead) continue;
                         }
@@ -1919,7 +1972,12 @@ namespace Si_RTS_AI.Planning
                         // Asked for recently and still not standing? Give the
                         // game's placement search time to resolve rather than
                         // re-asking every 8s tick — see Blueprint.RecentlyAsked.
-                        if (Blueprint.RecentlyAsked(it.kind, it.pos)) continue;
+                        if (Blueprint.RecentlyAsked(it.kind, it.pos))
+                        {
+                            // Work is already in flight on this branch.
+                            if (it.kind != Blueprint.Kind.Cyst) ClaimBranch(it);
+                            continue;
+                        }
 
                         if (it.kind == Blueprint.Kind.BioCache
                             && inFlightBcs >= EcoPlannerConfig.Phase2MaxUncystedBcQueue) continue;
@@ -1947,6 +2005,9 @@ namespace Si_RTS_AI.Planning
                         if (_skipReasons.Length == beforeSkips.Length)
                             Blueprint.NoteAsked(it.kind, it.pos);
                         if (fired > beforeFired && it.kind == Blueprint.Kind.BioCache) inFlightBcs++;
+                        // This branch now owns a live site. Its remaining chain
+                        // may still go up this tick; a second site may not.
+                        if (it.kind != Blueprint.Kind.Cyst) ClaimBranch(it);
                     }
                 }
                 else if (_currentPhase == PlanPhase.Phase2_Expand && FanOutAllowed(state))
