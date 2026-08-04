@@ -1687,7 +1687,28 @@ namespace Si_RTS_AI.Planning
                     if (fired == 0 && !openerWaiting) OpenerPlanner.NoteNoProgress(Time.time);
                 }
 
-                if (!openerDrove)
+                // WHOEVER OWNS PHASE 2 EXPANSION, OWNS IT ALONE.
+                //
+                // DrMuck, 2026-08-05: "why does the executor deviate from the
+                // planned blueprint node branch?" Because it was not the only
+                // thing building. The beam fires its winning sequence every
+                // plan tick in every phase, so during Phase 2 the blueprint was
+                // laying its network while the beam laid a different one beside
+                // it — including the Bio-Cache-plus-Cyst pairs that kept
+                // appearing at every biotics after the blueprint had stopped
+                // asking for producers.
+                //
+                // v0.14.3 tried this and was reverted, for a reason worth
+                // remembering: it starved the candidate list and silenced BOTH
+                // mechanisms. So the handover here is conditional on the
+                // blueprint actually having a plan to build. No plan, no
+                // handover, and the beam carries on exactly as before.
+                bool blueprintOwnsExpansion =
+                    BlueprintConfig.Enabled
+                    && _currentPhase == PlanPhase.Phase2_Expand
+                    && Blueprint.Items.Count > 0;
+
+                if (!openerDrove && !blueprintOwnsExpansion)
                 {
                     foreach (var c in best.sequence)
                     {
@@ -1700,7 +1721,8 @@ namespace Si_RTS_AI.Planning
                 // Observed live: "skips: bcAnchor x6" with 3600 cash idle and a
                 // Node candidate sitting unused, because the winning sequence
                 // was all BCs and the fire loop never reached a Node.
-                if (!openerDrove && fired == 0 && _skipReasons.Contains("bcAnchor"))
+                if (!openerDrove && !blueprintOwnsExpansion
+                    && fired == 0 && _skipReasons.Contains("bcAnchor"))
                 {
                     var fallback = EnumerateActions(state);
                     for (int i = 0; i < fallback.Count; i++)
@@ -1794,7 +1816,7 @@ namespace Si_RTS_AI.Planning
                 // The opener walks a chain to a site it cannot reach; Phase 2
                 // had no equivalent, so a hint outside reach could never become
                 // anything. Same fix: build toward it.
-                if (!openerDrove
+                if (!openerDrove && !blueprintOwnsExpansion
                     && ShrimpGroupPlanner.TryGetExpansionHint(out var reachHint)
                     && !CanPlaceBcTightNow(reachHint.Pos, state)
                     && NextNodeTowards(state, reachHint.Pos, out Vector3 hintHop))
@@ -1819,7 +1841,8 @@ namespace Si_RTS_AI.Planning
                 //    which by construction is what would be fired now if the
                 //    beam had picked THIS sequence. Skip the winner (index 0)
                 //    since we already fired its actions.
-                if (topSequences != null && !underTappedNow && !openerDrove)
+                if (topSequences != null && !underTappedNow && !openerDrove
+                    && !blueprintOwnsExpansion)
                 {
                     // MULTI-DIRECTIONAL MEANS DIFFERENT DIRECTIONS.
                     //
@@ -1962,7 +1985,18 @@ namespace Si_RTS_AI.Planning
                         // already taken, so it is not reaching further, and the
                         // Cyst items sit at the end of the plan where this
                         // counter would otherwise have shut them out entirely.
-                        if (it.kind != Blueprint.Kind.Cyst)
+                        // A BRIDGE IS NOT A FRONT. Its items carry site = -1
+                        // and skip both the window and the per-branch hold —
+                        // they exist to make the other fronts cheaper, so
+                        // queueing them behind ground defeats the purpose. It
+                        // still comes out of surplus: a loop earns nothing
+                        // directly, so it waits for cash that has nowhere
+                        // better to be.
+                        if (it.site < 0)
+                        {
+                            if (state.cash < LOOP_CASH_FLOOR) continue;
+                        }
+                        else if (it.kind != Blueprint.Kind.Cyst)
                         {
                             if (!BranchFree(it)) continue;
                             if (it.site != lastSite) { lastSite = it.site; sitesTouched++; }
@@ -1975,7 +2009,7 @@ namespace Si_RTS_AI.Planning
                         if (Blueprint.RecentlyAsked(it.kind, it.pos))
                         {
                             // Work is already in flight on this branch.
-                            if (it.kind != Blueprint.Kind.Cyst) ClaimBranch(it);
+                            if (it.kind != Blueprint.Kind.Cyst && it.site >= 0) ClaimBranch(it);
                             continue;
                         }
 
@@ -2007,7 +2041,7 @@ namespace Si_RTS_AI.Planning
                         if (fired > beforeFired && it.kind == Blueprint.Kind.BioCache) inFlightBcs++;
                         // This branch now owns a live site. Its remaining chain
                         // may still go up this tick; a second site may not.
-                        if (it.kind != Blueprint.Kind.Cyst) ClaimBranch(it);
+                        if (it.kind != Blueprint.Kind.Cyst && it.site >= 0) ClaimBranch(it);
                     }
                 }
                 else if (_currentPhase == PlanPhase.Phase2_Expand && FanOutAllowed(state))
@@ -2089,7 +2123,7 @@ namespace Si_RTS_AI.Planning
                 //    west to (2100,1510) and (1965,1500) toward a site the
                 //    opening never chose. The opening was being overridden by
                 //    Phase 2 expansion while it was still running.
-                if (fired == 0 && !openerDrove)
+                if (fired == 0 && !openerDrove && !blueprintOwnsExpansion)
                 {
                     if (topSequences != null)
                     {

@@ -102,8 +102,9 @@ namespace Si_RTS_AI.Planning
             for (int i = 0; i < s.cysts.Count; i++) Built(sb, ref first, "Cyst",     s.cysts[i].pos, s.cysts[i].finished);
             sb.Append("],");
 
-            // BRIDGES — cross-branch joins worth making. Shadow: nothing builds
-            // these yet, they are here to be looked at.
+            // BRIDGES — cross-branch joins worth making, best first. The top one
+            // is emitted as buildable Node items (site = -1); the rest are here
+            // to be looked at.
             sb.Append("\"bridges\":[");
             for (int i = 0; i < Blueprint.Bridges.Count; i++)
             {
@@ -115,7 +116,9 @@ namespace Si_RTS_AI.Planning
                 Num(sb, "bx", br.b.x); sb.Append(',');
                 Num(sb, "bz", br.b.z); sb.Append(',');
                 Num(sb, "hops", br.hops); sb.Append(',');
-                Num(sb, "protects", br.protects);
+                Num(sb, "protects", br.protects); sb.Append(',');
+                Num(sb, "savedM", br.savedM); sb.Append(',');
+                Num(sb, "beyond", br.beyond);
                 sb.Append('}');
             }
             sb.Append("],");

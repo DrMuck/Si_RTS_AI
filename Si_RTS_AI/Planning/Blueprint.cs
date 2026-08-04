@@ -52,6 +52,7 @@ namespace Si_RTS_AI.Planning
             public Vector3 from;     // what it hangs off — the edge, for drawing and review
             public int     branch;   // which branch of the network this belongs to
             public int     site;     // index of the site (BC) this item serves
+            public float   pathM;    // distance from the Nest ALONG the network
             public string  why;
         }
 
@@ -284,13 +285,15 @@ namespace Si_RTS_AI.Planning
                     {
                         Vector3 np = new Vector3(anchor.x + dx * HopM * h, anchor.y, anchor.z + dz * HopM * h);
                         if (NearAnyNetPoint(np, NODE_MERGE_M)) continue;
-                        Items.Add(new Item { kind = Kind.Node, pos = np, from = prev, branch = branch, site = sites, why = "reach" });
+                        Items.Add(new Item { kind = Kind.Node, pos = np, from = prev, branch = branch,
+                                             site = sites, pathM = anchorPt.pathM + HopM * h, why = "reach" });
                         _net.Add(new NetPoint { pos = np, branch = branch, pathM = anchorPt.pathM + HopM * h });
                         prev = np;
                     }
                 }
 
-                Items.Add(new Item { kind = Kind.BioCache, pos = target, from = prev, branch = branch, site = sites, why = "tap" });
+                Items.Add(new Item { kind = Kind.BioCache, pos = target, from = prev, branch = branch,
+                                     site = sites, pathM = anchorPt.pathM + len, why = "tap" });
                 _net.Add(new NetPoint { pos = target, branch = branch, pathM = anchorPt.pathM + len });
 
                 // Everything inside the new site's co-harvest radius is served
@@ -583,6 +586,8 @@ namespace Si_RTS_AI.Planning
             public int branchA, branchB;
             public int hops;      // Nodes needed to close the gap
             public int protects;  // structures on the smaller of the two sides
+            public float savedM;  // network path the far side stops walking
+            public int beyond;    // structures that walk the shorter road
         }
 
         /// <summary>Cross-branch joins worth making, best first. SHADOW —
@@ -642,17 +647,77 @@ namespace Si_RTS_AI.Planning
                 int hops = Mathf.CeilToInt((gap - EcoSimulator.NODE_REACH_M) / HopM);
                 if (hops > BRIDGE_MAX_HOPS) continue;
 
+                // A BRIDGE IS A SHORTCUT BEFORE IT IS INSURANCE.
+                //
+                // DrMuck, 2026-08-05: "maybe we should give perspective bridges
+                // more weight — early bridge build could avoid mega nodelines
+                // and support more uniform expansion." That is right, and now
+                // that anchors are priced on the path back to the Nest it is
+                // also mechanical: joining a far branch to a near one REWRITES
+                // that path for everything beyond the join, so the next replan
+                // stops treating the far tip as expensive and starts growing
+                // ribs from it. A bridge does not just protect a branch, it
+                // makes the ground behind it cheap to build on.
+                //
+                // Value in the currency everything else uses: metres of road
+                // removed, times the structures that stop walking them.
+                float pa = Items[ba].pathM, pb = Items[bb].pathM;
+                float far = Mathf.Max(pa, pb), near = Mathf.Min(pa, pb);
+                float saved = far - (near + gap);
+                int beyond = pa > pb ? A.Count : B.Count;
+
                 found.Add(new Bridge
                 {
                     a = Items[ba].pos, b = Items[bb].pos,
                     branchA = branches[x], branchB = branches[y],
                     hops = hops, protects = protects,
+                    savedM = saved, beyond = beyond,
                 });
             }
 
-            found.Sort((p, q) =>
-                ((float)q.protects / (q.hops + 1)).CompareTo((float)p.protects / (p.hops + 1)));
+            found.Sort((p, q) => BridgeValue(q).CompareTo(BridgeValue(p)));
             for (int i = 0; i < found.Count && i < BRIDGE_MAX; i++) Bridges.Add(found[i]);
+
+            // BUILD THE BEST ONE. Only the best one, and only ever one at a
+            // time — the worry about over-bridging is the right worry, and a
+            // loop earns nothing directly, so it queues behind ground. Its
+            // items carry site = -1, which exempts them from the sites-ahead
+            // window and the one-front-per-branch rule: a bridge is not a
+            // front, it is what makes the other fronts cheaper.
+            if (Bridges.Count == 0) return;
+            var win = Bridges[0];
+            float len = Mathf.Sqrt(SqXZ(win.a, win.b));
+            if (len < 1f) return;
+            float ux = (win.b.x - win.a.x) / len, uz = (win.b.z - win.a.z) / len;
+            Vector3 prevPt = win.a;
+            for (int h = 1; h <= win.hops; h++)
+            {
+                var np = new Vector3(win.a.x + ux * HopM * h, win.a.y, win.a.z + uz * HopM * h);
+                if (NearAnyNetPoint(np, NODE_MERGE_M)) continue;
+                Items.Add(new Item
+                {
+                    kind = Kind.Node, pos = np, from = prevPt,
+                    branch = win.branchA, site = -1, pathM = 0f, why = "bridge",
+                });
+                prevPt = np;
+            }
+            MelonLogger.Msg($"[BLUEPRINT] bridge b{win.branchA}-b{win.branchB}: {win.hops} node(s), " +
+                            $"saves {win.savedM:F0}m of road for {win.beyond} structures, " +
+                            $"protects {win.protects}");
+        }
+
+        /// <summary>
+        /// What a bridge is worth per node it costs. Two terms, both in seconds:
+        /// the walk it removes for everything beyond the join, and the
+        /// redundancy it buys, priced as the build time of the structures that
+        /// would otherwise be lost with one severed link.
+        /// </summary>
+        static float BridgeValue(Bridge b)
+        {
+            float walkSaved = Mathf.Max(0f, b.savedM) * b.beyond
+                            / Mathf.Max(1f, EcoSimulator.SHRIMP_SPEED);
+            float insurance = b.protects * EcoSimulator.BC_BUILD_S;
+            return (walkSaved + insurance) / Mathf.Max(1, b.hops * EcoSimulator.NODE_COST);
         }
 
         /// <summary>Structures a branch must carry before joining it is worth
