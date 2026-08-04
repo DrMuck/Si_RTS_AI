@@ -695,6 +695,39 @@ namespace Si_RTS_AI.Planning
         /// beyond normal reach. This is the number of simultaneous fronts the
         /// economy can drive into open ground, so it is the difference between
         /// expanding west from one latitude and expanding west from three.</summary>
+        /// <summary>
+        /// May the economy fan out yet?
+        ///
+        /// Everything added for multi-front expansion — several fires per tick,
+        /// several hops per line, several pioneers, branching at knots — was
+        /// gated on Phase 2, and I treated that as protection for the opening.
+        /// It is not. Phase 2 begins as soon as the base clears its early
+        /// targets, which on NarakaCity is right after two Bio Caches, and
+        /// bridgeSingleShot (the rule holding expansion to ONE aimed candidate)
+        /// switches off at exactly that moment. Nothing covers the gap, so the
+        /// whole fan-out machinery engages against a base with two Bio Caches
+        /// and no Cysts: observed 2026-08-04, two BCs then five consecutive
+        /// Nodes spraying north and south (z 1535, 1040, 1640, 935, 1745)
+        /// before a single Cyst. Four Naraka matches, "no real opener".
+        ///
+        /// So gate on what the base actually IS, not which phase we are in. A
+        /// Bio Cache without a Cyst is not yet production, it is a building —
+        /// requiring Cysts means the fan-out waits for the base to earn, which
+        /// is the thing that has to fund it.
+        /// </summary>
+        static bool FanOutAllowed(EcoState s)
+        {
+            int producing = 0;
+            for (int i = 0; i < s.cysts.Count; i++)
+                if (s.cysts[i].finished) producing++;
+            return producing >= FANOUT_MIN_CYSTS;
+        }
+
+        /// <summary>Finished Cysts before the economy may expand on several
+        /// fronts at once. Two is a base that produces from more than one
+        /// place — enough to pay for parallel chains.</summary>
+        const int FANOUT_MIN_CYSTS = 2;
+
         const int PIONEER_MAX = 3;
 
         /// <summary>Hops of one node line that may be laid in a single plan
@@ -1292,7 +1325,9 @@ namespace Si_RTS_AI.Planning
                 {
                     int frontCost = Mathf.Max(1, EcoSimulator.NODE_COST + EcoSimulator.BC_COST);
                     int surplus   = Mathf.Max(0, state.cash - shrimpReserve);
-                    maxNodeFires  = Mathf.Clamp(surplus / frontCost, 2, MAX_NODE_FIRES);
+                    maxNodeFires  = FanOutAllowed(state)
+                        ? Mathf.Clamp(surplus / frontCost, 2, MAX_NODE_FIRES)
+                        : 1;
                 }
                 else maxNodeFires = 1;
 
@@ -1820,7 +1855,7 @@ namespace Si_RTS_AI.Planning
                         foreach (var c in cands)
                         {
                             if (c.kind == ActionKind.Noop) continue;
-                            if (firedHere.Count >= ESCAPE_MAX_FIRES) break;
+                            if (firedHere.Count >= (FanOutAllowed(state) ? ESCAPE_MAX_FIRES : 1)) break;
 
                             // Spacing separates FRONTS. Two hops of the same
                             // node line share a front by definition, and
@@ -3255,7 +3290,8 @@ namespace Si_RTS_AI.Planning
                 {
                     pioneers.Sort((a, b) => b.score.CompareTo(a.score));
                     var taken = new List<Vector3>(PIONEER_MAX);
-                    for (int i = 0; i < pioneers.Count && taken.Count < PIONEER_MAX; i++)
+                    int pioneerCap = FanOutAllowed(s) ? PIONEER_MAX : 1;
+                    for (int i = 0; i < pioneers.Count && taken.Count < pioneerCap; i++)
                     {
                         Vector3 t = FrontOf(pioneers[i].cand);
                         bool clash = false;
@@ -3280,7 +3316,7 @@ namespace Si_RTS_AI.Planning
                         // funded and placed as one decision.
                         Vector3 from = pioneers[i].cand.target;
                         Vector3 goal = pioneers[i].cand.frontRef;
-                        for (int h = 1; h < CHAIN_HOPS_PER_CYCLE; h++)
+                        for (int h = 1; h < (FanOutAllowed(s) ? CHAIN_HOPS_PER_CYCLE : 1); h++)
                         {
                             float gx = goal.x - from.x, gz = goal.z - from.z;
                             float gl = Mathf.Sqrt(gx * gx + gz * gz);
