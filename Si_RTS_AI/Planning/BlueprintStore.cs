@@ -82,6 +82,8 @@ namespace Si_RTS_AI.Planning
                 Str(sb, "kind", items[i].kind.ToString()); sb.Append(',');
                 Num(sb, "x", items[i].pos.x); sb.Append(',');
                 Num(sb, "z", items[i].pos.z); sb.Append(',');
+                Num(sb, "fx", items[i].from.x); sb.Append(',');
+                Num(sb, "fz", items[i].from.z); sb.Append(',');
                 Num(sb, "branch", items[i].branch); sb.Append(',');
                 Num(sb, "site", items[i].site); sb.Append(',');
                 Num(sb, "order", i); sb.Append(',');
@@ -98,6 +100,24 @@ namespace Si_RTS_AI.Planning
             for (int i = 0; i < s.bcs.Count; i++)   Built(sb, ref first, "BioCache", s.bcs[i].pos,   s.bcs[i].finished);
             for (int i = 0; i < s.nodes.Count; i++) Built(sb, ref first, "Node",     s.nodes[i].pos, s.nodes[i].finished);
             for (int i = 0; i < s.cysts.Count; i++) Built(sb, ref first, "Cyst",     s.cysts[i].pos, s.cysts[i].finished);
+            sb.Append("],");
+
+            // BRIDGES — cross-branch joins worth making. Shadow: nothing builds
+            // these yet, they are here to be looked at.
+            sb.Append("\"bridges\":[");
+            for (int i = 0; i < Blueprint.Bridges.Count; i++)
+            {
+                if (i > 0) sb.Append(',');
+                var br = Blueprint.Bridges[i];
+                sb.Append('{');
+                Num(sb, "ax", br.a.x); sb.Append(',');
+                Num(sb, "az", br.a.z); sb.Append(',');
+                Num(sb, "bx", br.b.x); sb.Append(',');
+                Num(sb, "bz", br.b.z); sb.Append(',');
+                Num(sb, "hops", br.hops); sb.Append(',');
+                Num(sb, "protects", br.protects);
+                sb.Append('}');
+            }
             sb.Append("],");
 
             // PATCHES — what the plan was judged against.

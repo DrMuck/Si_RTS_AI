@@ -1876,7 +1876,9 @@ namespace Si_RTS_AI.Planning
                 if (BlueprintConfig.Enabled
                     && _currentPhase == PlanPhase.Phase2_Expand && FanOutAllowed(state))
                 {
-                    Blueprint.MaybeReplan(state, BlueprintExploredTest());
+                    float incomePerSec = 0f;
+                    try { incomePerSec = Perception.EcoRateSampler.GetAvgIncomePerSec(team); } catch { }
+                    Blueprint.MaybeReplan(state, BlueprintExploredTest(), incomePerSec);
 
                     // Sites already under construction are the real limit on
                     // starting more: cash mid-game would happily fund twenty at
@@ -1886,11 +1888,34 @@ namespace Si_RTS_AI.Planning
                     int inFlightBcs = 0;
                     for (int b = 0; b < state.bcs.Count; b++) if (!state.bcs[b].finished) inFlightBcs++;
 
+                    // HOW FAR AHEAD OF ITSELF THE ECONOMY MAY BUILD.
+                    //
+                    // Reaching further pays eventually and costs now, because
+                    // the shrimps that staff it are a long walk away. That is a
+                    // trade-off over time, so the strategy sweep settles it by
+                    // simulation rather than a rule here — inside-out when the
+                    // walk dominates, homogeneous when it does not.
+                    int sitesAhead = BlueprintConfig.CystStrategyAuto ? ExpansionStrategy.SitesAhead : 4;
+                    int sitesTouched = 0, lastSite = -1;
+
                     var plan = Blueprint.Items;
                     for (int i = 0; i < plan.Count; i++)
                     {
                         var it = plan[i];
                         if (BlueprintAlreadyStanding(it, state)) continue;
+
+                        // Items are grouped by site in build order, so counting
+                        // site changes bounds how deep into the plan we commit.
+                        // Producers are exempt: a Cyst belongs to ground we have
+                        // already taken, so it is not reaching further, and the
+                        // Cyst items sit at the end of the plan where this
+                        // counter would otherwise have shut them out entirely.
+                        if (it.kind != Blueprint.Kind.Cyst)
+                        {
+                            if (it.site != lastSite) { lastSite = it.site; sitesTouched++; }
+                            if (sitesTouched > sitesAhead) continue;
+                        }
+
                         // Asked for recently and still not standing? Give the
                         // game's placement search time to resolve rather than
                         // re-asking every 8s tick — see Blueprint.RecentlyAsked.

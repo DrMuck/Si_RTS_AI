@@ -23,6 +23,7 @@ namespace Si_RTS_AI.Planning
         static MelonPreferences_Entry<float> _replanS;
         static MelonPreferences_Entry<int>   _maxSites;
         static MelonPreferences_Entry<int>   _maxCysts;
+        static MelonPreferences_Entry<bool>  _cystAuto;
         static MelonPreferences_Entry<float> _staffedEnough;
         static MelonPreferences_Entry<float> _relocSpacings;
         static MelonPreferences_Entry<int>   _capHeadroomFrom;
@@ -41,8 +42,10 @@ namespace Si_RTS_AI.Planning
                 _maxSites = _cat.CreateEntry("MaxSitesPerPlan", 128,
                     "How many Bio Cache sites one plan covers. High on purpose — the point of a blueprint is that it covers the whole discovered map, so its total cost is a number you can look at. Planning all of NarakaCity's 107 patches takes a few ms. Execution is throttled by cash and in-flight sites, not by this.");
 
+                _cystAuto = _cat.CreateEntry("CystStrategyAuto", true,
+                    "Let the strategy sweep decide how many producers and how far ahead to build, by simulating each option against the current world over a 300s horizon. False uses MaxCystsPerPlan and a fixed 4 sites ahead instead.");
                 _maxCysts = _cat.CreateEntry("MaxCystsPerPlan", 4,
-                    "Producers one plan may ask for. LOWER = lean on migration and spend the cash on ground or military. HIGHER = grow shrimps at the frontier.");
+                    "Producers one plan may ask for when CystStrategyAuto is false. LOWER = lean on migration and spend the cash on ground or military. HIGHER = grow shrimps at the frontier.");
                 _staffedEnough = _cat.CreateEntry("CystStaffedEnough", 0.8f,
                     "Fraction of a site's capacity migration must already cover (shrimps present AND walking) before a Lesser Cyst there is judged redundant.");
                 _relocSpacings = _cat.CreateEntry("CystRelocationSpacings", 3.5f,
@@ -65,6 +68,7 @@ namespace Si_RTS_AI.Planning
         internal static float ReplanS               => _replanS != null ? _replanS.Value : 30f;
         internal static int   MaxSites              => _maxSites != null ? _maxSites.Value : 24;
         internal static int   MaxCystsPerPlan       => _maxCysts != null ? _maxCysts.Value : 4;
+        internal static bool  CystStrategyAuto      => _cystAuto == null || _cystAuto.Value;
         internal static float StaffedEnough         => _staffedEnough != null ? _staffedEnough.Value : 0.8f;
         internal static float RelocationSpacings    => _relocSpacings != null ? _relocSpacings.Value : 3.5f;
         internal static int   ShrimpCapHeadroomFrom => _capHeadroomFrom != null ? _capHeadroomFrom.Value : 180;

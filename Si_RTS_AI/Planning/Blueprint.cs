@@ -49,6 +49,7 @@ namespace Si_RTS_AI.Planning
         {
             public Kind    kind;
             public Vector3 pos;
+            public Vector3 from;     // what it hangs off — the edge, for drawing and review
             public int     branch;   // which branch of the network this belongs to
             public int     site;     // index of the site (BC) this item serves
             public string  why;
@@ -146,12 +147,13 @@ namespace Si_RTS_AI.Planning
         /// <summary>Replan on the interval, or immediately when asked. Roots are
         /// live structures, so a replan reconciles with what has been built by
         /// construction — it never restarts from nothing.</summary>
-        internal static void MaybeReplan(EcoState s, System.Func<Vector3, bool> explored)
+        internal static void MaybeReplan(EcoState s, System.Func<Vector3, bool> explored,
+                                         float incomePerSec)
         {
             float now = Time.time;
             if (now - _lastPlanAt < BlueprintConfig.ReplanS) return;
             _lastPlanAt = now;
-            try { Replan(s, explored); }
+            try { Replan(s, explored, incomePerSec); }
             catch (System.Exception ex) { MelonLogger.Warning("[BLUEPRINT] replan threw: " + ex.Message); }
         }
 
@@ -167,7 +169,7 @@ namespace Si_RTS_AI.Planning
         static readonly List<int>      _bestAnchor= new List<int>(128);
         static readonly List<int>      _bestHops  = new List<int>(128);
 
-        static void Replan(EcoState s, System.Func<Vector3, bool> explored)
+        static void Replan(EcoState s, System.Func<Vector3, bool> explored, float incomePerSec)
         {
             Items.Clear();
             _net.Clear(); _terminals.Clear();
@@ -275,6 +277,7 @@ namespace Si_RTS_AI.Planning
                 _net[_bestAnchor[pick]] = anchorPt;
 
                 float len = Mathf.Sqrt(SqXZ(anchor, target));
+                Vector3 prev = anchor;
                 if (len > 1f)
                 {
                     float dx = (target.x - anchor.x) / len, dz = (target.z - anchor.z) / len;
@@ -282,12 +285,13 @@ namespace Si_RTS_AI.Planning
                     {
                         Vector3 np = new Vector3(anchor.x + dx * HopM * h, anchor.y, anchor.z + dz * HopM * h);
                         if (NearAnyNetPoint(np, NODE_MERGE_M)) continue;
-                        Items.Add(new Item { kind = Kind.Node, pos = np, branch = branch, site = sites, why = "reach" });
+                        Items.Add(new Item { kind = Kind.Node, pos = np, from = prev, branch = branch, site = sites, why = "reach" });
                         _net.Add(new NetPoint { pos = np, branch = branch, pathM = anchorPt.pathM + HopM * h });
+                        prev = np;
                     }
                 }
 
-                Items.Add(new Item { kind = Kind.BioCache, pos = target, branch = branch, site = sites, why = "tap" });
+                Items.Add(new Item { kind = Kind.BioCache, pos = target, from = prev, branch = branch, site = sites, why = "tap" });
                 _net.Add(new NetPoint { pos = target, branch = branch, pathM = anchorPt.pathM + len });
 
                 // Everything inside the new site's co-harvest radius is served
@@ -308,8 +312,18 @@ namespace Si_RTS_AI.Planning
 
             CoveredCount = covered;
 
-            // 3) PRODUCERS, DECIDED SEPARATELY. See CystPass.
+            // 3) HOW HARD TO PUSH, AND HOW MANY PRODUCERS TO PAY FOR.
+            //    The tree is fixed by now, so the strategy sweep runs against
+            //    the real sites it just planned. It answers HOW MANY producers;
+            //    CystPass still answers WHICH sites get them.
+            if (BlueprintConfig.CystStrategyAuto)
+                ExpansionStrategy.KickOff(s, Items, incomePerSec);
+
+            // 4) PRODUCERS, DECIDED SEPARATELY. See CystPass.
             CystPass(s);
+
+            // 5) WHERE THE BRANCHES SHOULD MEET. Shadow only for now.
+            BridgePass();
 
             Publish(s);
         }
@@ -370,8 +384,13 @@ namespace Si_RTS_AI.Planning
 
             var planned = new List<Vector3>(8);
             int added = 0;
+            // HOW MANY comes from the strategy sweep when it is running, which
+            // prices producers against the shrimp cap and against migration.
+            // The config value is the manual answer to the same question.
+            int budget = BlueprintConfig.CystStrategyAuto
+                ? ExpansionStrategy.Producers : BlueprintConfig.MaxCystsPerPlan;
             // Walk the sites in build order so the near ones get producers first.
-            for (int i = 0; i < Items.Count && added < BlueprintConfig.MaxCystsPerPlan; i++)
+            for (int i = 0; i < Items.Count && added < budget; i++)
             {
                 if (Items[i].kind != Kind.BioCache) continue;
                 Vector3 at = Items[i].pos;
@@ -400,11 +419,103 @@ namespace Si_RTS_AI.Planning
                 added++;
                 Items.Add(new Item
                 {
-                    kind = Kind.Cyst, pos = at, branch = Items[i].branch, site = Items[i].site,
+                    kind = Kind.Cyst, pos = at, from = at,
+                    branch = Items[i].branch, site = Items[i].site,
                     why  = reachableOnFoot ? "understaffed" : "nobody can walk here",
                 });
             }
         }
+
+        // ---- Bridges -------------------------------------------------------
+
+        internal struct Bridge
+        {
+            public Vector3 a, b;
+            public int branchA, branchB;
+            public int hops;      // Nodes needed to close the gap
+            public int protects;  // structures on the smaller of the two sides
+        }
+
+        /// <summary>Cross-branch joins worth making, best first. SHADOW —
+        /// published, logged and drawn, but nothing builds them yet.</summary>
+        internal static readonly List<Bridge> Bridges = new List<Bridge>(4);
+
+        /// <summary>
+        /// WHERE A LOOP PAYS IS A TOPOLOGY QUESTION.
+        ///
+        /// NodeManager finds loops by scanning built structures pairwise under a
+        /// distance ceiling, which is why a 1,900m bridge got filtered on its
+        /// length rather than judged on what it connects. The blueprint knows
+        /// the branch structure BEFORE it is built, so the candidates are named
+        /// rather than discovered: two branches that pass close to each other,
+        /// each carrying enough structure that losing either one matters.
+        ///
+        /// Value is the smaller side — a bridge protects what it can carry for
+        /// the other, so a spur of three nodes joined to a trunk of forty is
+        /// worth three, not forty. Cost is the nodes it takes to close.
+        /// </summary>
+        static void BridgePass()
+        {
+            Bridges.Clear();
+            if (Items.Count == 0) return;
+
+            var members = new Dictionary<int, List<int>>();
+            for (int i = 0; i < Items.Count; i++)
+            {
+                if (Items[i].kind == Kind.Cyst) continue;
+                if (!members.TryGetValue(Items[i].branch, out var l))
+                { l = new List<int>(8); members[Items[i].branch] = l; }
+                l.Add(i);
+            }
+
+            var branches = new List<int>(members.Keys);
+            var found = new List<Bridge>(8);
+            for (int x = 0; x < branches.Count; x++)
+            for (int y = x + 1; y < branches.Count; y++)
+            {
+                var A = members[branches[x]];
+                var B = members[branches[y]];
+                int protects = A.Count < B.Count ? A.Count : B.Count;
+                if (protects < BRIDGE_MIN_PROTECT) continue;
+
+                float bestSq = float.MaxValue; int ba = -1, bb = -1;
+                for (int i = 0; i < A.Count; i++)
+                for (int j = 0; j < B.Count; j++)
+                {
+                    float d2 = SqXZ(Items[A[i]].pos, Items[B[j]].pos);
+                    if (d2 < bestSq) { bestSq = d2; ba = A[i]; bb = B[j]; }
+                }
+                if (ba < 0) continue;
+
+                float gap = Mathf.Sqrt(bestSq);
+                // Touching already — the fork they share is the connection.
+                if (gap <= EcoSimulator.NODE_REACH_M) continue;
+                int hops = Mathf.CeilToInt((gap - EcoSimulator.NODE_REACH_M) / HopM);
+                if (hops > BRIDGE_MAX_HOPS) continue;
+
+                found.Add(new Bridge
+                {
+                    a = Items[ba].pos, b = Items[bb].pos,
+                    branchA = branches[x], branchB = branches[y],
+                    hops = hops, protects = protects,
+                });
+            }
+
+            found.Sort((p, q) =>
+                ((float)q.protects / (q.hops + 1)).CompareTo((float)p.protects / (p.hops + 1)));
+            for (int i = 0; i < found.Count && i < BRIDGE_MAX; i++) Bridges.Add(found[i]);
+        }
+
+        /// <summary>Structures a branch must carry before joining it is worth
+        /// anything. Below this the loop protects a stub.</summary>
+        const int BRIDGE_MIN_PROTECT = 3;
+
+        /// <summary>Nodes a bridge may cost. Not a map-distance ceiling — the
+        /// thing that made the old loop finder reject the bridge that mattered —
+        /// but a bound on what one join may spend.</summary>
+        const int BRIDGE_MAX_HOPS = 6;
+
+        const int BRIDGE_MAX = 3;
 
         // ---- Publish -------------------------------------------------------
 
@@ -444,6 +555,9 @@ namespace Si_RTS_AI.Planning
                   .Append(Items[i].pos.z.ToString("F0")).Append(") +").Append(hops).Append("n");
                 shown++;
             }
+            for (int i = 0; i < Bridges.Count; i++)
+                sb.Append(" | bridge b").Append(Bridges[i].branchA).Append("-b").Append(Bridges[i].branchB)
+                  .Append(' ').Append(Bridges[i].hops).Append("n protects ").Append(Bridges[i].protects);
             MelonLogger.Msg(sb.ToString());
 
             BlueprintStore.Write(s);

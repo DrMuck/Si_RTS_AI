@@ -401,7 +401,99 @@ namespace Si_RTS_AI.Planning
                 s.cash += gain;
                 s.patches[pIdx] = patch;
             }
+
+            // (4) Depleted sites give up their shrimps.
+            RelocateFromDepletedPatches(s);
         }
+
+        /// <summary>
+        /// SHRIMPS WHOSE PATCH IS GONE WALK TO BETTER WORK.
+        ///
+        /// The game does this by itself — auto-relocation on depletion is a
+        /// vanilla feature — and it is the mechanism the whole "skip the Lesser
+        /// Cyst, let the group move on" strategy rests on. The simulator did not
+        /// model it: a Bio Cache whose patch ran dry simply kept its shrimps and
+        /// started harvesting the next-nearest patch at an ever longer cycle. So
+        /// migration never appeared as a way to staff anything, and a site with
+        /// no producer looked permanently dead. Every comparison between
+        /// producing and migrating was therefore rigged toward producing, which
+        /// is exactly the bias that fills the map with Lesser Cysts and hits the
+        /// shrimp cap by mid-game.
+        ///
+        /// Modelled as a stream, not a teleport: a few shrimps at a time, each
+        /// arriving after the walk, and only when somewhere else genuinely pays
+        /// more per shrimp than staying does.
+        /// </summary>
+        static void RelocateFromDepletedPatches(EcoState s)
+        {
+            // The destination is the same for everybody who moves this step, and
+            // finding it costs a scan of every Bio Cache against every patch —
+            // so find it once, and only if somebody is actually stranded.
+            int to = -1;
+            bool anyStranded = false;
+            for (int i = 0; i < s.bcs.Count && !anyStranded; i++)
+            {
+                if (!s.bcs[i].finished) continue;
+                s.shrimpsPerBc.TryGetValue(i, out int n);
+                if (n <= 0) continue;
+                int pi = NearestActivePatchIdx(s, s.bcs[i].pos);
+                if (pi < 0 || HorizontalDistance(s.bcs[i].pos, s.patches[pi].pos) > RELOCATE_TRIGGER_M)
+                    anyStranded = true;
+            }
+            if (!anyStranded) return;
+            to = ArgMaxMarginalBcIdx(s);
+            if (to < 0) return;
+
+            for (int i = 0; i < s.bcs.Count; i++)
+            {
+                if (!s.bcs[i].finished || i == to) continue;
+                s.shrimpsPerBc.TryGetValue(i, out int have);
+                if (have <= 0) continue;
+
+                int pIdx = NearestActivePatchIdx(s, s.bcs[i].pos);
+                float dHere = pIdx < 0 ? float.MaxValue
+                            : HorizontalDistance(s.bcs[i].pos, s.patches[pIdx].pos);
+                // Still working its own patch? Then nobody is going anywhere.
+                if (dHere <= RELOCATE_TRIGGER_M) continue;
+
+                float cycleHere = 2f * dHere / SHRIMP_SPEED
+                                + (float)CARRY_CAPACITY / HARVEST_RATE
+                                + (float)CARRY_CAPACITY / DEPOSIT_RATE;
+                float staying = pIdx < 0 ? 0f
+                              : IncomePerSec(have, dHere, cycleHere) - IncomePerSec(have - 1, dHere, cycleHere);
+
+                int tp = NearestActivePatchIdx(s, s.bcs[to].pos);
+                if (tp < 0) continue;
+                float dThere = HorizontalDistance(s.bcs[to].pos, s.patches[tp].pos);
+                float cycleThere = 2f * dThere / SHRIMP_SPEED
+                                 + (float)CARRY_CAPACITY / HARVEST_RATE
+                                 + (float)CARRY_CAPACITY / DEPOSIT_RATE;
+                s.shrimpsPerBc.TryGetValue(to, out int there);
+                for (int p = 0; p < s.pendingShrimps.Count; p++)
+                    if (s.pendingShrimps[p].bcIdx == to) there++;
+                float going = IncomePerSec(there + 1, dThere, cycleThere)
+                            - IncomePerSec(there,     dThere, cycleThere);
+                if (going <= staying) continue;
+
+                int move = have < RELOCATE_PER_STEP ? have : RELOCATE_PER_STEP;
+                s.shrimpsPerBc[i] = have - move;
+                float walkS = HorizontalDistance(s.bcs[i].pos, s.bcs[to].pos) / SHRIMP_SPEED;
+                for (int m = 0; m < move; m++)
+                    s.pendingShrimps.Add(new EcoState.PendingShrimp
+                    { bcIdx = to, activeAt = s.t + walkS });
+            }
+        }
+
+        /// <summary>A Bio Cache whose nearest live patch is beyond this is not
+        /// working a patch of its own any more — its shrimps are walking either
+        /// way, so where they walk to becomes a real choice. Set at the
+        /// co-harvest radius the planner uses everywhere else.</summary>
+        const float RELOCATE_TRIGGER_M = 50f;
+
+        /// <summary>Shrimps that leave one Bio Cache per sim step. A stream
+        /// rather than a stampede — the real thing takes a minute or more to
+        /// drain a depleted site.</summary>
+        const int RELOCATE_PER_STEP = 2;
 
         static float CrowdFactor(int n)
         {
