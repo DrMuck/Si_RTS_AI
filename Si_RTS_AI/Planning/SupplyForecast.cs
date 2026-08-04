@@ -106,6 +106,34 @@ namespace Si_RTS_AI.Planning
             return n;
         }
 
+        /// <summary>
+        /// When <paramref name="need"/> shrimps could be standing here, counting
+        /// arrivals in the order they land. Infinity if that many never come
+        /// within the trust horizon — which is the answer that matters, because
+        /// a site nobody can reach is exactly the site that has to grow its own.
+        /// </summary>
+        internal static float ArrivalTimeFor(Vector3 site, int need)
+        {
+            if (need <= 0) return 0f;
+            _etaScratch.Clear();
+            for (int i = 0; i < Releases.Count; i++)
+            {
+                float walk = Mathf.Sqrt(SqXZ(Releases[i].at, site)) / EcoSimulator.SHRIMP_SPEED;
+                _etaScratch.Add((Releases[i].etaS + walk, Releases[i].shrimps));
+            }
+            _etaScratch.Sort((a, b) => a.Item1.CompareTo(b.Item1));
+            int have = 0;
+            for (int i = 0; i < _etaScratch.Count; i++)
+            {
+                if (_etaScratch[i].Item1 > TrustHorizonS) break;
+                have += _etaScratch[i].Item2;
+                if (have >= need) return _etaScratch[i].Item1;
+            }
+            return float.PositiveInfinity;
+        }
+
+        static readonly List<(float, int)> _etaScratch = new List<(float, int)>(16);
+
         /// <summary>Soonest a group of any size could be here — for the log,
         /// so a decision to skip a producer can be read back against what
         /// actually happened.</summary>

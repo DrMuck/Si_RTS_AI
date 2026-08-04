@@ -312,17 +312,22 @@ namespace Si_RTS_AI.Planning
 
             CoveredCount = covered;
 
-            // 3) HOW HARD TO PUSH, AND HOW MANY PRODUCERS TO PAY FOR.
-            //    The tree is fixed by now, so the strategy sweep runs against
-            //    the real sites it just planned. It answers HOW MANY producers;
-            //    CystPass still answers WHICH sites get them.
+            // 3) WHO CAN STAFF EACH SITE, AND WHEN.
+            try { SupplyForecast.Rebuild(s); } catch { }
+            var siteInfo = BuildSiteInfo();
+
+            // 4) HOW HARD TO PUSH, AND HOW MANY PRODUCERS TO PAY FOR.
+            //    The tree is fixed by now, so the sweep runs against the real
+            //    sites it just planned, with the same producer PLACEMENT the
+            //    Cyst pass will use — otherwise it prices a strategy nobody
+            //    executes.
             if (BlueprintConfig.CystStrategyAuto)
-                ExpansionStrategy.KickOff(s, Items, incomePerSec);
+                ExpansionStrategy.KickOff(s, siteInfo, incomePerSec);
 
-            // 4) PRODUCERS, DECIDED SEPARATELY. See CystPass.
-            CystPass(s);
+            // 5) PRODUCERS, DECIDED SEPARATELY. See CystPass.
+            CystPass(s, siteInfo);
 
-            // 5) WHERE THE BRANCHES SHOULD MEET. Shadow only for now.
+            // 6) WHERE THE BRANCHES SHOULD MEET. Shadow only for now.
             BridgePass();
 
             Publish(s);
@@ -360,6 +365,35 @@ namespace Si_RTS_AI.Planning
 
         // ---- Producers -----------------------------------------------------
 
+        /// <summary>One planned site, with the chain it needs and the answer to
+        /// the only question that decides its producer: when could enough
+        /// shrimps be standing here without one.</summary>
+        internal struct SiteInfo
+        {
+            public Vector3 pos;
+            public int     nodes;      // chain hops this site costs
+            public int     item;       // index into Items of the Bio Cache
+            public float   arrivalS;   // when migration could staff it; +inf = never
+        }
+
+        static List<SiteInfo> BuildSiteInfo()
+        {
+            int need = Mathf.Max(1, ShrimpGroupPlanner.TypicalGroupCapacity);
+            var list = new List<SiteInfo>(16);
+            for (int i = 0; i < Items.Count; i++)
+            {
+                if (Items[i].kind != Kind.BioCache) continue;
+                int nodes = 0;
+                for (int j = 0; j < Items.Count; j++)
+                    if (Items[j].kind == Kind.Node && Items[j].site == Items[i].site) nodes++;
+                float arrival = float.PositiveInfinity;
+                try { arrival = SupplyForecast.ArrivalTimeFor(Items[i].pos, need); } catch { }
+                list.Add(new SiteInfo { pos = Items[i].pos, nodes = nodes, item = i, arrivalS = arrival });
+                if (list.Count >= 24) break;
+            }
+            return list;
+        }
+
         /// <summary>
         /// WHERE THE SHRIMPS COME FROM IS A SHRIMP QUESTION.
         ///
@@ -375,11 +409,8 @@ namespace Si_RTS_AI.Planning
         ///   2. Is there cap room to produce at all?
         ///   3. Would migration staff it without us paying?
         /// </summary>
-        static void CystPass(EcoState s)
+        static void CystPass(EcoState s, List<SiteInfo> sites)
         {
-            // Who comes free, when, and where they can be by then.
-            try { SupplyForecast.Rebuild(s); } catch { }
-
             float freeAgentM = EcoSimulator.SHRIMP_SPEED * ShrimpGroupPlanner.FreeAgentMaxWalkS;
             float walkReachM = Mathf.Max(freeAgentM, MapProfile.P90PatchM * BlueprintConfig.RelocationSpacings);
             float coverM     = EcoPlannerConfig.Phase2CystCoverageRadiusM;
@@ -392,9 +423,26 @@ namespace Si_RTS_AI.Planning
             // The config value is the manual answer to the same question.
             int budget = BlueprintConfig.CystStrategyAuto
                 ? ExpansionStrategy.Producers : BlueprintConfig.MaxCystsPerPlan;
-            // Walk the sites in build order so the near ones get producers first.
-            for (int i = 0; i < Items.Count && added < budget; i++)
+
+            // PRODUCERS GO WHERE MIGRATION DOES NOT REACH — WHICH IS OUTWARD.
+            //
+            // This walked the sites in BUILD order, so the nearest ones got the
+            // producers. That is backwards, and DrMuck named the reason on
+            // 2026-08-05: put the Lesser at the site further out, and the near
+            // site you skipped becomes the room that older shrimps relocate
+            // into when their patch runs dry. One Cyst then does two jobs —
+            // staffs ground nothing can walk to, and seeds the expansion past
+            // it — while the near ground staffs itself for free.
+            //
+            // Ranking by forecast arrival says the same thing without a rule
+            // about distance: near sites are where migration lands soonest, so
+            // they sort last, and a site nobody can reach sorts first.
+            var order = new List<SiteInfo>(sites);
+            order.Sort((a, b) => b.arrivalS.CompareTo(a.arrivalS));
+
+            for (int oi = 0; oi < order.Count && added < budget; oi++)
             {
+                int i = order[oi].item;
                 if (Items[i].kind != Kind.BioCache) continue;
                 Vector3 at = Items[i].pos;
 
@@ -429,13 +477,11 @@ namespace Si_RTS_AI.Planning
                 // No new constant: the deadline IS what a Cyst would take.
                 int   need     = Mathf.Max(1, ShrimpGroupPlanner.TypicalGroupCapacity);
                 float cystTime = EcoSimulator.CYST_BUILD_S + need * EcoSimulator.SHRIMP_BUILD_S;
-                int   arriving = SupplyForecast.ArrivingBy(at, cystTime);
-                if (arriving >= need)
+                if (order[oi].arrivalS <= cystTime)
                 {
-                    float soonest = SupplyForecast.SoonestArrivalS(at);
                     MelonLogger.Msg($"[BLUEPRINT] no Cyst at ({at.x:F0},{at.z:F0}) — " +
-                                    $"{arriving} shrimps free within {cystTime:F0}s " +
-                                    $"(first in {soonest:F0}s), a Cyst needs {cystTime:F0}s for {need}");
+                                    $"{need} shrimps can walk here in {order[oi].arrivalS:F0}s, " +
+                                    $"a Cyst would need {cystTime:F0}s");
                     continue;
                 }
 
@@ -445,8 +491,13 @@ namespace Si_RTS_AI.Planning
                 {
                     kind = Kind.Cyst, pos = at, from = at,
                     branch = Items[i].branch, site = Items[i].site,
-                    why  = reachableOnFoot ? "understaffed" : "nobody can walk here",
+                    why  = float.IsInfinity(order[oi].arrivalS) ? "nobody can walk here"
+                         : reachableOnFoot ? "understaffed" : "migration too slow",
                 });
+                MelonLogger.Msg($"[BLUEPRINT] Cyst at ({at.x:F0},{at.z:F0}) — " +
+                                (float.IsInfinity(order[oi].arrivalS)
+                                    ? $"{need} shrimps could never walk here in time"
+                                    : $"migration needs {order[oi].arrivalS:F0}s, a Cyst {cystTime:F0}s"));
             }
         }
 

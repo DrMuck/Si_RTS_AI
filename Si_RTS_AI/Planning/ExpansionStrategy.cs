@@ -64,12 +64,12 @@ namespace Si_RTS_AI.Planning
         /// next plan that asks for it — a strategy that was right thirty seconds
         /// ago is still right now, which is the point of deciding it slowly.
         /// </summary>
-        internal static void KickOff(EcoState live, List<Blueprint.Item> plan, float incomePerSec)
+        internal static void KickOff(EcoState live, List<Blueprint.SiteInfo> sites, float incomePerSec)
         {
             if (_running != null && !_running.IsCompleted) return;
             var snapshot = live.Clone();
-            var planCopy = new List<Blueprint.Item>(plan);
-            _running = System.Threading.Tasks.Task.Run(() => Choose(snapshot, planCopy, incomePerSec));
+            var copy = new List<Blueprint.SiteInfo>(sites);
+            _running = System.Threading.Tasks.Task.Run(() => Choose(snapshot, copy, incomePerSec));
         }
 
         // The strategies on offer. Kept coarse deliberately — the point is to
@@ -88,20 +88,10 @@ namespace Si_RTS_AI.Planning
         /// Called from Blueprint.Replan, so it runs on the plan's cadence
         /// rather than every tick.
         /// </summary>
-        static void Choose(EcoState live, List<Blueprint.Item> plan, float incomePerSec)
+        static void Choose(EcoState live, List<Blueprint.SiteInfo> sites, float incomePerSec)
         {
             try
             {
-                // Sites in build order, each with the nodes its chain needs.
-                var sites = new List<(Vector3 pos, int nodes)>(16);
-                for (int i = 0; i < plan.Count && sites.Count < 12; i++)
-                {
-                    if (plan[i].kind != Blueprint.Kind.BioCache) continue;
-                    int nodes = 0;
-                    for (int j = 0; j < plan.Count; j++)
-                        if (plan[j].kind == Blueprint.Kind.Node && plan[j].site == plan[i].site) nodes++;
-                    sites.Add((plan[i].pos, nodes));
-                }
                 if (sites.Count == 0) return;
 
                 int bestP = PRODUCER_OPTIONS[0], bestA = AHEAD_OPTIONS[0];
@@ -143,7 +133,7 @@ namespace Si_RTS_AI.Planning
         /// queues, so pricing the schedule against measured income is what keeps
         /// "8 sites ahead" from looking free.
         /// </summary>
-        static float Evaluate(EcoState live, List<(Vector3 pos, int nodes)> sites,
+        static float Evaluate(EcoState live, List<Blueprint.SiteInfo> sites,
                               int producers, int ahead, float incomePerSec)
         {
             var s = live.Clone();
@@ -154,13 +144,23 @@ namespace Si_RTS_AI.Planning
             float cumulativeCost = 0f;
             int spend = 0;
 
-            // Which sites get producers: the first `producers` of them. The plan
-            // is ordered near-to-far, so this IS the inside-out reading — and
-            // when the sweep prefers 0, it is saying migration will do the job.
+            // WHICH SITES GET THE PRODUCERS — the ones migration reaches LAST,
+            // matching what the Cyst pass will actually build. This used to be
+            // "the first N sites", i.e. the nearest ones, which is the worst
+            // possible placement: those are precisely the sites migration
+            // staffs for free. Pricing producers where they add nothing made
+            // every producing strategy look bad, so the sweep's preference for
+            // zero was partly an artefact of its own assumption.
+            var worstFirst = new List<int>(n);
+            for (int i = 0; i < n; i++) worstFirst.Add(i);
+            worstFirst.Sort((a, b) => sites[b].arrivalS.CompareTo(sites[a].arrivalS));
+            var getsCyst = new HashSet<int>();
+            for (int i = 0; i < producers && i < worstFirst.Count; i++) getsCyst.Add(worstFirst[i]);
+
             for (int i = 0; i < n; i++)
             {
                 int cost = EcoSimulator.BC_COST + sites[i].nodes * EcoSimulator.NODE_COST;
-                bool cyst = i < producers;
+                bool cyst = getsCyst.Contains(i);
                 if (cyst) cost += EcoSimulator.CYST_COST;
                 cumulativeCost += cost;
                 spend += cost;
