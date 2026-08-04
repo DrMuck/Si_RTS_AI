@@ -635,6 +635,62 @@ namespace Si_RTS_AI.Planning
             IsChainReachable(patchPos, s, EcoSimulator.BcPlaceReachM + BC_TIGHT_GAP_M,
                              unfinishedNodesAnchor: false);
 
+        /// <summary>
+        /// Fog-of-war test handed to the blueprint scan. Same layer and the same
+        /// fail-open rule the beam's own BC enumeration uses — a plan may not
+        /// reach for ground the game will refuse to build on.
+        /// </summary>
+        static System.Func<Vector3, bool> BlueprintExploredTest()
+        {
+            var explored = _beamExplored;
+            return p =>
+            {
+                if (explored == null) return true;
+                int cx = Perception.MapLayers.GridWorld.CellX(p.x);
+                int cz = Perception.MapLayers.GridWorld.CellZ(p.z);
+                return explored.IsSet(cx, cz);
+            };
+        }
+
+        /// <summary>
+        /// Is this blueprint item already on the ground? The plan is refreshed
+        /// on an interval, so between refreshes it still contains work that has
+        /// since been built — and the game's placement search slides a structure
+        /// tens of metres from where it was asked for, so this matches by
+        /// proximity rather than by position.
+        /// </summary>
+        static bool BlueprintAlreadyStanding(Blueprint.Item it, EcoState s)
+        {
+            float m = it.kind == Blueprint.Kind.Node ? 45f
+                    : it.kind == Blueprint.Kind.BioCache ? 60f
+                    : CYST_ORDERED_RADIUS_M;
+            float m2 = m * m;
+            if (it.kind == Blueprint.Kind.Node)
+            {
+                for (int i = 0; i < s.nodes.Count; i++)
+                {
+                    float dx = s.nodes[i].pos.x - it.pos.x, dz = s.nodes[i].pos.z - it.pos.z;
+                    if (dx * dx + dz * dz < m2) return true;
+                }
+                return false;
+            }
+            if (it.kind == Blueprint.Kind.BioCache)
+            {
+                for (int i = 0; i < s.bcs.Count; i++)
+                {
+                    float dx = s.bcs[i].pos.x - it.pos.x, dz = s.bcs[i].pos.z - it.pos.z;
+                    if (dx * dx + dz * dz < m2) return true;
+                }
+                return false;
+            }
+            for (int i = 0; i < s.cysts.Count; i++)
+            {
+                float dx = s.cysts[i].pos.x - it.pos.x, dz = s.cysts[i].pos.z - it.pos.z;
+                if (dx * dx + dz * dz < m2) return true;
+            }
+            return false;
+        }
+
         /// <summary>Hop distance for one Node along the chain, margin applied.</summary>
         static float NodeHopDistance(float reach) =>
             Mathf.Max(reach - PLACEMENT_MARGIN_M, reach * NODE_HOP_MIN_FRACTION);
@@ -1811,7 +1867,64 @@ namespace Si_RTS_AI.Planning
                 // The old scored-candidate Phase 2 path is archived at tag
                 // phase2-beam-archive: a travelling front, stranded latitude
                 // bands, and rules that only ever misbehaved in replays.
-                if (_currentPhase == PlanPhase.Phase2_Expand && FanOutAllowed(state))
+                // BUILD TO THE BLUEPRINT.
+                //
+                // The plan is made elsewhere and held between refreshes; this
+                // only executes it, in the order it was planned, through the
+                // same TryFireAction so cash, dedup, reach and the node budget
+                // all still apply. Nothing here re-decides anything.
+                if (BlueprintConfig.Enabled
+                    && _currentPhase == PlanPhase.Phase2_Expand && FanOutAllowed(state))
+                {
+                    Blueprint.MaybeReplan(state, BlueprintExploredTest());
+
+                    // Sites already under construction are the real limit on
+                    // starting more: cash mid-game would happily fund twenty at
+                    // once, and twenty Bio Caches nobody can staff is the same
+                    // mistake in a new shape. Reuses the queue depth the beam
+                    // was already configured with.
+                    int inFlightBcs = 0;
+                    for (int b = 0; b < state.bcs.Count; b++) if (!state.bcs[b].finished) inFlightBcs++;
+
+                    var plan = Blueprint.Items;
+                    for (int i = 0; i < plan.Count; i++)
+                    {
+                        var it = plan[i];
+                        if (BlueprintAlreadyStanding(it, state)) continue;
+
+                        if (it.kind == Blueprint.Kind.BioCache)
+                        {
+                            if (inFlightBcs >= EcoPlannerConfig.Phase2MaxUncystedBcQueue) continue;
+                            int beforeBc = fired;
+                            TryFireAction(new Candidate
+                            {
+                                kind = ActionKind.PlaceBc, target = it.pos,
+                                cost = EcoSimulator.BC_COST, patchIdx = -1,
+                                frontRef = it.pos,
+                            });
+                            if (fired > beforeBc) inFlightBcs++;
+                        }
+                        else if (it.kind == Blueprint.Kind.Cyst)
+                        {
+                            TryFireAction(new Candidate
+                            {
+                                kind = ActionKind.PlaceCyst, target = it.pos,
+                                cost = EcoSimulator.CYST_COST, patchIdx = -1,
+                                frontRef = it.pos,
+                            });
+                        }
+                        else
+                        {
+                            TryFireAction(new Candidate
+                            {
+                                kind = ActionKind.PlaceNode, target = it.pos,
+                                cost = EcoSimulator.NODE_COST, patchIdx = -1,
+                                frontRef = it.pos,
+                            });
+                        }
+                    }
+                }
+                else if (_currentPhase == PlanPhase.Phase2_Expand && FanOutAllowed(state))
                 {
                     // TAKE WHAT WE HAVE REACHED BEFORE REACHING FURTHER.
                     //

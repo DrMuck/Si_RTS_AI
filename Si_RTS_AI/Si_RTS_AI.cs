@@ -8,7 +8,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 
-[assembly: MelonInfo(typeof(Si_RTS_AI.Si_RTS_AI), "Si_RTS_AI", "0.14.7-revert-candidate-starvation", "DrMuck")]
+[assembly: MelonInfo(typeof(Si_RTS_AI.Si_RTS_AI), "Si_RTS_AI", "0.15.0-blueprint", "DrMuck")]
 [assembly: MelonGame("Bohemia Interactive", "Silica")]
 
 namespace Si_RTS_AI
@@ -97,6 +97,7 @@ namespace Si_RTS_AI
             // Headless test harness — MelonPreferences-gated soak-test driver.
             TestHarnessNs.TestHarness.Init();
             Planning.EcoPlannerConfig.Init();
+            Planning.BlueprintConfig.Init();
         }
 
         public override void OnUpdate()
@@ -384,6 +385,7 @@ namespace Si_RTS_AI
             Perception.BuildTimeline.ResetForNewRound();
             Planning.GrowthModel.ResetForNewRound();
             Planning.NaturalBranching.ResetForNewRound();
+            Planning.Blueprint.ResetForNewRound();
             Perception.QueenStatus.ResetForNewRound();
             Planning.NodeManager.ResetForNewRound();
             Perception.ThreatMap.ResetForNewRound();

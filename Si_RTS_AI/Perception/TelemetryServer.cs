@@ -111,13 +111,20 @@ namespace Si_RTS_AI.Perception
             {
                 WriteText(res, 200, "text/plain",
                     $"Si_RTS_AI telemetry server\nport = {_port}\n" +
-                    "endpoints:\n  /catalog\n  /layer/{team}/{name}\n  /state\n");
+                    "endpoints:\n  /catalog\n  /layer/{team}/{name}\n  /state\n  /blueprint\n");
                 return;
             }
             if (path == "/catalog")   { WriteCatalog(res);   return; }
             if (path == "/state")     { WriteState(res);     return; }
             if (path == "/entities")  { WriteEntities(res);  return; }
             if (path == "/patches")   { WritePatches(res);   return; }
+            if (path == "/blueprint")
+            {
+                // Already JSON — the planner serialises it once per revision
+                // rather than rebuilding it per request.
+                WriteText(res, 200, "application/json", Planning.BlueprintStore.LatestJson);
+                return;
+            }
             if (path == "/resources") { WriteResources(res); return; }
             if (path.StartsWith("/layer/")) { WriteLayer(res, path); return; }
             if (path.StartsWith("/icon/"))  { WriteIcon(res, path);  return; }
