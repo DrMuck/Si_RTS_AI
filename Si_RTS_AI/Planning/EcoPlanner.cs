@@ -130,7 +130,20 @@ namespace Si_RTS_AI.Planning
         /// the handoff, and the round that transitioned at t=178s was earning
         /// well before that. 200/s marks a base economy running on its own.
         /// </summary>
-        const float PHASE2_MIN_INCOME_RATE = 200f;
+        /// <summary>
+        /// Income that says the base can pay for expanding.
+        ///
+        /// Was 200 and never once reached: measured 2026-08-04 across a whole
+        /// round, a base with 4 tapped patches and 23 shrimps sat flat at 61-63
+        /// and stayed in Phase 1 for the entire game. It was not climbing toward
+        /// 200 — that number was calibrated against a different measure or a
+        /// different balance, and nothing since has matched it.
+        ///
+        /// 50 is set from what an established base actually produces, with room
+        /// beneath the observed 61 so an ordinary base clears it and a genuinely
+        /// broken one does not.
+        /// </summary>
+        const float PHASE2_MIN_INCOME_RATE = 50f;
         // Time-based fallback tightened accordingly.
         const float PHASE2_TIME_FALLBACK_S = 150f;
         // Was 15 — 15 shrimps at t=180s meant Phase 2 fired with only
@@ -2181,7 +2194,11 @@ namespace Si_RTS_AI.Planning
             // goal, not a clock: a base that has neither the income nor the
             // shrimps nor the patches stays in Phase 1 indefinitely, as it
             // should.
-            bool establishedHit = state.totalShrimps >= PHASE2_MIN_SHRIMPS * 2
+            // 2x the shrimp bar was too strict to be the safety net it was
+            // meant to be: with income stuck at 61 the round sat in Phase 1 at
+            // 23 shrimps, above the real bar and below this one. Both counts
+            // passing IS an established base — that is the whole claim.
+            bool establishedHit = state.totalShrimps >= PHASE2_MIN_SHRIMPS
                                && CountTappedPatches(state) >= PHASE1_MIN_TAPPED_PATCHES;
 
             // PHASE 2 IS NOT A CLOCK.
