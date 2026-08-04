@@ -132,7 +132,7 @@ namespace Si_RTS_AI.Planning
                         float dx = targets[ti].x - sources[si].x;
                         float dz = targets[ti].z - sources[si].z;
                         float d = Mathf.Sqrt(dx * dx + dz * dz);
-                        if (d > MAX_TAP_M) continue;      // not this source's business
+                        if (d > MaxTapM) continue;      // not this source's business
 
                         float eff = d;
                         if (haveOutward && d > 1f)
@@ -249,7 +249,22 @@ namespace Si_RTS_AI.Planning
         /// <summary>How far a frontier point will reach for a patch. Beyond
         /// this it is somebody else's, and letting one source claim distant
         /// ground is what turns growth back into a race down a single line.</summary>
-        const float MAX_TAP_M = 900f;
+        static float MaxTapM => EcoSimulator.BC_REACH_M * MAX_TAP_REACHES;
+
+        /// <summary>How far a frontier point reaches, in Bio Cache ranges.
+        ///
+        /// Was a flat 900m, and that is how one branch ended up twenty nodes
+        /// long: the anchor for the next hop is whatever we own NEAREST the
+        /// target, which after one hop is the node just placed — so a chain
+        /// walks the whole distance to its target, one node per cycle, earning
+        /// nothing until it arrives. The length of that walk is set here, not
+        /// by any rule further down.
+        ///
+        /// Tying it to Bio Cache range bounds a chain to a few hops before the
+        /// patch comes into BC reach and the branch starts paying for itself.
+        /// It also follows a balance mod that changes structure ranges, rather
+        /// than being a distance tuned against one map.</summary>
+        const float MAX_TAP_REACHES = 2.5f;
 
         /// <summary>Effective-distance multiplier for a patch lying straight
         /// out along the trunk's own bearing, against one lying across it. Below

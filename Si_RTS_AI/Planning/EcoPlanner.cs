@@ -1799,12 +1799,23 @@ namespace Si_RTS_AI.Planning
                 // bands, and rules that only ever misbehaved in replays.
                 if (_currentPhase == PlanPhase.Phase2_Expand && FanOutAllowed(state))
                 {
+                    // TAKE WHAT WE HAVE REACHED BEFORE REACHING FURTHER.
+                    //
+                    // Firing both kinds in one pass meant every unreachable
+                    // target got a hop every cycle, so the head of each chain
+                    // ran ahead of the Bio Caches behind it — nodes sprinting
+                    // outward past ground already in reach and earning nothing.
+                    // Two passes: everything reachable is claimed first, and
+                    // only the node budget left over extends the frontier.
                     var pub = NaturalBranching.Published;
+                    for (int pass = 0; pass < 2; pass++)
                     for (int i = 0; i < pub.Count; i++)
                     {
                         Vector3 to = pub[i].to;
+                        bool inReach = IsPatchBcReachable(to, state);
+                        if (inReach != (pass == 0)) continue;
 
-                        if (IsPatchBcReachable(to, state))
+                        if (inReach)
                         {
                             TryFireAction(new Candidate
                             {
