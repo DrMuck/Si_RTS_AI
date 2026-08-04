@@ -51,7 +51,7 @@ namespace Si_RTS_AI.Planning
         // A node line needs several hops in a row, and firing one hop per cycle
         // means an eight-node chain takes over a minute to reach anywhere.
         // [PLAN/RATE] is kept so the achieved rate stays visible.
-        public const float PLAN_CADENCE_S = 3f;
+        public const float PLAN_CADENCE_S = 8f;
 
         /// <summary>How often the candidate field is dumped. Long enough that
         /// the extra enumeration is negligible, short enough to see a band open
@@ -1308,8 +1308,21 @@ namespace Si_RTS_AI.Planning
                         // every other front for that tick. With several fronts
                         // open that is most ticks, and it compounds with the
                         // fire cap above. Scope it to the BC's own reach.
-                        if (c.kind == ActionKind.PlaceNode && firedBcThisTick
-                            && NearAnyFiredBc(c.target)) { Skip("afterBc"); return true; }
+                        // PHASE 1 KEEPS THE OLD, BLUNT RULE.
+                        //
+                        // Scoping this to the firing BC's own reach was right
+                        // for Phase 2, where a Bio Cache in the south should not
+                        // freeze a western node line. It was wrong to apply it
+                        // during the opening: there the blunt rule was what
+                        // sequenced the build order, and without it the opener
+                        // spends its cash on Nodes alongside the Bio Cache
+                        // instead of after it. Observed on NarakaCity 2026-08-04
+                        // — "no starter base at all, just full send noding".
+                        if (c.kind == ActionKind.PlaceNode && firedBcThisTick)
+                        {
+                            bool scoped = _currentPhase == PlanPhase.Phase2_Expand;
+                            if (!scoped || NearAnyFiredBc(c.target)) { Skip("afterBc"); return true; }
+                        }
                         if (c.kind == ActionKind.PlaceNode && nodeFiresThisTick >= maxNodeFires) { Skip("nodeRate"); return true; }
                     }
                     if (c.cost > cashLeft) return true;   // skip this one, try next
