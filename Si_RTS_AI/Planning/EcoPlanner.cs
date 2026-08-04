@@ -1630,7 +1630,14 @@ namespace Si_RTS_AI.Planning
                 // logged beside what the beam actually commits to. Changes
                 // nothing — see GrowthModel.
                 if (_currentPhase == PlanPhase.Phase2_Expand)
+                {
                     GrowthModel.LogShadow(state);
+                    // PHASE 2 ONLY, deliberately. The opener keeps the beam:
+                    // a short horizon with real trade-offs is what beam search
+                    // is for, and the opening is now working. This is the
+                    // candidate replacement for MID-GAME expansion only.
+                    NaturalBranching.LogShadow(state);
+                }
 
                 // REPAIR FIRST — A SEVERED BRANCH IS ALREADY DYING.
                 //

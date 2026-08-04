@@ -383,6 +383,7 @@ namespace Si_RTS_AI
             Faction.AlienConstruction.ClearOrderedForNewRound();
             Perception.BuildTimeline.ResetForNewRound();
             Planning.GrowthModel.ResetForNewRound();
+            Planning.NaturalBranching.ResetForNewRound();
             Perception.QueenStatus.ResetForNewRound();
             Planning.NodeManager.ResetForNewRound();
             Perception.ThreatMap.ResetForNewRound();
