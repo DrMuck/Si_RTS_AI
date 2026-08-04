@@ -112,6 +112,7 @@ namespace Si_RTS_AI.Planning
         // recent rounds — 60-90s of Phase-1 gain=0 stall while cash
         // accumulated to 2-3k. Dropping to 15/1500 catches the transition
         // right when base eco is halfway saturated instead of after.
+        static float _lastPhaseLogAt;
         const int   PHASE2_MIN_SHRIMPS = 15;
         const int   PHASE2_MIN_CASH    = 1500;
 
@@ -2199,6 +2200,24 @@ namespace Si_RTS_AI.Planning
             // not make it ready — it just makes the fan-out unaffordable as
             // well as premature. User 2026-08-04: "we shouldn't reference it to
             // time anyways".
+            // Say WHY we are still in Phase 1, once every 30s.
+            //
+            // Two rounds have now been spent stuck here while the log's own
+            // shrimp and patch counts looked comfortably past the thresholds —
+            // because those lines come from other subsystems and are not the
+            // values this decision reads. Print the actual inputs rather than
+            // inferring them from neighbouring counters again.
+            if (Time.time - _lastPhaseLogAt > 30f)
+            {
+                _lastPhaseLogAt = Time.time;
+                MelonLogger.Msg("[PHASE] still=" + current +
+                                " shrimps=" + state.totalShrimps + "/" + PHASE2_MIN_SHRIMPS +
+                                " income=" + incomeRate.ToString("F0") + "/" + PHASE2_MIN_INCOME_RATE +
+                                " tapped=" + CountTappedPatches(state) + "/" + PHASE1_MIN_TAPPED_PATCHES +
+                                " cash=" + state.cash + "/" + PHASE2_MIN_CASH +
+                                " rateHit=" + rateHit + " establishedHit=" + establishedHit);
+            }
+
             if (!rateHit && !establishedHit)
             {
                 if (state.totalShrimps < PHASE2_MIN_SHRIMPS) return PlanPhase.Phase1_BaseEco;
