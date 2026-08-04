@@ -145,6 +145,58 @@ namespace Si_RTS_AI.Planning
             // Stall tracking — distance to the waypoint at the last checkpoint.
             public float   LastDist;
             public float   LastProgressAt;
+            // Where it was standing last time we looked. A destroyed unit
+            // cannot be asked, so the grave is recorded from this.
+            public Vector3 LastPos;
+            public bool    HaveLastPos;
+        }
+
+        /// <summary>
+        /// WHERE SCOUTS DIE.
+        ///
+        /// DrMuck, 2026-08-05: "some of the scout crabs were fed into one
+        /// scouting arm, because they were cannon fodder for a HQ." An arm that
+        /// runs into an enemy base kills whatever walks it, and the roster then
+        /// politely sends the next one down the same arm — the fixed star made
+        /// that worse, not better, because a freed arm is exactly the one
+        /// furthest from the others and so the most attractive to claim.
+        ///
+        /// A dead scout is not a wasted Crab, it is a measurement: that ground
+        /// is held by somebody. It is also ground we no longer need to reveal,
+        /// because the scout revealed it on the way in.
+        /// </summary>
+        struct Grave { public Vector3 Pos; public float At; public int Arm; }
+        static readonly List<Grave> _graves = new List<Grave>(8);
+
+        /// <summary>How much ground one death closes. Not a precise radius —
+        /// the point is that a neighbourhood becomes off-limits, not a circle
+        /// measured to the metre.</summary>
+        const float GRAVE_RADIUS_M = 400f;
+
+        /// <summary>A base can fall, and the ground reopens when it does. One
+        /// probe every few minutes is cheap; if it dies again the grave is
+        /// simply refreshed.</summary>
+        const float GRAVE_FORGET_S = 240f;
+
+        static bool NearGrave(Vector3 p)
+        {
+            float now = Time.time;
+            for (int i = _graves.Count - 1; i >= 0; i--)
+            {
+                if (now - _graves[i].At > GRAVE_FORGET_S) { _graves.RemoveAt(i); continue; }
+                float dx = _graves[i].Pos.x - p.x, dz = _graves[i].Pos.z - p.z;
+                if (dx * dx + dz * dz < GRAVE_RADIUS_M * GRAVE_RADIUS_M) return true;
+            }
+            return false;
+        }
+
+        static int GravesOnArm(int arm)
+        {
+            float now = Time.time;
+            int n = 0;
+            for (int i = 0; i < _graves.Count; i++)
+                if (_graves[i].Arm == arm && now - _graves[i].At <= GRAVE_FORGET_S) n++;
+            return n;
         }
 
         static readonly List<Scout> _scouts = new List<Scout>();
@@ -175,6 +227,7 @@ namespace Si_RTS_AI.Planning
             _scouts.Clear();
             _scoutSet.Clear();
             _released.Clear();
+            _graves.Clear();
             _lastTickAt = 0f;
             _lastDiagAt = 0f;
             WaypointsReached = 0;
@@ -224,11 +277,22 @@ namespace Si_RTS_AI.Planning
                 if (u == null || u.IsDestroyed)
                 {
                     if (u != null) _scoutSet.Remove(u);
+                    // Mark the ground. The unit is gone, so this is the last
+                    // place we saw it — close enough, since GRAVE_RADIUS_M is a
+                    // neighbourhood rather than a point.
+                    if (_scouts[i].HaveLastPos)
+                    {
+                        _graves.Add(new Grave
+                        { Pos = _scouts[i].LastPos, At = now, Arm = _scouts[i].Arm });
+                        MelonLogger.Msg($"[SCOUT] lost a scout at " +
+                                        $"({_scouts[i].LastPos.x:F0},{_scouts[i].LastPos.z:F0}) " +
+                                        $"on arm {_scouts[i].Arm} — closing that ground for " +
+                                        $"{GRAVE_FORGET_S:F0}s");
+                    }
                     _scouts.RemoveAt(i);
                     ScoutsLost++;
                 }
             }
-            ReindexArms();
             if (_scouts.Count < MaxScouts || InStarterWindow()) Recruit(team);
             // Conscription first, production second — only build what the map
             // did not already hand us.
@@ -265,6 +329,7 @@ namespace Si_RTS_AI.Planning
                 var u = sc.Unit;
                 if (u == null || u.IsDestroyed) continue;
                 var pos = u.transform.position;
+                sc.LastPos = pos; sc.HaveLastPos = true;
 
                 bool needNew = !sc.HasWaypoint;
                 if (!needNew)
@@ -385,7 +450,7 @@ namespace Si_RTS_AI.Planning
         static int ClaimArm()
         {
             int arms = ArmCount();
-            int best = 0; float bestGap = -1f;
+            int best = 0; float bestScore = float.MinValue;
             for (int a = 0; a < arms; a++)
             {
                 bool taken = false;
@@ -398,10 +463,23 @@ namespace Si_RTS_AI.Planning
                     if (d < gap) gap = d;
                 }
                 if (taken) continue;
-                if (gap > bestGap) { bestGap = gap; best = a; }
+
+                // AN ARM THAT KILLED A SCOUT IS THE MOST ATTRACTIVE ARM THERE
+                // IS, AND THAT IS THE PROBLEM. It is empty, so it is furthest
+                // from everyone — which is exactly how a queue of Crabs ends up
+                // feeding one enemy HQ one at a time. Each death makes its arm
+                // less attractive by a full arm-spacing of angular gap, so a
+                // hostile arm loses to any quiet direction.
+                float score = gap - GravesOnArm(a) * ARM_GRAVE_PENALTY;
+                if (score > bestScore) { bestScore = score; best = a; }
             }
             return best;
         }
+
+        /// <summary>Arm-spacings of angular gap one dead scout is worth. Set so
+        /// a single death moves the next recruit to a different part of the map
+        /// rather than nudging it one arm along.</summary>
+        const float ARM_GRAVE_PENALTY = 3f;
 
         static void Recruit(Team team)
         {
@@ -549,7 +627,8 @@ namespace Si_RTS_AI.Planning
                 {
                     float dx = unexplored[i].x - geo.x, dz = unexplored[i].z - geo.z;
                     float d = dx * dx + dz * dz;
-                    if (d < bestSq && !TooCloseToOtherScout(sc, unexplored[i])) { bestSq = d; best = i; }
+                    if (d < bestSq && !TooCloseToOtherScout(sc, unexplored[i])
+                        && !NearGrave(unexplored[i])) { bestSq = d; best = i; }
                 }
                 if (best >= 0)
                 {
@@ -564,6 +643,9 @@ namespace Si_RTS_AI.Planning
                     explored.IsSet(Perception.MapLayers.GridWorld.CellX(geo.x),
                                    Perception.MapLayers.GridWorld.CellZ(geo.z))) continue;
                 if (TooCloseToOtherScout(sc, geo)) continue;
+                // Somebody already died proving this ground is held — and died
+                // revealing it on the way in, so there is nothing to gain.
+                if (NearGrave(geo)) continue;
                 wp = geo;
                 return true;
             }
@@ -589,7 +671,8 @@ namespace Si_RTS_AI.Planning
             {
                 float dx = unexplored[i].x - from.x, dz = unexplored[i].z - from.z;
                 float d = dx * dx + dz * dz;
-                if (d < bestSq && !TooCloseToOtherScout(sc, unexplored[i])) { bestSq = d; best = i; }
+                if (d < bestSq && !TooCloseToOtherScout(sc, unexplored[i])
+                    && !NearGrave(unexplored[i])) { bestSq = d; best = i; }
             }
             if (best >= 0)
             {
@@ -617,6 +700,7 @@ namespace Si_RTS_AI.Planning
                 if (d >= bestCellSq) continue;
                 var p = new Vector3(wx, from.y, wz);
                 if (TooCloseToOtherScout(sc, p)) continue;
+                if (NearGrave(p)) continue;
                 bestCellSq = d; wp = p;
             }
             return bestCellSq < float.MaxValue;
