@@ -168,12 +168,13 @@ namespace Si_RTS_AI.Planning
         static readonly List<float>    _bestCost  = new List<float>(128);
         static readonly List<int>      _bestAnchor= new List<int>(128);
         static readonly List<int>      _bestHops  = new List<int>(128);
+        static readonly List<float>    _bestKey   = new List<float>(128);
 
         static void Replan(EcoState s, System.Func<Vector3, bool> explored, float incomePerSec)
         {
             Items.Clear();
             _net.Clear(); _terminals.Clear();
-            _bestCost.Clear(); _bestAnchor.Clear(); _bestHops.Clear();
+            _bestCost.Clear(); _bestAnchor.Clear(); _bestHops.Clear(); _bestKey.Clear();
 
             // 1) SCAN. Everything we own is a root the network may grow from;
             //    every discovered patch nobody works is a terminal.
@@ -187,6 +188,7 @@ namespace Si_RTS_AI.Planning
                 _net.Add(new NetPoint { pos = s.nodes[i].pos, branch = nextBranch++,
                                         pathM = Mathf.Sqrt(SqXZ(s.nodes[i].pos, s.nestPos)) });
             if (_net.Count == 0) return;
+            ResolveRootPaths(s.nestPos);
 
             for (int p = 0; p < s.patches.Count; p++)
             {
@@ -205,6 +207,7 @@ namespace Si_RTS_AI.Planning
             for (int t = 0; t < _terminals.Count; t++)
             {
                 _bestCost.Add(float.MaxValue); _bestAnchor.Add(-1); _bestHops.Add(0);
+                _bestKey.Add(float.MaxValue);
                 Relax(s, t, 0, _net.Count);
             }
 
@@ -247,13 +250,9 @@ namespace Si_RTS_AI.Planning
                     }
                     if (brings <= 0) brings = 1;
 
-                    var an = _net[_bestAnchor[t]];
-                    float pathM = an.pathM + Mathf.Sqrt(SqXZ(an.pos, tp));
-                    float delayS = _bestHops[t] * EcoSimulator.NODE_BUILD_S
-                                 + EcoSimulator.BC_BUILD_S
-                                 + pathM / Mathf.Max(1f, EcoSimulator.SHRIMP_SPEED);
-
-                    float score = _bestCost[t] * delayS / brings;
+                    // Already priced in cash x seconds by Relax — the only
+                    // thing left is how many patches the site brings in.
+                    float score = _bestKey[t] / brings;
                     if (score < pickScore) { pickScore = score; pick = t; }
                 }
                 if (pick < 0) break;
@@ -333,9 +332,26 @@ namespace Si_RTS_AI.Planning
             Publish(s);
         }
 
-        /// <summary>Cheapest way to reach terminal t from network points in
-        /// [from,to). Cost is what the plan will actually pay: hops of Node plus
-        /// the Bio Cache at the end.</summary>
+        /// <summary>
+        /// Best way to reach terminal t from network points in [from,to).
+        ///
+        /// WHERE TO HANG IT FROM IS THE SAME QUESTION AS WHEN IT PAYS.
+        ///
+        /// This used to pick purely on cash — fewest hops, ties broken by
+        /// distance — and that is what rebuilds a snake. The tip of a chain
+        /// three kilometres down the map is one hop from the next patch, so it
+        /// always beat a rib hanging two hops off the trunk, however long the
+        /// road back to the Nest had become. DrMuck, 2026-08-05: "a big branch
+        /// from south to middle is forming again, while an east to west growth
+        /// could have happened from the eastern line."
+        ///
+        /// An anchor deep down a branch is not cheap. Everything hung there
+        /// inherits its whole path: the build chain walks it, the shrimps walk
+        /// it, and the site pays that latency for the rest of the round. So the
+        /// anchor is chosen in the same currency the build order already uses —
+        /// cash times seconds — and a rib off the trunk wins on latency what it
+        /// loses on an extra node.
+        /// </summary>
         static void Relax(EcoState s, int t, int from, int to)
         {
             Vector3 tp = s.patches[_terminals[t]].pos;
@@ -344,15 +360,73 @@ namespace Si_RTS_AI.Planning
                 float d = Mathf.Sqrt(SqXZ(_net[n].pos, tp));
                 int hops = d <= BcTapReachM ? 0 : Mathf.CeilToInt((d - BcTapReachM) / HopM);
                 if (hops > MAX_HOPS_PER_SITE) continue;
-                float cost = hops * EcoSimulator.NODE_COST + EcoSimulator.BC_COST;
-                // Distance breaks ties between equal-cost anchors, so a chain
-                // starts from the closest thing we own rather than an arbitrary
-                // one at the same hop count.
-                float keyed = cost * 100000f + d;
-                float bestKeyed = _bestAnchor[t] < 0 ? float.MaxValue
-                    : _bestCost[t] * 100000f + Mathf.Sqrt(SqXZ(_net[_bestAnchor[t]].pos, tp));
-                if (keyed < bestKeyed)
-                { _bestCost[t] = cost; _bestAnchor[t] = n; _bestHops[t] = hops; }
+                float cost   = hops * EcoSimulator.NODE_COST + EcoSimulator.BC_COST;
+                float pathM  = _net[n].pathM + d;
+                float delayS = hops * EcoSimulator.NODE_BUILD_S + EcoSimulator.BC_BUILD_S
+                             + pathM / Mathf.Max(1f, EcoSimulator.SHRIMP_SPEED);
+                float keyed  = cost * delayS;
+                if (_bestAnchor[t] < 0 || keyed < _bestKey[t])
+                { _bestKey[t] = keyed; _bestCost[t] = cost; _bestAnchor[t] = n; _bestHops[t] = hops; }
+            }
+        }
+
+        /// <summary>
+        /// HOW FAR A BUILT STRUCTURE REALLY IS FROM THE NEST — along the
+        /// network, not across the map.
+        ///
+        /// The straight-line distance was a lie in exactly the case that
+        /// matters. A chain that snakes south and then west ends up with a tip
+        /// that is 1,200m from the Nest as the crow flies and 3,000m of road,
+        /// and hanging the next site off it inherits the road, not the crow.
+        /// Using the crow's number is what made snake tips look like cheap
+        /// anchors and rebuilt the snake every replan.
+        ///
+        /// Plain Dijkstra over the built structures, linked where one could
+        /// have been built off the other. Anything the walk cannot reach keeps
+        /// its straight-line value — an isolated structure is a NodeManager
+        /// problem, not this one.
+        /// </summary>
+        static void ResolveRootPaths(Vector3 nest)
+        {
+            int n = _net.Count;
+            if (n == 0 || nest == Vector3.zero) return;
+            float link = EcoSimulator.BcPlaceReachM;
+            float link2 = link * link;
+
+            var dist = new float[n];
+            var done = new bool[n];
+            int start = -1;
+            for (int i = 0; i < n; i++)
+            {
+                dist[i] = float.MaxValue;
+                if (start < 0 && SqXZ(_net[i].pos, nest) < 1f) start = i;
+            }
+            if (start < 0) return;
+            dist[start] = 0f;
+
+            for (int k = 0; k < n; k++)
+            {
+                int u = -1; float best = float.MaxValue;
+                for (int i = 0; i < n; i++)
+                    if (!done[i] && dist[i] < best) { best = dist[i]; u = i; }
+                if (u < 0) break;
+                done[u] = true;
+                for (int v = 0; v < n; v++)
+                {
+                    if (done[v]) continue;
+                    float d2 = SqXZ(_net[u].pos, _net[v].pos);
+                    if (d2 > link2) continue;
+                    float nd = dist[u] + Mathf.Sqrt(d2);
+                    if (nd < dist[v]) dist[v] = nd;
+                }
+            }
+
+            for (int i = 0; i < n; i++)
+            {
+                if (dist[i] == float.MaxValue) continue;   // keep the fallback
+                var p = _net[i];
+                p.pathM = dist[i];
+                _net[i] = p;
             }
         }
 
