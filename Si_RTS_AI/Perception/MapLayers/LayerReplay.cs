@@ -135,6 +135,7 @@ namespace Si_RTS_AI.Perception.MapLayers
                 WriteByteFrame(teamName, "bc_mask",            AlienEcoLayers.GetBcMask(team),            tickNo, roundTime);
                 WriteIntFrame (teamName, "biotics_weighted",   AlienEcoLayers.GetBioticsWeighted(team),   tickNo, roundTime);
                 WriteIntFrame (teamName, "cyst_pressure",      AlienEcoLayers.GetCystPressure(team),      tickNo, roundTime);
+                WriteIntFrame (teamName, "shrimp_density",    AlienEcoLayers.GetShrimpDensity(team),     tickNo, roundTime);
                 WriteByteFrame(teamName, "fow_active",         FoWLayers.GetActive(team),                 tickNo, roundTime);
                 WriteByteFrame(teamName, "fow_explored",       FoWLayers.GetExplored(team),               tickNo, roundTime);
                 _frameIndex++;

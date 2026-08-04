@@ -230,5 +230,52 @@ namespace Si_RTS_AI.Perception.MapLayers
             }
             catch { }
         }
+
+        // ---- SHRIMP DENSITY -------------------------------------------------
+
+        static readonly Dictionary<Team, LayerI> _shrimpDensity = new Dictionary<Team, LayerI>();
+
+        /// <summary>
+        /// Where the shrimps actually are, per cell.
+        ///
+        /// Every other eco layer shows what the planner BELIEVES — biotics it
+        /// has discovered, pressure it has computed, ground it can build on.
+        /// None of them show where the workforce ended up, which is the thing
+        /// that has been wrong most often: 174 shrimps crowded into 15 groups
+        /// while 23 sat empty, sixty walking in one stream, hordes crossing the
+        /// map past untapped ground. All of that was inferred from log counters
+        /// after the fact. On the map it would have been obvious at a glance.
+        ///
+        /// Counts bodies, not assignments, so it shows what IS rather than what
+        /// was intended — the gap between the two is exactly the interesting
+        /// part.
+        /// </summary>
+        public static LayerI GetShrimpDensity(Team team)
+        {
+            if (!_shrimpDensity.TryGetValue(team, out var layer) || layer == null)
+            { layer = new LayerI(); _shrimpDensity[team] = layer; }
+
+            layer.Clear();
+            try
+            {
+                var units = team.Units;
+                if (units == null) return layer;
+                for (int i = 0; i < units.Count; i++)
+                {
+                    var u = units[i];
+                    if (u == null || u.ObjectInfo == null || u.IsDestroyed) continue;
+                    if ((u.ObjectInfo.DisplayName ?? "") != "Shrimp") continue;
+
+                    Vector3 p = u.transform.position;
+                    int cx = GridWorld.CellX(p.x), cz = GridWorld.CellZ(p.z);
+                    if (cx < 0 || cz < 0 || cx >= GridWorld.Width || cz >= GridWorld.Height) continue;
+                    layer.Add(cx, cz, 1);
+                }
+            }
+            catch (Exception ex)
+            { MelonLogger.Warning("[RTSA/Layers] shrimp density threw: " + ex.Message); }
+            return layer;
+        }
+
     }
 }
