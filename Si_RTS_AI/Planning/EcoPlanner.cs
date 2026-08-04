@@ -2084,7 +2084,23 @@ namespace Si_RTS_AI.Planning
             bool rateHit = state.totalShrimps >= PHASE2_MIN_SHRIMPS
                         && incomeRate >= PHASE2_MIN_INCOME_RATE;
 
-            if (!timeFallbackHit && !rateHit)
+            // PHASE 2 IS NOT A CLOCK.
+            //
+            // timeFallbackHit promoted on elapsed time plus a low shrimp count,
+            // ignoring income and cash entirely — and because the phase is
+            // sticky (first line of this method), one early trip granted full
+            // Phase 2 privileges for the rest of the round however poor the
+            // economy actually was. On NarakaCity that meant fan-out engaging
+            // against two Bio Caches and no Cysts: four matches with no real
+            // opener, "just full send noding".
+            //
+            // Time was standing in for "the base should be ready by now", which
+            // the rate test already measures directly and correctly. A base
+            // that has not hit the rate is not ready, and waiting longer does
+            // not make it ready — it just makes the fan-out unaffordable as
+            // well as premature. User 2026-08-04: "we shouldn't reference it to
+            // time anyways".
+            if (!rateHit)
             {
                 if (state.totalShrimps < PHASE2_MIN_SHRIMPS) return PlanPhase.Phase1_BaseEco;
                 if (state.cash < PHASE2_MIN_CASH) return PlanPhase.Phase1_BaseEco;
