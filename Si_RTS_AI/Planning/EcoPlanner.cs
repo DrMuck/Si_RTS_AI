@@ -3585,6 +3585,28 @@ namespace Si_RTS_AI.Planning
                 }
             }
 
+            // ONE MECHANISM OWNS PHASE 2 EXPANSION, NOT TWO.
+            //
+            // Natural branching drives expansion once the base can pay for it,
+            // but the beam kept enumerating its own Bio Cache and Node
+            // candidates and firing them alongside — so the map showed BOTH: a
+            // fan of short ribs from the new model, and the old single long
+            // chain running through the middle with nodes pushed far ahead of
+            // anything earning. Two planners with different ideas about where to
+            // grow, spending the same cash.
+            //
+            // With these withheld the beam still plans and still sequences, it
+            // simply has no expansion moves to offer while growth owns that
+            // decision. Everything else it does — the opener, Cysts, ordering,
+            // affordability — is untouched, and below the FanOutAllowed
+            // threshold it takes expansion back.
+            //
+            // The withheld path is archived at tag phase2-beam-archive and can
+            // be deleted outright once this has a round behind it.
+            if (_beamPhase == PlanPhase.Phase2_Expand && FanOutAllowed(s))
+                list.RemoveAll(c => c.kind == ActionKind.PlaceBc ||
+                                    c.kind == ActionKind.PlaceNode);
+
             return list;
         }
 
