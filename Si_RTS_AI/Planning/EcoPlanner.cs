@@ -1785,6 +1785,67 @@ namespace Si_RTS_AI.Planning
                     }
                 }
 
+                // 2b) NATURAL BRANCHING DRIVES PHASE 2 EXPANSION.
+                //
+                // Every frontier point reaches for its own nearest untapped
+                // patch, so growth happens around the whole perimeter instead
+                // of down whichever line the beam's winning sequence points at.
+                // The beam keeps the opener and keeps affordability sequencing;
+                // this only supplies WHERE, and fires through TryFireAction so
+                // dedup, cash checks and the node budget all still apply.
+                //
+                // The old scored-candidate Phase 2 path is archived at tag
+                // phase2-beam-archive: a travelling front, stranded latitude
+                // bands, and rules that only ever misbehaved in replays.
+                if (_currentPhase == PlanPhase.Phase2_Expand && FanOutAllowed(state))
+                {
+                    var pub = NaturalBranching.Published;
+                    for (int i = 0; i < pub.Count; i++)
+                    {
+                        Vector3 to = pub[i].to;
+
+                        if (IsPatchBcReachable(to, state))
+                        {
+                            TryFireAction(new Candidate
+                            {
+                                kind = ActionKind.PlaceBc, target = to,
+                                cost = EcoSimulator.BC_COST, patchIdx = -1,
+                                frontRef = to,
+                            });
+                            continue;
+                        }
+
+                        // Not in reach yet — step one Node toward it from
+                        // whatever we own that is nearest.
+                        Vector3 anchor = state.nestPos; float bestSq = float.MaxValue;
+                        void consider(Vector3 q)
+                        {
+                            float dx = q.x - to.x, dz = q.z - to.z;
+                            float d2 = dx * dx + dz * dz;
+                            if (d2 < bestSq) { bestSq = d2; anchor = q; }
+                        }
+                        if (state.nestPos != Vector3.zero) consider(state.nestPos);
+                        for (int b = 0; b < state.bcs.Count; b++)   if (state.bcs[b].finished) consider(state.bcs[b].pos);
+                        for (int n2 = 0; n2 < state.nodes.Count; n2++) consider(state.nodes[n2].pos);
+                        if (bestSq == float.MaxValue) continue;
+
+                        float len = Mathf.Sqrt(bestSq);
+                        if (len < 1f) continue;
+                        float hop = EcoSimulator.NODE_REACH_M * 0.75f;
+                        Vector3 step = new Vector3(
+                            anchor.x + (to.x - anchor.x) * (hop / len),
+                            anchor.y,
+                            anchor.z + (to.z - anchor.z) * (hop / len));
+
+                        TryFireAction(new Candidate
+                        {
+                            kind = ActionKind.PlaceNode, target = step,
+                            cost = EcoSimulator.NODE_COST, patchIdx = -1,
+                            frontRef = to,
+                        });
+                    }
+                }
+
                 // 3) Beam-wait escape hatch. Whenever nothing fired — typically
                 //    the beam's winner starts with Noops because it wants to
                 //    WAIT for an in-progress structure to finish and unlock a

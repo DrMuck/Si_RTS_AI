@@ -35,7 +35,16 @@ namespace Si_RTS_AI.Planning
     /// </summary>
     internal static class NaturalBranching
     {
-        const float REPORT_S = 30f;
+        // Runs every plan cycle now that the planner ACTS on this, not only
+        // logs it. The report itself is throttled separately.
+        const float REPORT_S = 0f;
+        const float LOG_EVERY_S = 30f;
+        static float _lastLoggedAt;
+
+        /// <summary>The current branch set, published for the planner to fire.
+        /// Each entry is a patch to reach for and whether it wants a Lesser.</summary>
+        internal static readonly List<(Vector3 to, bool wantCyst)> Published =
+            new List<(Vector3, bool)>(32);
         const int   REPORT_MAX = 6;
 
         static float _lastReportAt;
@@ -191,6 +200,15 @@ namespace Si_RTS_AI.Planning
                 }
 
                 branches.Sort((a, b) => a.Dist.CompareTo(b.Dist));
+
+                Published.Clear();
+                for (int i = 0; i < branches.Count; i++)
+                    Published.Add((branches[i].To, branches[i].WantCyst));
+
+                // Logging stays at its own cadence — acting every cycle does
+                // not mean reporting every cycle.
+                if (Time.time - _lastLoggedAt < LOG_EVERY_S) return;
+                _lastLoggedAt = Time.time;
 
                 var sb = new System.Text.StringBuilder("[BRANCH/SHADOW] sources=");
                 sb.Append(sources.Count).Append(" untapped=").Append(targets.Count)
