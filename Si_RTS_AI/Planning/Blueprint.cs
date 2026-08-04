@@ -377,6 +377,9 @@ namespace Si_RTS_AI.Planning
         /// </summary>
         static void CystPass(EcoState s)
         {
+            // Who comes free, when, and where they can be by then.
+            try { SupplyForecast.Rebuild(s); } catch { }
+
             float freeAgentM = EcoSimulator.SHRIMP_SPEED * ShrimpGroupPlanner.FreeAgentMaxWalkS;
             float walkReachM = Mathf.Max(freeAgentM, MapProfile.P90PatchM * BlueprintConfig.RelocationSpacings);
             float coverM     = EcoPlannerConfig.Phase2CystCoverageRadiusM;
@@ -414,6 +417,27 @@ namespace Si_RTS_AI.Planning
                 try { staffed = ShrimpGroupPlanner.StaffedFraction(at); } catch { }
                 bool reachableOnFoot = nearestCyst <= walkReachM;
                 if (reachableOnFoot && staffed >= BlueprintConfig.StaffedEnough) continue;
+
+                // WOULD A PRODUCER GET THERE FIRST?
+                //
+                // The comparison prices itself. A Lesser Cyst delivers a full
+                // group after its own build plus one shrimp per build interval;
+                // migration delivers whoever comes free when a patch runs out,
+                // plus the walk. If migration wins that race, the 1,500 buys
+                // nothing but a queue against the shrimp cap.
+                //
+                // No new constant: the deadline IS what a Cyst would take.
+                int   need     = Mathf.Max(1, ShrimpGroupPlanner.TypicalGroupCapacity);
+                float cystTime = EcoSimulator.CYST_BUILD_S + need * EcoSimulator.SHRIMP_BUILD_S;
+                int   arriving = SupplyForecast.ArrivingBy(at, cystTime);
+                if (arriving >= need)
+                {
+                    float soonest = SupplyForecast.SoonestArrivalS(at);
+                    MelonLogger.Msg($"[BLUEPRINT] no Cyst at ({at.x:F0},{at.z:F0}) — " +
+                                    $"{arriving} shrimps free within {cystTime:F0}s " +
+                                    $"(first in {soonest:F0}s), a Cyst needs {cystTime:F0}s for {need}");
+                    continue;
+                }
 
                 planned.Add(at);
                 added++;

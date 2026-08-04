@@ -289,18 +289,26 @@ namespace Si_RTS_AI.Planning
 
                 if (needNew)
                 {
-                    if (!NextWaypoint(sc, nest, unexplored, explored, out var wp))
+                    if (!NextWaypoint(sc, nest, unexplored, explored, out var wp)
+                        && !FrontierWaypoint(sc, pos, unexplored, explored, out wp))
                     {
-                        // Nothing left to reveal. Release the unit — otherwise
-                        // our OnMoveOrder prefix would keep vanilla from ever
-                        // moving it again and it would stand there for the rest
-                        // of the round.
+                        // AN EXHAUSTED ARM IS NOT AN EXPLORED MAP.
+                        //
+                        // This used to release on the arm alone, and the round
+                        // of 2026-08-04 shows what that costs: 58 Crabs built,
+                        // two alive as scouts, "star exhausted — released" every
+                        // twenty seconds, and exploration stuck at 58% with 38
+                        // patches still dark. Every ring along a short arm was
+                        // already known, so each newly built scout was recruited
+                        // and released within the same second, forever.
+                        //
+                        // Release now needs BOTH tests to fail: the arm has
+                        // nothing left AND there is no dark ground anywhere.
                         _scoutSet.Remove(u);
                         _released.Add(u);   // never re-conscript — see _released
                         _scouts.RemoveAt(i);
                         i--;
-                        ReindexArms();
-                        MelonLogger.Msg("[SCOUT] star exhausted — released scout back to vanilla control");
+                        MelonLogger.Msg("[SCOUT] map revealed — released scout back to vanilla control");
                         continue;
                     }
                     sc.Waypoint = wp;
@@ -334,10 +342,20 @@ namespace Si_RTS_AI.Planning
         // degrees to each other and leave the whole other half of the map dark
         // until the roster filled up.
         /// <summary>
-        /// How many arms the star has — simply the live scout count, so the
-        /// headings always divide 360 degrees evenly among whoever is alive.
+        /// How many arms the star has. FIXED for the round, not the live scout
+        /// count.
+        ///
+        /// Sizing it by the roster meant the star had two arms when two scouts
+        /// were alive — and worse, every arrival or loss re-divided the circle,
+        /// so a scout's heading CHANGED underneath it. That is DrMuck's
+        /// observation on 2026-08-05 exactly: units turned around before
+        /// reaching the west border. They were not turning around, they were
+        /// being re-aimed by somebody else's death.
+        ///
+        /// A fixed star means an arm is a place on the map, not a share of the
+        /// roster, and a scout that owns one keeps walking it.
         /// </summary>
-        static int ArmCount() => Mathf.Max(1, _scouts.Count);
+        static int ArmCount() => Mathf.Max(4, MaxScouts);
 
         /// <summary>
         /// Arm index = position in the roster, reassigned whenever the roster
@@ -351,14 +369,38 @@ namespace Si_RTS_AI.Planning
         /// roster actually became — and once the roster passed the arm count,
         /// the search fell through and handed out duplicate arm 0.
         ///
-        /// Re-indexing costs nothing and is self-correcting: lose half the
-        /// scouts and the survivors immediately re-spread over the full circle.
-        /// A scout keeps walking its current waypoint; the new heading only
-        /// applies when it picks the next one.
+        /// SUPERSEDED 2026-08-05 — an arm is now claimed once and held for the
+        /// unit's life. Re-spreading the survivors sounded self-correcting and
+        /// was not: a roster that changes every time a Crab is built or lost
+        /// re-aims every scout still walking, so nobody ever arrives anywhere.
         /// </summary>
-        static void ReindexArms()
+        static void ReindexArms() { }
+
+        /// <summary>
+        /// Claim the free arm that sits furthest from every arm already taken.
+        /// With a fixed 20-arm star and three scouts that puts them ~120 apart
+        /// rather than three arms deep in one quadrant, and it never disturbs a
+        /// scout that is already walking.
+        /// </summary>
+        static int ClaimArm()
         {
-            for (int i = 0; i < _scouts.Count; i++) _scouts[i].Arm = i;
+            int arms = ArmCount();
+            int best = 0; float bestGap = -1f;
+            for (int a = 0; a < arms; a++)
+            {
+                bool taken = false;
+                float gap = float.MaxValue;
+                for (int i = 0; i < _scouts.Count; i++)
+                {
+                    int d = Mathf.Abs(_scouts[i].Arm - a);
+                    if (d > arms / 2) d = arms - d;      // shortest way round
+                    if (d == 0) { taken = true; break; }
+                    if (d < gap) gap = d;
+                }
+                if (taken) continue;
+                if (gap > bestGap) { bestGap = gap; best = a; }
+            }
+            return best;
         }
 
         static void Recruit(Team team)
@@ -379,11 +421,11 @@ namespace Si_RTS_AI.Planning
                     if (u == null || u.ObjectInfo == null || u.IsDestroyed) continue;
                     if (!SCOUT_UNIT_NAMES.Contains(u.ObjectInfo.DisplayName ?? "")) continue;
                     if (_scoutSet.Contains(u) || _released.Contains(u)) continue;
-                    _scouts.Add(new Scout { Unit = u, Ring = 0, Lap = 0 });
+                    int arm = ClaimArm();
+                    _scouts.Add(new Scout { Unit = u, Ring = 0, Lap = 0, Arm = arm });
                     _scoutSet.Add(u);
-                    ReindexArms();
                     MelonLogger.Msg($"[SCOUT] recruited {u.ObjectInfo.DisplayName} " +
-                                    $"arm={_scouts.Count - 1}/{ArmCount()} (scouts={_scouts.Count}, ceiling={MaxScouts})");
+                                    $"arm={arm}/{ArmCount()} (scouts={_scouts.Count}, ceiling={MaxScouts})");
                 }
             }
             catch { }
@@ -526,6 +568,58 @@ namespace Si_RTS_AI.Planning
                 return true;
             }
             return false;   // this arm is fully revealed — release the scout
+        }
+
+        /// <summary>
+        /// THE STAR IS THE SHAPE, NOT THE LIMIT.
+        ///
+        /// When a scout's arm holds nothing new, the answer is the nearest dark
+        /// ground, not a discharge. Undiscovered biotics come first — they are
+        /// what the economy is actually waiting on — and bare unexplored terrain
+        /// second, sampled coarsely off the fog layer since a scout reveals a
+        /// disk around itself and does not need the exact cell.
+        /// </summary>
+        static bool FrontierWaypoint(Scout sc, Vector3 from, List<Vector3> unexplored,
+                                     Perception.MapLayers.LayerB explored, out Vector3 wp)
+        {
+            wp = Vector3.zero;
+
+            int best = -1; float bestSq = float.MaxValue;
+            for (int i = 0; i < unexplored.Count; i++)
+            {
+                float dx = unexplored[i].x - from.x, dz = unexplored[i].z - from.z;
+                float d = dx * dx + dz * dz;
+                if (d < bestSq && !TooCloseToOtherScout(sc, unexplored[i])) { bestSq = d; best = i; }
+            }
+            if (best >= 0)
+            {
+                wp = unexplored[best];
+                unexplored.RemoveAt(best);
+                return true;
+            }
+
+            if (explored == null) return false;
+
+            // Coarse sweep of the fog layer for the nearest cell nobody has
+            // seen. Stride keeps this cheap; a scout's vision covers far more
+            // ground than the gap it skips.
+            const int STRIDE = 4;
+            var g = Perception.MapLayers.GridWorld.CellSize;
+            float bestCellSq = float.MaxValue;
+            for (int cz = 0; cz < Perception.MapLayers.GridWorld.Height; cz += STRIDE)
+            for (int cx = 0; cx < Perception.MapLayers.GridWorld.Width;  cx += STRIDE)
+            {
+                if (explored.IsSet(cx, cz)) continue;
+                float wx = Perception.MapLayers.GridWorld.OriginX + (cx + 0.5f) * g;
+                float wz = Perception.MapLayers.GridWorld.OriginZ + (cz + 0.5f) * g;
+                float dx = wx - from.x, dz = wz - from.z;
+                float d = dx * dx + dz * dz;
+                if (d >= bestCellSq) continue;
+                var p = new Vector3(wx, from.y, wz);
+                if (TooCloseToOtherScout(sc, p)) continue;
+                bestCellSq = d; wp = p;
+            }
+            return bestCellSq < float.MaxValue;
         }
 
         /// <summary>
