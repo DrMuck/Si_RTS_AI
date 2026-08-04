@@ -3641,28 +3641,19 @@ namespace Si_RTS_AI.Planning
                 }
             }
 
-            // ONE MECHANISM OWNS PHASE 2 EXPANSION, NOT TWO.
+            // v0.14.3 removed PlaceBc/PlaceNode here so growth would own Phase 2
+            // expansion outright. It silenced BOTH: measured across five rounds,
+            // BRANCH reports fell from 30 to 0 and nodes built from 152 to
+            // exactly 6 — the opener and nothing more. With no candidates left
+            // the beam's tick returns before it reaches the natural-branching
+            // call below it, so withholding the beam's expansion also withheld
+            // its replacement.
             //
-            // Natural branching drives expansion once the base can pay for it,
-            // but the beam kept enumerating its own Bio Cache and Node
-            // candidates and firing them alongside — so the map showed BOTH: a
-            // fan of short ribs from the new model, and the old single long
-            // chain running through the middle with nodes pushed far ahead of
-            // anything earning. Two planners with different ideas about where to
-            // grow, spending the same cash.
-            //
-            // With these withheld the beam still plans and still sequences, it
-            // simply has no expansion moves to offer while growth owns that
-            // decision. Everything else it does — the opener, Cysts, ordering,
-            // affordability — is untouched, and below the FanOutAllowed
-            // threshold it takes expansion back.
-            //
-            // The withheld path is archived at tag phase2-beam-archive and can
-            // be deleted outright once this has a round behind it.
-            if (_beamPhase == PlanPhase.Phase2_Expand && FanOutAllowed(s))
-                list.RemoveAll(c => c.kind == ActionKind.PlaceBc ||
-                                    c.kind == ActionKind.PlaceNode);
-
+            // Restored. The two running together is what produced the fast round
+            // the user saw on v0.14.2. Separating them is still right, but it has
+            // to be done where growth does not depend on the beam having work —
+            // which means moving the call out from under the planning path, not
+            // starving the list.
             return list;
         }
 
