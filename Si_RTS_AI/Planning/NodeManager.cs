@@ -280,6 +280,10 @@ namespace Si_RTS_AI.Planning
         /// forbidding the scatter that left seven nodes across four unfinished
         /// bridges.
         /// </summary>
+        /// <summary>Whether to propose loop closures at all. Off: see the note
+        /// at the bottom of the loop scan. Repair is unaffected.</summary>
+        const bool LOOPS_ENABLED = false;
+
         const int MAX_CONCURRENT_LOOPS = 2;
         const int   MIN_HOPS_SAVED  = 6;
 
@@ -426,7 +430,24 @@ namespace Si_RTS_AI.Planning
                   .Append(',').Append(lost.z.ToString("F0")).Append(')')
                   .Append(" gap=").Append((int)rgap).Append("m nodes=").Append(rnodes);
             }
-            if (bi < 0) { _loopAt = -1f; return; }
+            // LOOPING IS OFF.
+            //
+            // It never earned its place. Across this week's rounds it produced
+            // only single-node closures around spawn while singlePointsOfFailure
+            // sat at 102, it was serialised to one commitment at a time, and no
+            // ring was ever observed closing. Early loops are the worst of it:
+            // nodes spent on redundancy a two-Bio-Cache base has no use for,
+            // competing for cash with the expansion that would actually earn.
+            //
+            // REPAIR stays live — a branch cut off from the Nest is decaying and
+            // must be reconnected, which is a different question from adding a
+            // second route to something already connected.
+            //
+            // Kept as a switch rather than deleted: redundancy between MAJOR
+            // BRANCHES is still wanted, but as part of the trunk/rib model where
+            // there are named trunks to connect, not as an all-pairs scan over
+            // every node on the map.
+            if (bi < 0 || !LOOPS_ENABLED) { _loopAt = -1f; return; }
 
             var A = g[pairs[bi].a].Pos; var B = g[pairs[bi].b].Pos;
             _loopFrom = A; _loopTo = B; _loopNodes = bnodes; _loopAt = Time.time;

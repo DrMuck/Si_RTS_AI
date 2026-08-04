@@ -93,7 +93,29 @@ namespace Si_RTS_AI.Planning
                 var taken = new bool[targets.Count];
                 var branches = new List<Branch>(16);
                 for (int si = 0; si < sources.Count; si++)
+                for (int claim = 0; claim < BRANCHES_PER_SOURCE; claim++)
                 {
+                    // SEVERAL TAPS OFF ONE POINT, AND SIDEWAYS BY PREFERENCE.
+                    //
+                    // One claim per source meant a trunk node with biotics on
+                    // both sides tapped one and ignored the other, so growth
+                    // stayed a line with occasional stubs. Side taps
+                    // perpendicular to the trunk are the shape we actually
+                    // want: the trunk carries reach outward, the ribs collect
+                    // what it passes, and between them they cover ground
+                    // rather than cross it.
+                    //
+                    // "Outward" for a source is its bearing from the Nest, so
+                    // perpendicular means across that bearing. A rib is scored
+                    // as if it were nearer than it is, which lets it beat a
+                    // slightly closer patch that lies straight ahead — where
+                    // the trunk is going anyway and will reach on its own.
+                    Vector3 outward = sources[si] - s.nestPos;
+                    float ol = Mathf.Sqrt(outward.x * outward.x + outward.z * outward.z);
+                    bool haveOutward = ol > 1f;
+                    float ox = haveOutward ? outward.x / ol : 0f;
+                    float oz = haveOutward ? outward.z / ol : 0f;
+
                     int best = -1; float bestD = float.MaxValue;
                     for (int ti = 0; ti < targets.Count; ti++)
                     {
@@ -101,10 +123,20 @@ namespace Si_RTS_AI.Planning
                         float dx = targets[ti].x - sources[si].x;
                         float dz = targets[ti].z - sources[si].z;
                         float d = Mathf.Sqrt(dx * dx + dz * dz);
-                        if (d < bestD) { bestD = d; best = ti; }
+                        if (d > MAX_TAP_M) continue;      // not this source's business
+
+                        float eff = d;
+                        if (haveOutward && d > 1f)
+                        {
+                            // 0 straight ahead, 1 straight sideways.
+                            float along = Mathf.Abs((dx * ox + dz * oz) / d);
+                            eff = d * Mathf.Lerp(1f, PERPENDICULAR_PREFERENCE, 1f - along);
+                        }
+                        if (eff < bestD) { bestD = eff; best = ti; }
                     }
                     if (best < 0) continue;
                     taken[best] = true;
+                    bestD = Mathf.Sqrt(SqDistXZ(targets[best], sources[si]));
 
                     // THE ONE REAL DECISION: does this site need a producer?
                     //
@@ -170,5 +202,26 @@ namespace Si_RTS_AI.Planning
         /// <summary>Fraction of a site's capacity that migration must already
         /// cover before a Lesser Cyst is considered redundant there.</summary>
         const float STAFFED_ENOUGH = 0.8f;
+
+        /// <summary>Taps one frontier point may claim in a pass. More than one
+        /// so a trunk node with biotics either side collects both.</summary>
+        const int BRANCHES_PER_SOURCE = 3;
+
+        /// <summary>How far a frontier point will reach for a patch. Beyond
+        /// this it is somebody else's, and letting one source claim distant
+        /// ground is what turns growth back into a race down a single line.</summary>
+        const float MAX_TAP_M = 900f;
+
+        /// <summary>Effective-distance multiplier for a patch lying straight
+        /// out along the trunk's own bearing, against one lying across it. Below
+        /// 1 for the perpendicular case, so ribs outbid patches ahead of the
+        /// trunk — which the trunk reaches anyway.</summary>
+        const float PERPENDICULAR_PREFERENCE = 0.6f;
+
+        static float SqDistXZ(Vector3 a, Vector3 b)
+        {
+            float dx = a.x - b.x, dz = a.z - b.z;
+            return dx * dx + dz * dz;
+        }
     }
 }
