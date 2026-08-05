@@ -64,6 +64,12 @@ namespace Si_RTS_AI.Faction
         /// what the ground can feed, which is what generates the migration.
         /// </summary>
         const float SUSTAINABLE_FRACTION = 0.90f;
+
+        /// <summary>Bank above which unspent cash is a worse problem than a
+        /// surplus worker. Roughly a Cyst plus the Bio Cache and chain that
+        /// would go with it — if that much is idle, the economy is not short of
+        /// anything except workers.</summary>
+        const int   SURPLUS_FOR_MORE_WORKERS = 8000;
         // Money management: each queued Shrimp reserves its cost. User 2026-07-07
         // asked to shorten to 1-2 max to free cash for tech / other placements.
         // Went to 1: at 20 Cysts that frees ~1500 cash (75 × 20) — enough for a
@@ -207,11 +213,28 @@ namespace Si_RTS_AI.Faction
             // says what the answer is early — around 18 per biotics — so use it
             // as a FLOOR while Phase 1 lasts, and let the map model bind only
             // when it asks for more. Phase 2 keeps every brake it had.
-            if (!Planning.EcoPlanner.CurrentPhaseIsExpand)
-            {
-                if (bcs.Count > 0)
-                    effectiveCap = Math.Min(SHRIMP_HARD_CAP, Math.Max(effectiveCap, bcs.Count * PER_BC_CAP));
-            }
+            // IDLE CASH MEANS THE CEILING IS WRONG.
+            //
+            // Phase 1 alone was not enough. Same round, one version later:
+            // shrimps sat at exactly 33 from t=325s to t=446s — two minutes
+            // flat, four producers running, nothing queued — because Phase 2
+            // had begun and the map-capacity model took over again at a number
+            // barely above where the ramp had reached. DrMuck: "number of
+            // workers stall... why do we cap early shrimp production so much.
+            // Even for opener with 18 shrimp per cyst would be 72 shrimp for
+            // the 4 lessers."
+            //
+            // The capacity model is a statement about what the ground can feed
+            // SUSTAINABLY. It is a good brake on overproduction and a bad brake
+            // on a bank that has nowhere else to go: cash sitting unspent is
+            // strictly worse than a worker who might later have to walk. So the
+            // per-Bio-Cache allowance also applies whenever there is real
+            // surplus, and it stops applying the moment that surplus is spent —
+            // which makes it self-limiting rather than another constant.
+            bool idleCash = false;
+            try { idleCash = team.TotalResources >= SURPLUS_FOR_MORE_WORKERS; } catch { }
+            if (bcs.Count > 0 && (!Planning.EcoPlanner.CurrentPhaseIsExpand || idleCash))
+                effectiveCap = Math.Min(SHRIMP_HARD_CAP, Math.Max(effectiveCap, bcs.Count * PER_BC_CAP));
 
             // KEEP HEADROOM FOR EXPANSIONS THAT DO NOT EXIST YET.
             //

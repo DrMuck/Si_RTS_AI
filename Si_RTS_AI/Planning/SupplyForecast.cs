@@ -54,6 +54,7 @@ namespace Si_RTS_AI.Planning
             var ratePerPatch   = new Dictionary<int, float>();
             var bcPatch        = new Dictionary<int, int>();
             var bcRate         = new Dictionary<int, float>();
+            var queuedBehind   = new Dictionary<int, float>();
 
             for (int i = 0; i < s.bcs.Count; i++)
             {
@@ -76,6 +77,28 @@ namespace Si_RTS_AI.Planning
                 bcRate[i]  = ips;
                 ratePerPatch.TryGetValue(p, out float acc);
                 ratePerPatch[p] = acc + ips;
+
+                // A GROUP IS NOT FREE WHEN ITS PATCH RUNS OUT — IT IS FREE WHEN
+                // ITS WORK RUNS OUT.
+                //
+                // The release time was the depletion of the ONE patch nearest
+                // the Bio Cache, so a group with two more patches behind it was
+                // predicted free the moment the first ran dry. Those forecasts
+                // then talked the planner out of producers it needed. DrMuck,
+                // 2026-08-05: "a cyst at (1964,2187) would be helpful there —
+                // the previous shrimps still have 2 biocaches to tap in before."
+                //
+                // Everything this Bio Cache is nearest to is work it will do
+                // before anyone walks anywhere, so the queue behind the current
+                // patch counts toward the release time.
+                float queued = 0f;
+                for (int q = 0; q < s.patches.Count; q++)
+                {
+                    if (s.patches[q].remaining <= 0) continue;
+                    if (EcoSimulator.ClosestFinishedBcIdxPublic(s, s.patches[q].pos) != i) continue;
+                    if (q != p) queued += s.patches[q].remaining;
+                }
+                queuedBehind[i] = queued;
             }
 
             foreach (var kv in bcPatch)
@@ -84,7 +107,12 @@ namespace Si_RTS_AI.Planning
                 s.shrimpsPerBc.TryGetValue(bc, out int n);
                 float total = ratePerPatch[p];
                 if (total <= 0.01f) continue;
+                // Current patch drains at the summed rate of everyone working
+                // it; the queue behind is this group's own work, at its own rate.
                 float eta = s.patches[p].remaining / total;
+                queuedBehind.TryGetValue(bc, out float behind);
+                bcRate.TryGetValue(bc, out float mine);
+                if (behind > 0f && mine > 0.01f) eta += behind / mine;
                 Releases.Add(new Release { at = s.bcs[bc].pos, shrimps = n, etaS = eta });
             }
         }
