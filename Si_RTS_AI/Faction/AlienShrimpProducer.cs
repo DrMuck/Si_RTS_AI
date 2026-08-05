@@ -75,7 +75,19 @@ namespace Si_RTS_AI.Faction
         // Went to 1: at 20 Cysts that frees ~1500 cash (75 × 20) — enough for a
         // Cortex. Shrimps still spawn plenty fast because every Cyst refills its
         // queue slot immediately after a shrimp pops.
-        const float CYST_QUEUE_MAX = 1;
+        /// <summary>
+        /// How deep to keep each Cyst's queue.
+        ///
+        /// One meant the Cyst went IDLE the instant a shrimp popped and stayed
+        /// idle until our next tick — we run off the game AI tick at roughly
+        /// three seconds against a fifteen-second shrimp, so that is up to a
+        /// fifth of every producer's output given away for a 160-cash saving.
+        /// DrMuck asked the right question: "are the opener lesser cyst
+        /// producing shrimps without a time gap? I mean one cyst produces 4
+        /// shrimps per minute." With a depth of one, no — with two, the next
+        /// shrimp is already queued when the current one finishes.
+        /// </summary>
+        const float CYST_QUEUE_MAX = 2;
 
         // Called every AI tick. Cache _shrimpCd lazily.
         static ConstructionData? _shrimpCd;
@@ -283,7 +295,12 @@ namespace Si_RTS_AI.Faction
                 }
             }
 
-            if (liveTotal + queuedTotal >= effectiveCap) return;
+            if (liveTotal + queuedTotal >= effectiveCap)
+            {
+                _blockedTeamCap++;
+                MaybeReport(liveTotal, queuedTotal, effectiveCap, 0);
+                return;
+            }
 
             // THE OPENING'S OWN CYSTS COME BEFORE MARGINAL SHRIMPS.
             //
@@ -336,12 +353,14 @@ namespace Si_RTS_AI.Faction
                 });
             }
 
+            int cystsSeen = 0;
             for (int ii = 0; ii < iterOrder.Count; ii++)
             {
                 int i = iterOrder[ii];
                 var s = structs[i];
                 if (s == null || s.ObjectInfo == null || s.IsDestroyed) continue;
                 if (s.ConstructionOptions == null || !s.ConstructionOptions.Contains(_shrimpCd)) continue;
+                cystsSeen++;
 
                 // Nearest BC to this Cyst (unbounded distance — every Cyst
                 // has SOME closest BC; used to decide which BC's cap this
@@ -368,7 +387,7 @@ namespace Si_RTS_AI.Faction
                 try { cap = Math.Min(PER_BC_CAP, Planning.ShrimpGroupPlanner.CapacityForNearestBc(bc.Pos)); } catch { }
                 if (bc.NearbyLive + bc.QueuedForHere >= cap)
                 {
-                    Skipped++;
+                    Skipped++; _blockedBcCap++;
                     continue;
                 }
 
@@ -377,7 +396,7 @@ namespace Si_RTS_AI.Faction
                 try { queueDepth = s.ProductionQueue?.Count ?? 0; } catch { }
                 if (queueDepth >= CYST_QUEUE_MAX)
                 {
-                    Skipped++;
+                    Skipped++; _busy++;
                     continue;
                 }
 
@@ -392,12 +411,48 @@ namespace Si_RTS_AI.Faction
                     }
                     else
                     {
-                        Skipped++;
+                        Skipped++; _refused++;
                     }
                 }
                 catch (Exception ex) { MelonLogger.Warning("[RTSA/P32] Cyst.Construct threw: " + ex.Message); }
             }
+
+            MaybeReport(liveTotal, queuedTotal, effectiveCap, cystsSeen);
         }
+
+        // ---- Is production continuous? --------------------------------------
+        //
+        // Four shrimps per Cyst per minute is the ceiling. Anything below it is
+        // either a CEILING (team cap, per-Bio-Cache cap) or a GAP (the producer
+        // was free and we did not fill it), and those want opposite fixes — so
+        // count them apart rather than inferring from the shrimp curve.
+        static int _blockedTeamCap, _blockedBcCap, _busy, _refused;
+        static float _lastReportAt;
+        static int _shrimpsAtLastReport = -1;
+
+        static void MaybeReport(int live, int queued, int cap, int cysts)
+        {
+            float now = Time.time;
+            if (now - _lastReportAt < 30f) return;
+            float dt = now - _lastReportAt;
+            _lastReportAt = now;
+            if (_shrimpsAtLastReport < 0) { _shrimpsAtLastReport = live; ResetCounters(); return; }
+
+            int gained = live - _shrimpsAtLastReport;
+            _shrimpsAtLastReport = live;
+            float perMin = dt > 0f ? gained * 60f / dt : 0f;
+            float ceiling = cysts * 60f / Mathf.Max(1f, Planning.EcoSimulator.SHRIMP_BUILD_S);
+
+            MelonLogger.Msg($"[SHRIMP/PROD] {perMin:F1}/min against {ceiling:F1}/min from {cysts} producers " +
+                            $"({(ceiling > 0f ? perMin / ceiling * 100f : 0f):F0}%) — " +
+                            $"live={live} queued={queued} cap={cap} | " +
+                            $"blocked: teamCap={_blockedTeamCap} bcCap={_blockedBcCap} " +
+                            $"alreadyBusy={_busy} refused={_refused}");
+            ResetCounters();
+        }
+
+        static void ResetCounters()
+        { _blockedTeamCap = _blockedBcCap = _busy = _refused = 0; }
 
         static void EnsureShrimpCd(Team team)
         {
