@@ -70,6 +70,48 @@ namespace Si_RTS_AI.Planning
         internal static bool  BehindSchedule;
         internal static float Duty = 0.5f;
 
+        // ---- Yield: what a worker is actually worth right now ---------------
+        //
+        // WORKERS ARE NOT THE OBJECTIVE. Income is, and a worker only converts
+        // into income while there is short-cycle ground for it to work. Two
+        // things break that link and they pull in opposite directions from a
+        // worker count: patches drain, so the same shrimps walk further for
+        // each load; and workers added past a patch's useful density crowd it.
+        //
+        // Measured on IndustrialQuarter 2026-08-05, income per worker per
+        // second:
+        //
+        //     min 10   1.56      min 20   3.48   <- peak
+        //     min 15   2.92      min 25   3.12
+        //                        min 33   2.24
+        //
+        // Workers went 129 -> 168 across that decline and income still FELL,
+        // from 449/s to 377/s. The economy was telling us its ground was
+        // draining ten minutes before the worker count noticed, and nothing
+        // was listening.
+        //
+        // So yield is the control signal that decides WHICH lever to pull:
+        // rising or steady, more workers pay and producers are the answer;
+        // falling, more workers are being poured into ground that cannot feed
+        // them and the answer is more ground. This also guards the trajectory
+        // above from its own failure mode — chasing a worker count onto
+        // crowded patches is exactly how you lower income while hitting target.
+        internal static float Yield, YieldPeak;
+        internal static bool  YieldFalling;
+
+        /// <summary>How far below its best yield may drift before the ground is
+        /// judged to be draining. Wide enough not to trip on the noise of a
+        /// depot finishing or a group relocating.</summary>
+        const float YIELD_DECAY_TRIGGER = 0.20f;
+
+        /// <summary>Before this the sample is meaningless — a handful of
+        /// starter shrimps on the richest patch on the map produce a yield the
+        /// rest of the round can never match, and every later reading would
+        /// look like decay against it.</summary>
+        const float YIELD_WARMUP_S = 300f;
+        const int   YIELD_MIN_WORKERS = 25;
+
+        static float _lastCum, _lastCumAt;
         static float _lastLogAt;
 
         internal static void ResetForNewRound()
@@ -77,6 +119,9 @@ namespace Si_RTS_AI.Planning
             Have = Target = ProducersNeeded = 0;
             BehindSchedule = false;
             Duty = 0.5f;
+            Yield = YieldPeak = 0f;
+            YieldFalling = false;
+            _lastCum = _lastCumAt = 0f;
             _lastLogAt = 0f;
         }
 
@@ -104,14 +149,38 @@ namespace Si_RTS_AI.Planning
         /// <summary>
         /// Called once per plan cycle with the live counts.
         /// </summary>
-        internal static void Update(float roundS, int workers, int producers)
+        internal static void Update(float roundS, int workers, int producers, int cumulativeIncome)
         {
             Have = workers;
             Target = TargetAt(roundS);
             BehindSchedule = Have < Target;
 
+            // Income over the plan interval, per worker. Derived from the
+            // cumulative total rather than the round average, which is far too
+            // slow to show a decline.
+            float now = Time.time;
+            if (_lastCumAt > 0f && now - _lastCumAt >= 1f && workers > 0)
+            {
+                float rate = (cumulativeIncome - _lastCum) / (now - _lastCumAt);
+                float sample = rate / workers;
+                if (sample >= 0f)
+                    Yield = Yield <= 0f ? sample : Yield * 0.8f + sample * 0.2f;
+            }
+            if (now - _lastCumAt >= 1f) { _lastCum = cumulativeIncome; _lastCumAt = now; }
+
+            if (roundS >= YIELD_WARMUP_S && Have >= YIELD_MIN_WORKERS)
+            {
+                if (Yield > YieldPeak) YieldPeak = Yield;
+                YieldFalling = YieldPeak > 0f && Yield < YieldPeak * (1f - YIELD_DECAY_TRIGGER);
+            }
+
             int deficit = Mathf.Max(0, Target - Have);
-            if (deficit <= 0)
+            // MORE WORKERS ONLY WHEN A WORKER STILL EARNS.
+            //
+            // Behind the curve AND yield falling means the shortfall is ground,
+            // not producers — adding shrimps there buys crowding. Expansion
+            // picks the deficit up instead; see the sites-ahead floor.
+            if (deficit <= 0 || YieldFalling)
             {
                 ProducersNeeded = 0;
             }
@@ -137,7 +206,9 @@ namespace Si_RTS_AI.Planning
                 MelonLogger.Msg($"[WORKERS] t={roundS:F0}s have={Have} target={Target} " +
                                 $"({(BehindSchedule ? "behind" : "on track")}) duty={Duty:F2} " +
                                 $"producers={producers} wants={ProducersNeeded} " +
-                                $"(reference {TargetAtTenMin} by 10min)");
+                                $"yield={Yield:F2}/peak {YieldPeak:F2}" +
+                                (YieldFalling ? " FALLING - take ground, not workers" : "") +
+                                $" (reference {TargetAtTenMin} by 10min)");
             }
         }
     }

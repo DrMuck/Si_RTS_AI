@@ -29,7 +29,11 @@ SINCE = sys.argv[1] if len(sys.argv) > 1 else "2026-08-04T20"
 SURFACE, INK, INK_2, INK_MUTED = "#fcfcfb", "#0b0b0b", "#52514e", "#8a8983"
 INCOME, WORKERS = "#2a78d6", "#eb6834"      # categorical slots 1 and 2
 GOOD, CRITICAL, GRID = "#0ca30c", "#d03b3b", "#e6e5e1"
-TARGET_T, TARGET_V, ZOOM_MIN = 600, 100_000, 15
+TARGET_T, TARGET_V = 600, 100_000
+# Full round. The benchmark checkpoints stop at 1800s, so the tail of the income
+# curve is drawn from the round's final cumulative total at elapsedS — which is
+# what makes the post-10-minute tilt visible at all.
+ZOOM_MIN = 35
 
 
 def stamp(name):
@@ -70,7 +74,8 @@ for b in bench:
     t0 = float(rows[0]["t_sec"])
     wt = [(float(r["t_sec"]) - t0) / 60 for r in rows]
     wv = [int(r["shrimps"]) for r in rows]
-    matched.append(dict(map=b["map"], ts=b["ts"], cps=b["checkpoints"], wt=wt, wv=wv))
+    matched.append(dict(map=b["map"], ts=b["ts"], cps=b["checkpoints"], wt=wt, wv=wv,
+                        endS=b["elapsedS"], endV=b["cumulIncome"]))
 
 if not matched:
     raise SystemExit("no rounds matched a cashflow CSV")
@@ -83,8 +88,7 @@ fig = plt.figure(figsize=(13.5, 3.6 * pair_rows), facecolor=SURFACE)
 outer = GridSpec(pair_rows, cols, figure=fig, hspace=0.55, wspace=0.28,
                  top=0.90, bottom=0.06, left=0.06, right=0.985)
 
-ymax_i = max(max(v for k, v in r["cps"].items() if int(k) <= ZOOM_MIN * 60)
-             for r in matched) / 1000
+ymax_i = max(max(list(r["cps"].values()) + [r["endV"]]) for r in matched) / 1000
 ymax_w = max(max(w for t, w in zip(r["wt"], r["wv"]) if t <= ZOOM_MIN) for r in matched)
 
 
@@ -100,11 +104,12 @@ def style(ax, last_row):
         ax.spines[s].set_visible(False)
     for s in ("left", "bottom"):
         ax.spines[s].set_color(GRID)
-    ax.tick_params(colors=INK_2, labelsize=8.5, length=0)
     ax.set_xlim(0, ZOOM_MIN)
-    ax.set_xticks([0, 5, 10, 15])
-    if not last_row:
-        ax.set_xticklabels([])
+    ax.set_xticks([0, 10, 20, 30])
+    # The two panels of a round SHARE their x axis, so set_xticklabels([]) on
+    # the upper one blanks the lower one as well — the locator is shared. Tick
+    # visibility is per-axes; labels are not.
+    ax.tick_params(colors=INK_2, labelsize=8.5, length=0, labelbottom=last_row)
 
 
 for i, r in enumerate(matched):
@@ -115,8 +120,13 @@ for i, r in enumerate(matched):
     ax_w = fig.add_subplot(inner[1], sharex=ax_i)
 
     cps = sorted((int(k), v) for k, v in r["cps"].items() if int(k) <= ZOOM_MIN * 60)
+    if r["endS"] > (cps[-1][0] if cps else 0):
+        cps.append((r["endS"], r["endV"]))     # the round's own final total
     ax_i.plot([t / 60 for t, _ in cps], [v / 1000 for _, v in cps], color=INCOME,
-              lw=2, marker="o", ms=4, markerfacecolor=SURFACE, markeredgewidth=1.5)
+              lw=2, marker="o", ms=3.5, markerfacecolor=SURFACE, markeredgewidth=1.4)
+    ax_i.annotate(f"{cps[-1][1] / 1000:,.0f}k", (cps[-1][0] / 60, cps[-1][1] / 1000),
+                  textcoords="offset points", xytext=(-4, 6), ha="right",
+                  color=INK_2, fontsize=8.5)
     ax_i.axhline(TARGET_V / 1000, color=INK_MUTED, lw=1, ls=(0, (4, 3)))
     ax_i.axvline(TARGET_T / 60, color=INK_MUTED, lw=1, ls=(0, (4, 3)))
     at10 = r["cps"].get("600", 0) / 1000
@@ -124,7 +134,7 @@ for i, r in enumerate(matched):
               color=GOOD if at10 >= 100 else CRITICAL,
               markeredgecolor=SURFACE, markeredgewidth=2)
     ax_i.annotate(f"{at10:,.0f}k", (10, at10), textcoords="offset points",
-                  xytext=(8, -11), color=INK_2, fontsize=8.5)
+                  xytext=(7, 5), color=INK_2, fontsize=8.5)
     ax_i.set_ylim(0, ymax_i * 1.12)
     ax_i.yaxis.set_major_formatter(FuncFormatter(k_fmt))
     ax_i.set_title(f"{r['map']}  ·  {r['ts'][11:16]}", color=INK, fontsize=10,
@@ -149,7 +159,8 @@ fig.suptitle("Is the flat opening a weak start, or weak ground?", color=INK,
              fontsize=15, x=0.008, ha="left", y=0.997)
 fig.text(0.008, 0.978,
          "Cumulative income (blue) over worker count (orange), same time axis, "
-         "first 15 minutes.\nSeparate panels rather than two y-axes — a shared "
+         "whole round; the dashed line and red dot mark the 100k-by-10-minutes "
+         "target.\nSeparate panels rather than two y-axes — a shared "
          "scale between them would be invented, and the crossings would mean nothing.",
          color=INK_2, fontsize=9.5, ha="left", va="top")
 out = os.path.join(OUT_DIR, "income_vs_workers.png")

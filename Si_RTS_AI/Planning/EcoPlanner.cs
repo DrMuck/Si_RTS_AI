@@ -1320,7 +1320,10 @@ namespace Si_RTS_AI.Planning
                 int producing = 0;
                 for (int i = 0; i < state.cysts.Count; i++)
                     if (state.cysts[i].finished && state.cysts[i].pos != state.nestPos) producing++;
-                WorkerPlan.Update(Perception.MapLayers.LayerReplay.CurrentRoundTime, state.totalShrimps, producing);
+                int cumIncome = 0;
+                try { cumIncome = Perception.EcoRateSampler.GetCumulativeIncome(team); } catch { }
+                WorkerPlan.Update(Perception.MapLayers.LayerReplay.CurrentRoundTime,
+                                  state.totalShrimps, producing, cumIncome);
             }
             catch { }
             try { MapProfile.MaybeBuild(team, Perception.MapLayers.GridWorld.CurrentMapName); } catch { }
@@ -2086,6 +2089,16 @@ namespace Si_RTS_AI.Planning
                     // roster with nothing to harvest is the pile-up this whole
                     // line of work started from.
                     if (WorkerPlan.BehindSchedule) sitesAhead = Mathf.Max(sitesAhead, 8);
+                    // FALLING YIELD IS A CALL FOR GROUND.
+                    //
+                    // Income per worker peaking and then sliding means the
+                    // patches being worked are draining or crowded — the
+                    // economy needs somewhere new to put the shrimps it already
+                    // has, and it needs it before the worker count shows any
+                    // sign of a problem. IndustrialQuarter lost a third of its
+                    // per-worker income over the last thirteen minutes of a
+                    // round while adding forty workers.
+                    if (WorkerPlan.YieldFalling) sitesAhead = Mathf.Max(sitesAhead, 12);
                     int sitesTouched = 0, lastSite = -1;
 
                     // ONE FRONT PER BRANCH.
