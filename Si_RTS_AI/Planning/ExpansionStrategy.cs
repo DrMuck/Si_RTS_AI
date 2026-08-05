@@ -75,13 +75,28 @@ namespace Si_RTS_AI.Planning
         // The strategies on offer. Kept coarse deliberately — the point is to
         // find which REGIME the map and the round are in, not to fine-tune a
         // number that will be re-decided in thirty seconds anyway.
-        static readonly int[] PRODUCER_OPTIONS = { 0, 1, 2, 4 };
-        static readonly int[] AHEAD_OPTIONS    = { 2, 4, 8 };
+        static readonly int[] PRODUCER_OPTIONS = { 0, 1, 2, 4, 6 };
+        static readonly int[] AHEAD_OPTIONS    = { 2, 4, 8, 12 };
 
-        /// <summary>Horizon. Long enough for a far site to be built, staffed and
-        /// to start paying — otherwise every distant option loses by
-        /// construction and the answer is always "stay home".</summary>
-        const float HORIZON_S = 300f;
+        /// <summary>
+        /// Horizon. Long enough for a far site to be built, staffed and to start
+        /// PAYING BACK — otherwise every distant option loses by construction
+        /// and the answer is always "stay home".
+        ///
+        /// 300s was not long enough, and the symptom was exactly what DrMuck
+        /// reported on 2026-08-05: "the expansion is too slow now to support
+        /// fast map control". A site eight deep in the plan came up around 160s
+        /// into the window, spent the next stretch pulling shrimps off
+        /// productive near patches, and the horizon closed before it had earned
+        /// any of that back — so eight-ahead scored below four-ahead every
+        /// single sweep. At 600s the same site has time to be a producer rather
+        /// than a cost, which is the honest comparison.
+        ///
+        /// This does NOT price map control, which is a military question the
+        /// eco simulator has no business answering. It only stops the horizon
+        /// from silently arguing against expansion.
+        /// </summary>
+        const float HORIZON_S = 600f;
 
         /// <summary>
         /// Choose against the live state and the plan's own next sites.

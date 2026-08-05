@@ -2013,8 +2013,12 @@ namespace Si_RTS_AI.Planning
                             continue;
                         }
 
-                        if (it.kind == Blueprint.Kind.BioCache
-                            && inFlightBcs >= EcoPlannerConfig.Phase2MaxUncystedBcQueue) continue;
+                        // The in-flight cap must not quietly undo the window.
+                        // With sites-ahead at 8 and this fixed at 4, half the
+                        // committed fronts could never start — the plan looked
+                        // aggressive and the build queue was not.
+                        int bcQueue = Mathf.Max(EcoPlannerConfig.Phase2MaxUncystedBcQueue, sitesAhead);
+                        if (it.kind == Blueprint.Kind.BioCache && inFlightBcs >= bcQueue) continue;
 
                         var kind = it.kind == Blueprint.Kind.BioCache ? ActionKind.PlaceBc
                                  : it.kind == Blueprint.Kind.Cyst     ? ActionKind.PlaceCyst
