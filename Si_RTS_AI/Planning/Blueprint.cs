@@ -138,6 +138,12 @@ namespace Si_RTS_AI.Planning
         /// have already planned.</summary>
         const float NODE_MERGE_M = 45f;
 
+        /// <summary>How far from a patch a Bio Cache can still be the thing
+        /// working it. Wide enough to contain the game's placement slide, which
+        /// has been observed at 95m — the test that matters is whether this is
+        /// the patch NEAREST to it, not the distance itself.</summary>
+        const float BC_WORKS_M = 220f;
+
         /// <summary>Chain length one site may ask for. Not a distance ceiling —
         /// a far patch is allowed, it just sorts to the back on cost — but a
         /// guard against planning twenty hops to something across the map.</summary>
@@ -179,14 +185,19 @@ namespace Si_RTS_AI.Planning
 
             // 1) SCAN. Everything we own is a root the network may grow from;
             //    every discovered patch nobody works is a terminal.
-            int nextBranch = 0;
             if (s.nestPos != Vector3.zero)
-                _net.Add(new NetPoint { pos = s.nestPos, branch = nextBranch++, pathM = 0f });
+                _net.Add(new NetPoint { pos = s.nestPos, branch = BranchKey(s.nestPos, Vector3.zero), pathM = 0f });
+            // Roots key on their own bearing from the Nest, so two structures
+            // sharing a grid cell but lying on different arms stay different
+            // branches — otherwise the executor's one-site-per-branch hold can
+            // stall a direction that was never the one building.
             for (int i = 0; i < s.bcs.Count; i++)
-                _net.Add(new NetPoint { pos = s.bcs[i].pos, branch = nextBranch++,
+                _net.Add(new NetPoint { pos = s.bcs[i].pos,
+                                        branch = BranchKey(s.bcs[i].pos, s.bcs[i].pos - s.nestPos),
                                         pathM = Mathf.Sqrt(SqXZ(s.bcs[i].pos, s.nestPos)) });
             for (int i = 0; i < s.nodes.Count; i++)
-                _net.Add(new NetPoint { pos = s.nodes[i].pos, branch = nextBranch++,
+                _net.Add(new NetPoint { pos = s.nodes[i].pos,
+                                        branch = BranchKey(s.nodes[i].pos, s.nodes[i].pos - s.nestPos),
                                         pathM = Mathf.Sqrt(SqXZ(s.nodes[i].pos, s.nestPos)) });
             if (_net.Count == 0) return;
             ResolveRootPaths(s.nestPos);
@@ -195,9 +206,29 @@ namespace Si_RTS_AI.Planning
             {
                 if (s.patches[p].remaining <= 0) continue;
                 if (explored != null && !explored(s.patches[p].pos)) continue;
+
+                // IS ANYBODY ALREADY WORKING THIS PATCH?
+                //
+                // Asking only "is a Bio Cache within 50m" produced doubles.
+                // DrMuck, 2026-08-05: two Bio Caches at (2531,2094) and
+                // (2638,2102) for one biotics. The game slides a placement —
+                // 69m and 95m slides are in this round's log — so a Bio Cache
+                // aimed AT a patch can land 100m away, which is close enough to
+                // work it and too far to satisfy a 50m test. The plan then saw
+                // an unserved patch and built a second one beside the first.
+                //
+                // A Bio Cache works the patch nearest to it. That, not a radius,
+                // is what "served" means; the radius only has to be wide enough
+                // to contain a slide.
                 bool served = false;
                 for (int b = 0; b < s.bcs.Count && !served; b++)
-                    if (SqXZ(s.bcs[b].pos, s.patches[p].pos) < SERVED_M * SERVED_M) served = true;
+                {
+                    float d2 = SqXZ(s.bcs[b].pos, s.patches[p].pos);
+                    if (d2 < SERVED_M * SERVED_M) { served = true; break; }
+                    if (d2 > BC_WORKS_M * BC_WORKS_M) continue;
+                    int nearest = EcoSimulator.NearestActivePatchIdxPublic(s, s.bcs[b].pos);
+                    if (nearest == p) served = true;
+                }
                 if (!served) _terminals.Add(p);
             }
             TerminalCount = _terminals.Count;
@@ -272,7 +303,7 @@ namespace Si_RTS_AI.Planning
                 // Trunks and twigs then colour themselves in the viewer, and the
                 // articulation structure NodeManager cares about is visible in
                 // the plan rather than discovered after the fact.
-                if (anchorPt.kids > 0) branch = nextBranch++;
+                if (anchorPt.kids > 0) branch = BranchKey(anchor, target - anchor);
                 anchorPt.kids++;
                 _net[_bestAnchor[pick]] = anchorPt;
 
@@ -430,6 +461,47 @@ namespace Si_RTS_AI.Planning
                 var p = _net[i];
                 p.pathM = dist[i];
                 _net[i] = p;
+            }
+        }
+
+        /// <summary>
+        /// A BRANCH IS A PLACE ON THE MAP, NOT A NUMBER IN A LOOP.
+        ///
+        /// Branch ids were a counter, handed out in whatever order the replan
+        /// happened to walk the tree — so every refresh renumbered everything.
+        /// DrMuck, 2026-08-05: a Bio Cache finished, "leaded to a change in the
+        /// branch color and maybe to confusion", and the north-west direction
+        /// off that same structure then failed to start.
+        ///
+        /// That is not cosmetic. The executor holds each branch to one live
+        /// site, so shuffled ids mean it can hold a direction that was never
+        /// the one building — one fork of a junction blocking the other because
+        /// they swapped numbers. Colour and throttle are the same identity, and
+        /// both need to survive a replan.
+        ///
+        /// So the id is derived from where the branch LEAVES and which way it
+        /// GOES: the fork point on a 200m grid, and the bearing in 30-degree
+        /// sectors. The same physical branch keeps its identity while the
+        /// structure it hangs off stays put, and two directions off one
+        /// junction are always different branches — which is exactly the case
+        /// that was stalling.
+        /// </summary>
+        static int BranchKey(Vector3 at, Vector3 dir)
+        {
+            int gx = Mathf.RoundToInt(at.x / 200f);
+            int gz = Mathf.RoundToInt(at.z / 200f);
+            int sector = 0;
+            float len = Mathf.Sqrt(dir.x * dir.x + dir.z * dir.z);
+            if (len > 1f)
+            {
+                float deg = Mathf.Atan2(dir.z, dir.x) * Mathf.Rad2Deg;
+                if (deg < 0f) deg += 360f;
+                sector = Mathf.FloorToInt(deg / 30f) + 1;   // 0 reserved for "no direction"
+            }
+            unchecked
+            {
+                int h = gx * 73856093 ^ gz * 19349663 ^ sector * 83492791;
+                return Mathf.Abs(h) % 997;
             }
         }
 
