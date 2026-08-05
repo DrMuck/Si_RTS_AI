@@ -578,6 +578,7 @@ namespace Si_RTS_AI.Faction
             Perception.EcoRateSampler.Tick(team);
             Perception.BcIncome.Sample(team, "Bio Cache");
             Perception.UnitCaps.Resolve(team);
+            Planning.DefencePlanner.Tick(team);
 
             return false;   // skip stock Think entirely
         }

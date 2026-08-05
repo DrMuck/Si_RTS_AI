@@ -129,7 +129,27 @@ customer with different priorities — enemy expansions rather than resource pat
 — and that likely changes the scout star's targeting. Worth deciding before the
 strategy planner assumes the information is there.
 
-## 6. What this does not answer
+## 6. Built so far (shadow, not deployed)
+
+- `Perception/UnitCaps` — cap type and weight per unit, read live. Answers
+  `WorkersConsumeCap` instead of assuming it, and probes the Team object for the
+  per-team limit, which is still unknown.
+- `Perception/CombatLog` — one row per engagement in `combat.jsonl`, detected by
+  roster diffing rather than a death hook. Exchange ratios in cash.
+- `Perception/BcIncome.RecentDeposited` — what a structure earned in the last two
+  minutes, which is what makes "defend what earns" computable.
+- `Planning/DefencePlanner` — ranks threatened assets by recent income x threat,
+  and sizes a home garrison floor from the worst incursion actually seen. Home is
+  a floor subtracted first, never a competitor in the ranking. `DefenceEnabled`
+  computes and logs; `DefenceExecute` (off) is what would issue orders.
+
+The remaining defence work is the ORDER side — pulling units to a task and
+returning them — which is deliberately not written until a round of `[DEFENCE]`
+lines shows the ranking picks sane assets, and `combat.jsonl` says what an
+engagement costs. `THREAT_PER_DEFENDER` is a placeholder until then and is
+labelled as one in the source.
+
+## 7. What this does not answer
 
 Combat effectiveness of specific alien units, tier timings, and whether Crab
 swarms trade well at all. Those are questions for step 2's data, and they should be

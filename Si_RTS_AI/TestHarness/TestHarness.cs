@@ -74,6 +74,8 @@ namespace Si_RTS_AI.TestHarnessNs
         static MelonPreferences_Entry<string>? _mapRotation;
         static MelonPreferences_Entry<string>? _configCycle;
         static MelonPreferences_Entry<bool>?   _shrimpStates;
+        static MelonPreferences_Entry<bool>?   _defenceEnabled;
+        static MelonPreferences_Entry<bool>?   _defenceExecute;
         static int _armIndex;
         static MelonPreferences_Entry<bool>?   _autoRotateMap;
         static MelonPreferences_Entry<string>? _configId;
@@ -137,6 +139,10 @@ namespace Si_RTS_AI.TestHarnessNs
                 _rtsaiAlien           = _cat.CreateEntry("RTSAI_Alien",     true,  "Master switch — enable Si_RTS_AI's decisions for Alien team. When false, stock game AI runs for Alien.");
                 _rtsaiSol             = _cat.CreateEntry("RTSAI_Sol",       false, "Master switch — enable Si_RTS_AI's decisions for Human Sol team. When false, stock game AI runs for Sol.");
                 _rtsaiCentauri        = _cat.CreateEntry("RTSAI_Centauri",  false, "Master switch — enable Si_RTS_AI's decisions for Human Centauri team. When false, stock game AI runs for Centauri.");
+                _defenceEnabled       = _cat.CreateEntry("DefenceEnabled", true,
+                    "DefencePlanner: rank threatened assets by what they have EARNED in the last two minutes times the threat on them, and size a home garrison floor from the worst incursion seen. Computing and logging only — see DefenceExecute for orders.");
+                _defenceExecute       = _cat.CreateEntry("DefenceExecute", false,
+                    "Let DefencePlanner actually order units. Off by default: every behavioural rule in this project that skipped a shadow round had to be reverted. Turn on once the [DEFENCE] lines look sane and combat.jsonl says what an exchange costs.");
                 _militaryEnabled      = _cat.CreateEntry("MilitaryEnabled",           false, "Basic MilitaryManager: perception (threats + HVT targets), production (Crab at fraction of Cysts), and army coordination (attack only at critical mass). Opt-in; requires SuppressCombat=false for actual attack orders.");
                 _militaryCriticalMass = _cat.CreateEntry("MilitaryCriticalMassSize",  15,    "Minimum combat unit count before MilitaryManager orders an attack. Below this, army stays grouped at rally point.");
                 _militaryCrabFraction = _cat.CreateEntry("MilitaryCystCrabFraction",  0.25f, "Fraction of eligible Cysts dedicated to Crab production (rest keep making Shrimps). 0.25 = every 4th Cyst.");
@@ -295,6 +301,8 @@ namespace Si_RTS_AI.TestHarnessNs
             _sceneActive    = true;
             _sceneLoadedAt  = Time.time;
             Perception.ShrimpStateSampler.Enabled = _shrimpStates?.Value == true;
+            Planning.DefencePlanner.Enabled = _defenceEnabled?.Value != false;
+            Planning.DefencePlanner.Execute = _defenceExecute?.Value == true;
             ApplyNextArm();
 
             if (!_cachedEnable) return;

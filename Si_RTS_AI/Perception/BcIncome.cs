@@ -39,7 +39,18 @@ namespace Si_RTS_AI.Perception
             public long    Deposited;      // sum of positive deltas
             public float   FirstDepositT;  // round time of the first delivery, -1 until then
             public float   BuiltAtT;       // round time we first saw it standing
+            // Sparse history, for "what has this earned LATELY". A Bio Cache on
+            // a drained patch has a large lifetime total and is worth nothing to
+            // defend; the recent number is the one that decides.
+            public float   MarkT;
+            public long    MarkDeposited;
+            public long    RecentWindow;   // deposited since MarkT
         }
+
+        /// <summary>How far back "lately" reaches. Long enough to survive a
+        /// group walking between patches, short enough that a depleted site
+        /// stops looking valuable within a couple of minutes.</summary>
+        const float RECENT_WINDOW_S = 120f;
 
         // Bio Caches do not move, so position rounded to the metre is a stable
         // identity across samples and across the game's own list reordering.
@@ -94,6 +105,15 @@ namespace Si_RTS_AI.Perception
                         if (e.FirstDepositT < 0f) e.FirstDepositT = roundT;
                     }
                     e.LastStored = stored;
+
+                    // Roll the window forward once it is full: what came in
+                    // since the mark becomes "recent", and a new mark is set.
+                    if (roundT - e.MarkT >= RECENT_WINDOW_S)
+                    {
+                        e.RecentWindow  = e.Deposited - e.MarkDeposited;
+                        e.MarkDeposited = e.Deposited;
+                        e.MarkT         = roundT;
+                    }
                     _bcs[k] = e;
                 }
             }
@@ -124,6 +144,27 @@ namespace Si_RTS_AI.Perception
                             (ratio < 0.2f
                                 ? "  <-- ATTRIBUTION NOT WORKING, do not use per-BC income"
                                 : ""));
+        }
+
+        /// <summary>
+        /// What this Bio Cache has delivered LATELY — the number that decides
+        /// whether it is worth defending. Lifetime totals say a drained site was
+        /// once excellent, which is exactly the wrong answer for a garrison.
+        /// </summary>
+        internal static long RecentDeposited(UnityEngine.Vector3 pos)
+        {
+            if (!_bcs.TryGetValue(Key(pos), out var e)) return 0;
+            // In-progress window counts too, or a site looks dead for two
+            // minutes after every roll.
+            return e.RecentWindow + (e.Deposited - e.MarkDeposited);
+        }
+
+        /// <summary>Every Bio Cache we have seen, with what it earned lately.</summary>
+        internal static void ForEach(Action<UnityEngine.Vector3, long, long> fn)
+        {
+            foreach (var kv in _bcs)
+                fn(kv.Value.Pos, kv.Value.Deposited,
+                   kv.Value.RecentWindow + (kv.Value.Deposited - kv.Value.MarkDeposited));
         }
 
         /// <summary>Per-Bio-Cache totals for the metrics line. Deposited is what
