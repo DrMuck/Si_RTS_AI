@@ -184,6 +184,35 @@ namespace Si_RTS_AI.Faction
 
             int effectiveCap = Math.Min(SHRIMP_HARD_CAP, mapCap);
 
+            // THE EARLY RAMP IS NOT A PILE-UP.
+            //
+            // Every brake above was added against a MID-GAME failure — shrimps
+            // over live capacity, migration waves, expansions that could not
+            // staff themselves. Applied from the first minute they do something
+            // else entirely: they hold the opening below the rate the economy
+            // needs to compound. Measured on NarakaCity 2026-08-05, against
+            // DrMuck's 100k-by-10-minutes benchmark:
+            //
+            //     t=205s  20 shrimps      t=506s  44 shrimps
+            //     t=325s  34 shrimps      t=746s  57 shrimps
+            //
+            // Six producers can build 24 shrimps a minute. We added three a
+            // minute, with 42,000 cash idle — so it was never cash, it was this
+            // ceiling. DrMuck: "might need to allow more shrimps early to reach
+            // that goal."
+            //
+            // Before Phase 2 there is nowhere to expand to and nothing has
+            // depleted yet, so the map-capacity model is at its least
+            // informative exactly when the ramp matters most. Rule 5.6 already
+            // says what the answer is early — around 18 per biotics — so use it
+            // as a FLOOR while Phase 1 lasts, and let the map model bind only
+            // when it asks for more. Phase 2 keeps every brake it had.
+            if (!Planning.EcoPlanner.CurrentPhaseIsExpand)
+            {
+                if (bcs.Count > 0)
+                    effectiveCap = Math.Min(SHRIMP_HARD_CAP, Math.Max(effectiveCap, bcs.Count * PER_BC_CAP));
+            }
+
             // KEEP HEADROOM FOR EXPANSIONS THAT DO NOT EXIST YET.
             //
             // Filling to the cap early is self-defeating: a new expansion Cyst
