@@ -8,7 +8,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 
-[assembly: MelonInfo(typeof(Si_RTS_AI.Si_RTS_AI), "Si_RTS_AI", "0.21.1-bc-income", "DrMuck")]
+[assembly: MelonInfo(typeof(Si_RTS_AI.Si_RTS_AI), "Si_RTS_AI", "0.21.2-unitcaps", "DrMuck")]
 [assembly: MelonGame("Bohemia Interactive", "Silica")]
 
 namespace Si_RTS_AI
@@ -406,6 +406,7 @@ namespace Si_RTS_AI
             Perception.MapLayers.FoWLayers.OnRoundReset();
             Perception.BcMetrics.ResetForNewRound();
             Perception.BcIncome.ResetForNewRound();
+            Perception.UnitCaps.ResetForNewRound();
             Perception.ShrimpStateSampler.ResetForNewRound();
             Perception.GameConstantsDumper.ResetForNewRound();
             Planning.EcoPlanner.ResetForNewRound();

@@ -577,6 +577,7 @@ namespace Si_RTS_AI.Faction
             AlienShrimpProducer.Tick(team);
             Perception.EcoRateSampler.Tick(team);
             Perception.BcIncome.Sample(team, "Bio Cache");
+            Perception.UnitCaps.Resolve(team);
 
             return false;   // skip stock Think entirely
         }

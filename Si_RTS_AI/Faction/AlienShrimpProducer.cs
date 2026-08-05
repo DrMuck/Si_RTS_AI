@@ -47,6 +47,16 @@ namespace Si_RTS_AI.Faction
         // Team-total safety ceiling. User 2026-07-08: 185 (was 200) — expect
         // ~200 on map counting in-flight queued shrimps between spawn and
         // arrival at the destination BC.
+        //
+        // THIS IS OURS, NOT THE GAME'S. Under the current balance config a Shrimp
+        // has UnitCapValue 0 — workers cost no population at all — so this number
+        // is a server-performance limit and nothing more. It was mistaken for the
+        // game's unit cap on 2026-08-05, which produced a whole argument about
+        // economy and army competing for slots that does not happen here.
+        //
+        // If a config DOES make workers cost population, Perception.UnitCaps says
+        // so and the army's claim becomes real; that is read at runtime rather
+        // than assumed, in either direction.
         const int   SHRIMP_HARD_CAP = 185;
 
         /// <summary>
