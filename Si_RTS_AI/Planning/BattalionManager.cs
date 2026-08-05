@@ -1,5 +1,7 @@
+using HarmonyLib;
 using MelonLoader;
 using Silica;
+using Silica.AI;
 using System;
 using System.Collections.Generic;
 using UnityEngine;
@@ -51,6 +53,8 @@ namespace Si_RTS_AI.Planning
             public int   Value;             // cash value of the units in it
             public int   RequiredValue;     // what the task is judged to need
             public float AssignedAt;
+            public float LastOrderAt;
+            public float CommittedAt;
         }
 
         internal static readonly List<Battalion> Battalions = new List<Battalion>(4);
@@ -90,6 +94,7 @@ namespace Si_RTS_AI.Planning
                 MaintainGarrison(team, free, now);
                 MaintainResponses(free, now);
                 Judge();
+                if (DefencePlanner.Execute) IssueOrders(team, now);
                 MaybeLog(now);
             }
             catch (Exception ex) { MelonLogger.Warning("[BATTALION] tick threw: " + ex.Message); }
@@ -238,6 +243,148 @@ namespace Si_RTS_AI.Planning
                 if (bat.Phase == State.Committed) continue;
                 bat.Phase = bat.Value >= bat.RequiredValue && bat.Units.Count > 0
                           ? State.Ready : State.Forming;
+            }
+        }
+
+        // ---- Orders ----------------------------------------------------------
+        //
+        // Only READY battalions move, which is where "never trickle in" stops
+        // being a comment and becomes behaviour: a Forming battalion is simply
+        // never given a destination.
+        //
+        // Orders are RESTATED on a cadence rather than issued once. Vanilla
+        // re-tasks units continuously — the scouts learned this the hard way, and
+        // a single order is overwritten within seconds while the unit wanders
+        // back to whatever the game AI wanted.
+
+        [ThreadStatic] internal static bool PlannerOverride;
+
+        const float REISSUE_S    = 5f;
+        const float ARRIVED_M    = 120f;
+        const float HOME_LEASH_M = 250f;
+
+        static void IssueOrders(Team team, float now)
+        {
+            for (int b = 0; b < Battalions.Count; b++)
+            {
+                var bat = Battalions[b];
+
+                if (bat.Role == "garrison")
+                {
+                    // The garrison is not sent anywhere, it is KEPT. Only units
+                    // that have drifted off the leash are recalled, so a standing
+                    // guard is not re-ordered into a huddle every five seconds.
+                    if (now - bat.LastOrderAt < REISSUE_S) continue;
+                    bat.LastOrderAt = now;
+                    for (int i = 0; i < bat.Units.Count; i++)
+                    {
+                        var u = bat.Units[i];
+                        if (u == null || u.IsDestroyed) continue;
+                        Vector3 p;
+                        try { p = u.transform.position; } catch { continue; }
+                        float dx = p.x - bat.Rally.x, dz = p.z - bat.Rally.z;
+                        if (dx * dx + dz * dz > HOME_LEASH_M * HOME_LEASH_M)
+                            IssueMove(u, bat.Rally);
+                    }
+                    continue;
+                }
+
+                if (bat.Phase == State.Forming) continue;     // holds, by design
+
+                if (bat.Phase == State.Ready)
+                {
+                    bat.Phase = State.Committed;
+                    bat.CommittedAt = now;
+                    MelonLogger.Msg($"[BATTALION] {bat.Name} committing {bat.Units.Count} units " +
+                                    $"(value {bat.Value}/{bat.RequiredValue}) to " +
+                                    $"({bat.Objective.x:F0},{bat.Objective.z:F0})");
+                }
+
+                if (bat.Phase == State.Committed)
+                {
+                    // Released by the condition that raised it, not by a timer:
+                    // the same threat reading that created the defence task.
+                    float threat = 0f;
+                    try { threat = Perception.ThreatMap.ThreatNear(bat.Objective, 300f); } catch { }
+                    if (threat <= 0f && now - bat.CommittedAt > ASSIGNMENT_DWELL_S)
+                    {
+                        bat.Phase = State.Returning;
+                        bat.Rally = HomeOf(team);
+                        MelonLogger.Msg($"[BATTALION] {bat.Name} released — no threat left at " +
+                                        $"({bat.Objective.x:F0},{bat.Objective.z:F0})");
+                    }
+                }
+
+                if (now - bat.LastOrderAt < REISSUE_S) continue;
+                bat.LastOrderAt = now;
+
+                Vector3 dest = bat.Phase == State.Returning ? bat.Rally : bat.Objective;
+                int arrived = 0;
+                for (int i = 0; i < bat.Units.Count; i++)
+                {
+                    var u = bat.Units[i];
+                    if (u == null || u.IsDestroyed) continue;
+                    Vector3 p;
+                    try { p = u.transform.position; } catch { continue; }
+                    float dx = p.x - dest.x, dz = p.z - dest.z;
+                    if (dx * dx + dz * dz < ARRIVED_M * ARRIVED_M) { arrived++; continue; }
+                    IssueMove(u, dest);
+                }
+
+                // Home and dissolved: units return to the free pool and the next
+                // tick may put them somewhere more useful.
+                if (bat.Phase == State.Returning && arrived >= bat.Units.Count)
+                {
+                    bat.Units.Clear();
+                    bat.Phase = State.Forming;
+                }
+            }
+        }
+
+        static void IssueMove(Unit u, Vector3 pos)
+        {
+            try
+            {
+                PlannerOverride = true;
+                u.OnMoveOrder(pos, AgentMoveSpeed.Fast);
+            }
+            catch (Exception ex) { MelonLogger.Warning("[BATTALION] OnMoveOrder threw: " + ex.Message); }
+            finally { PlannerOverride = false; }
+        }
+
+        /// <summary>Is this unit in a battalion that is currently ordering it?</summary>
+        internal static bool Owns(Unit u)
+        {
+            if (u == null || !DefencePlanner.Execute) return false;
+            for (int b = 0; b < Battalions.Count; b++)
+                if (Battalions[b].Units.Contains(u)) return true;
+            return false;
+        }
+
+        /// <summary>
+        /// Vanilla re-tasks units continuously, so a battalion that only issued
+        /// orders would watch them wander off between reissues. Same guard the
+        /// scouts use, and it stacks: Harmony skips the original if EITHER prefix
+        /// returns false. Inert while DefenceExecute is off, because Owns is.
+        /// </summary>
+        [HarmonyPatch(typeof(Unit), nameof(Unit.OnMoveOrder))]
+        static class Patch_Unit_OnMoveOrder_Battalion
+        {
+            static bool Prefix(Unit __instance)
+            {
+                try
+                {
+                    if (__instance == null || !Owns(__instance)) return true;
+                    if (PlannerOverride) return true;
+                    try
+                    {
+                        var t = __instance.Team;
+                        if (t != null && !AIManager.IsCommanderEnabled(t)) return true;
+                    }
+                    catch { }
+                    return false;
+                }
+                catch { return true; }
             }
         }
 
