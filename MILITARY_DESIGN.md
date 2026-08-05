@@ -138,6 +138,15 @@ strategy planner assumes the information is there.
   roster diffing rather than a death hook. Exchange ratios in cash.
 - `Perception/BcIncome.RecentDeposited` — what a structure earned in the last two
   minutes, which is what makes "defend what earns" computable.
+- `Planning/BattalionManager` — the layer between a mission and a unit. Garrison
+  battalion filled to the defence floor first, then one response battalion per
+  threatened asset. Strength measured in CASH, not bodies, so "critical mass" can
+  later be calibrated against combat.jsonl exchange ratios. Readiness is where
+  "never trickle in" lives; a 30s assignment dwell is the hysteresis. Asks
+  ScoutPlanner who it owns rather than guessing, so the two do not fight over the
+  same Crabs.
+- `Perception/UnitValues` — one cost lookup, shared by the combat log and the
+  battalion manager.
 - `Planning/DefencePlanner` — ranks threatened assets by recent income x threat,
   and sizes a home garrison floor from the worst incursion actually seen. Home is
   a floor subtracted first, never a competitor in the ranking. `DefenceEnabled`

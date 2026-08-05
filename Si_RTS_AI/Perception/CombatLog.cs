@@ -60,8 +60,6 @@ namespace Si_RTS_AI.Perception
 
         static readonly Dictionary<Team, Roster> _rosters = new Dictionary<Team, Roster>();
         static readonly List<Engagement> _open = new List<Engagement>();
-        static readonly Dictionary<string, int> _costByName =
-            new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         static float _lastSampleAt;
         static int   _recorded;
 
@@ -224,39 +222,9 @@ namespace Si_RTS_AI.Perception
         }
 
         /// <summary>Unit value in cash, so exchange ratios are in the same
-        /// currency the planner already reasons about. Resolved from live
-        /// ConstructionData via UnitCaps' cache of buildable options.</summary>
-        static int CostOf(string unitName)
-        {
-            if (_costByName.TryGetValue(unitName, out int c)) return c;
-            int cost = 0;
-            try
-            {
-                foreach (var kv in Silica.AI.AIManager.Commanders)
-                {
-                    var team = kv.Key;
-                    var structs = team?.Structures;
-                    if (structs == null) continue;
-                    for (int i = 0; i < structs.Count && cost == 0; i++)
-                    {
-                        var opts = structs[i]?.ConstructionOptions;
-                        if (opts == null) continue;
-                        foreach (var cd in opts)
-                        {
-                            if (cd?.ObjectInfo == null) continue;
-                            if (!string.Equals(cd.ObjectInfo.DisplayName, unitName,
-                                               StringComparison.OrdinalIgnoreCase)) continue;
-                            try { cost = cd.ResourceCost; } catch { }
-                            break;
-                        }
-                    }
-                    if (cost > 0) break;
-                }
-            }
-            catch { }
-            _costByName[unitName] = cost;
-            return cost;
-        }
+        /// currency the planner already reasons about. Shared with the battalion
+        /// manager, which measures strength the same way.</summary>
+        static int CostOf(string unitName) => UnitValues.CostOf(unitName);
 
         static string F(float v) => v.ToString("F0", CultureInfo.InvariantCulture);
 

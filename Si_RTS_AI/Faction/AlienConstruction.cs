@@ -579,6 +579,7 @@ namespace Si_RTS_AI.Faction
             Perception.BcIncome.Sample(team, "Bio Cache");
             Perception.UnitCaps.Resolve(team);
             Planning.DefencePlanner.Tick(team);
+            Planning.BattalionManager.Tick(team);
 
             return false;   // skip stock Think entirely
         }
