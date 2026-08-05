@@ -198,6 +198,7 @@ namespace Si_RTS_AI.Planning
         static bool[]  _stepDone = new bool[0];
         static float   _queueStalledSince;
         static float   _lastWaitLogAt;
+        static float   _waitingForCashAt = -999f;
         static int     _skipped;
 
         /// <summary>Any step of the opening still outstanding.</summary>
@@ -208,6 +209,35 @@ namespace Si_RTS_AI.Planning
                 if (ShadowOnly) return false;
                 for (int i = 0; i < _queue.Count; i++) if (!_stepDone[i]) return true;
                 return false;
+            }
+        }
+
+        /// <summary>
+        /// Cash the opening still needs for producers it has planned but not
+        /// placed.
+        ///
+        /// A Lesser Cyst is a shrimp FACTORY, so spending its 1,500 on twelve
+        /// shrimps instead is a trade of everything that factory would have
+        /// produced for one batch now. That trade was being made silently:
+        /// NarakaCity 2026-08-05, step 13 of 13 — the fourth Cyst — waited
+        /// fifty seconds with cash oscillating between 630 and 1,940 because
+        /// every income tick went into a shrimp, then gave up and skipped
+        /// itself. DrMuck saw the same thing from the other side: "I don't see
+        /// a 4th cyst being placed early as well... maybe even conflicts with
+        /// the opener planner."
+        ///
+        /// So the producer holds this back. It is only ever the opening's own
+        /// planned Cysts, and it clears as they go up.
+        /// </summary>
+        internal static int PendingCystCash
+        {
+            get
+            {
+                if (ShadowOnly) return 0;
+                int n = 0;
+                for (int i = 0; i < _queue.Count; i++)
+                    if (!_stepDone[i] && _queue[i].Kind == StepKind.Cyst) n++;
+                return n > 0 ? EcoSimulator.CYST_COST : 0;
             }
         }
 
@@ -412,6 +442,15 @@ namespace Si_RTS_AI.Planning
                     // exactly the 1,500-before-500 spend 3.2b exists to stop.
                     if (!SiteBcDone(team, _queue[i].Goal))
                     {
+                        // WAITING FOR MONEY IS NOT A STALL.
+                        //
+                        // This path runs on the 1Hz Cyst tick and the 8s plan
+                        // tick could not see it, so a Cyst saving up read as
+                        // "nothing fired", the stall timer ran, and the fourth
+                        // Cyst of the opening skipped itself after 45 seconds
+                        // with cash oscillating just under what it needed.
+                        // DrMuck: "give finishing the opener more weight."
+                        _waitingForCashAt = now;
                         if (now - _lastWaitLogAt > 5f)
                         {
                             _lastWaitLogAt = now;
@@ -955,6 +994,8 @@ namespace Si_RTS_AI.Planning
         /// </summary>
         internal static void NoteNoProgress(float now)
         {
+            // Saving up for a step is progress. See _waitingForCashAt.
+            if (now - _waitingForCashAt < 3f) { _queueStalledSince = 0f; return; }
             if (_queueStalledSince <= 0f) { _queueStalledSince = now; return; }
             if (now - _queueStalledSince <= QUEUE_STALL_LIMIT_S) return;
 

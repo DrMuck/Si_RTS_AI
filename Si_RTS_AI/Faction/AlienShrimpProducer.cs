@@ -285,6 +285,25 @@ namespace Si_RTS_AI.Faction
 
             if (liveTotal + queuedTotal >= effectiveCap) return;
 
+            // THE OPENING'S OWN CYSTS COME BEFORE MARGINAL SHRIMPS.
+            //
+            // A Lesser Cyst is a shrimp factory, so buying twelve shrimps with
+            // its 1,500 trades everything that factory would ever produce for
+            // one batch now. Nothing was making that trade explicitly: the
+            // fourth Cyst of the opening waited fifty seconds while cash
+            // oscillated between 630 and 1,940 — every income tick went into a
+            // shrimp — and then skipped itself on the stall timer.
+            //
+            // Only the opening's planned Cysts, and only until they are placed.
+            int openerReserve = 0;
+            try { openerReserve = Planning.OpenerPlanner.PendingCystCash; } catch { }
+            if (openerReserve > 0)
+            {
+                int cashNow = 0;
+                try { cashNow = team.TotalResources; } catch { }
+                if (cashNow - Planning.EcoSimulator.SHRIMP_COST < openerReserve) return;
+            }
+
             // 4) For each Cyst that can produce Shrimp, find its nearest BC
             //    and check whether that BC is already at cap (live + queued
             //    bound here). Skip if saturated.

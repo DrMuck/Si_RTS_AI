@@ -1569,6 +1569,11 @@ namespace Si_RTS_AI.Planning
                     {
                         int floor = 0;
                         if (cystHungry || frontierCystWanted) floor = EcoSimulator.CYST_COST;
+                        // The opening's own unplaced Cysts outrank ground. A
+                        // Lesser Cyst is a shrimp factory; a Node is not.
+                        int openerCyst = 0;
+                        try { openerCyst = OpenerPlanner.PendingCystCash; } catch { }
+                        if (openerCyst > floor) floor = openerCyst;
                         else if (underTappedNow && c.kind == ActionKind.PlaceNode) floor = EcoSimulator.BC_COST;
                         // Nodes never eat the shrimp-queue money.
                         if (c.kind == ActionKind.PlaceNode) floor = Mathf.Max(floor, shrimpReserve);
