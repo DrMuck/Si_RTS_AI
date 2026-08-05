@@ -1486,7 +1486,21 @@ namespace Si_RTS_AI.Planning
                 //
                 // Reserve one Shrimp per real Cyst, capped so a large late
                 // base does not lock expansion out entirely.
-                int shrimpReserve = Mathf.Min(realCysts, 4) * EcoSimulator.SHRIMP_COST;
+                // EVERY PRODUCER KEEPS ITS NEXT SHRIMP FUNDED.
+                //
+                // Capped at four Cysts, this reserve topped out at 640 cash —
+                // meaningless once the opening has more producers than that, so
+                // expansion could spend the bank down to where the starter
+                // Cysts went idle between income ticks. DrMuck, 2026-08-05:
+                // "need to still weigh in that there is enough flowing money to
+                // support continuous shrimp production from the opener cysts.
+                // Otherwise hold the expansion a bit back in speed."
+                //
+                // One shrimp per producer is what continuous means, so the
+                // reserve follows the producer count. It stays small in absolute
+                // terms (ten Cysts hold 1,600) and it is exactly the amount that
+                // decides whether a Cyst idles.
+                int shrimpReserve = Mathf.Min(realCysts, 10) * EcoSimulator.SHRIMP_COST;
 
                 _skipReasons = "";
                 int nodeFiresThisTick = 0;
@@ -1576,7 +1590,12 @@ namespace Si_RTS_AI.Planning
                         if (openerCyst > floor) floor = openerCyst;
                         else if (underTappedNow && c.kind == ActionKind.PlaceNode) floor = EcoSimulator.BC_COST;
                         // Nodes never eat the shrimp-queue money.
-                        if (c.kind == ActionKind.PlaceNode) floor = Mathf.Max(floor, shrimpReserve);
+                        // Ground of any kind yields to it, not just Nodes. A
+                        // Bio Cache is 500 that earns nothing until shrimps
+                        // reach it, so buying one with the money that would
+                        // have kept three producers running is the same trade
+                        // in a larger denomination.
+                        floor = Mathf.Max(floor, shrimpReserve);
                         if (floor > 0 && cashLeft - c.cost < floor) { Skip("reserve" + floor); return true; }
                     }
                     // These two were ABORTS ("later actions depend on this one"),
