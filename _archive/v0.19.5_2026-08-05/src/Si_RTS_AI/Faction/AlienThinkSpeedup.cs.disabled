@@ -1,0 +1,48 @@
+using HarmonyLib;
+using MelonLoader;
+using Silica.AI;
+using System;
+
+namespace Si_RTS_AI.Faction
+{
+    /// <summary>
+    /// Human commanders can click-place structures as fast as their mouse — no throttle.
+    /// AICommander.Tick() only calls Think() once every ThinkInterval seconds (default 3s),
+    /// and AIConstructionHandler.Think() only starts ONE construction per call (break on
+    /// first successful TryBuild). So stock AI is hard-capped at ~20 builds/minute.
+    ///
+    /// Our human-commander demo built 3 BioCaches in 10 seconds — 18× faster. To narrow
+    /// that gap without rewriting the whole request-processing pipeline, we shorten the
+    /// think interval for AI-commanded Alien teams that have override on.
+    ///
+    /// Postfix on AICommander.ThinkInterval — reads Settings.ThinkInterval by default;
+    /// we drop it to 0.5s for our managed teams. That's 6× more Think() calls per second
+    /// → 6× more construction starts.
+    /// </summary>
+    internal static class AlienThinkSpeedup
+    {
+        // Reduced think interval when we own the team's strategy.
+        const float FAST_THINK_INTERVAL = 0.5f;
+
+        [HarmonyPatch(typeof(AICommander), nameof(AICommander.ThinkInterval), MethodType.Getter)]
+        static class Patch_ThinkInterval
+        {
+            static void Postfix(AICommander __instance, ref float __result)
+            {
+                try
+                {
+                    if (__instance == null || __instance.Team == null) return;
+
+                    // Only override for Alien with override on. Sol/Cent (and non-managed
+                    // Alien) keep the stock 3s cadence.
+                    var team = __instance.Team;
+                    if (!(team.name ?? "").Contains("Alien")) return;
+                    if (!Suppression.Phase31_Production.OverrideByTeam.TryGetValue(team, out bool ov) || !ov) return;
+
+                    __result = FAST_THINK_INTERVAL;
+                }
+                catch (Exception ex) { MelonLogger.Warning("[RTSA/P32] speedup postfix threw: " + ex.Message); }
+            }
+        }
+    }
+}

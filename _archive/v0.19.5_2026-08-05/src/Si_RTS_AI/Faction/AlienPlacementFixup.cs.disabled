@@ -1,0 +1,88 @@
+using HarmonyLib;
+using MelonLoader;
+using System;
+using UnityEngine;
+
+namespace Si_RTS_AI.Faction
+{
+    /// <summary>
+    /// Postfix on Team.GetStructureForConstruction — swaps the returned "anchor"
+    /// structure for our injected Alien Node/BioCache/Cyst requests to the nearest
+    /// friendly structure to our injection target.
+    ///
+    /// Why: AIConstructionHandler.TryBuild does this:
+    ///     Structure anchor = team.GetStructureForConstruction(constructionData);
+    ///     towardsPosition = (target - anchor.pos).normalized * Clamp(dist, 0, 500) + anchor.pos;
+    ///
+    /// Stock GetStructureForConstruction() picks a RANDOM structure that has the
+    /// constructionData in its ConstructionOptions — typically the Nest for BioCache.
+    /// The 500m clamp then measures from the Nest → biotics patches beyond 500m are
+    /// physically unreachable no matter how many nodes we chain (nodes extend team
+    /// build coverage but the clamp still measures from the Nest anchor).
+    ///
+    /// Fix: for our injected structures (whose target we stored in LastTargetByData),
+    /// find the CLOSEST structure to the target and return that as the anchor. Now
+    /// the 500m clamp measures from a nearby Node → BioCache lands ~50m from the
+    /// biotics patch instead of 300+m short.
+    /// </summary>
+    internal static class AlienPlacementFixup
+    {
+        [HarmonyPatch(typeof(Team), nameof(Team.GetStructureForConstruction))]
+        static class Patch_GetStructureForConstruction
+        {
+            static void Postfix(Team __instance, ConstructionData constructionData, ref Structure __result)
+            {
+                try
+                {
+                    if (__instance == null || constructionData == null || constructionData.ObjectInfo == null) return;
+
+                    // Only override on managed Alien teams. Sol/Cent construction stays stock.
+                    if (!(__instance.name ?? "").Contains("Alien")) return;
+                    if (!Suppression.Phase31_Production.OverrideByTeam.TryGetValue(__instance, out bool ov) || !ov) return;
+
+                    // Only override for the three types we inject. Anything else uses stock choice.
+                    string cdName = constructionData.ObjectInfo.DisplayName ?? "";
+                    if (cdName != "Node" && cdName != "Bio Cache" && cdName != "Lesser Spawning Cyst") return;
+
+                    // Do we have a stored target for this ConstructionData?
+                    if (!AlienNodeInjector.LastTargetByData.TryGetValue(constructionData, out Vector3 target)) return;
+                    if (target == Vector3.zero) return;
+
+                    // Find the closest owned structure to the target — INCLUDES Nodes even
+                    // though they don't have BioCache in their own ConstructionOptions.
+                    // We only care about the position for the clamp, not about whether the
+                    // returned Structure actually "can build" BioCache — the game only reads
+                    // .transform.position from this anchor in TryBuild.
+                    var structs = __instance.Structures;
+                    if (structs == null || structs.Count == 0) return;
+
+                    Structure? closest = null;
+                    float bestDist2 = float.MaxValue;
+                    for (int i = 0; i < structs.Count; i++)
+                    {
+                        var s = structs[i];
+                        if (s == null || s.IsDestroyed) continue;
+                        Vector3 sp = s.transform.position;
+                        float dx = sp.x - target.x, dz = sp.z - target.z;
+                        float d2 = dx * dx + dz * dz;
+                        if (d2 < bestDist2)
+                        {
+                            bestDist2 = d2;
+                            closest = s;
+                        }
+                    }
+
+                    if (closest != null && closest != __result)
+                    {
+                        __result = closest;
+                        AlienNodeInjector.AnchorSwaps++;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MelonLogger.Warning("[RTSA/P32] anchor-swap threw: " + ex.Message);
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <RootNamespace>Si_RTS_AI</RootNamespace>
+    <AssemblyName>Si_RTS_AI</AssemblyName>
+    <Nullable>enable</Nullable>
+    <LangVersion>9.0</LangVersion>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="MelonLoader">           <HintPath>..\include\netstandard2.1\MelonLoader.dll</HintPath> </Reference>
+    <Reference Include="0Harmony">              <HintPath>..\include\netstandard2.1\0Harmony.dll</HintPath> </Reference>
+    <Reference Include="SilicaCore">            <HintPath>..\include\netstandard2.1\SilicaCore.dll</HintPath> </Reference>
+    <Reference Include="Si_AdminMod">           <HintPath>..\include\netstandard2.1\Si_AdminMod.dll</HintPath> </Reference>
+    <Reference Include="UnityEngine">           <HintPath>..\include\netstandard2.1\UnityEngine.dll</HintPath> </Reference>
+    <Reference Include="UnityEngine.CoreModule"><HintPath>..\include\netstandard2.1\UnityEngine.CoreModule.dll</HintPath></Reference>
+    <Reference Include="UnityEngine.TerrainModule"><HintPath>..\include\netstandard2.1\UnityEngine.TerrainModule.dll</HintPath></Reference>
+    <Reference Include="Newtonsoft.Json">       <HintPath>..\include\netstandard2.1\Newtonsoft.Json.dll</HintPath></Reference>
+  </ItemGroup>
+</Project>

@@ -1,0 +1,66 @@
+using HarmonyLib;
+using MelonLoader;
+using Silica.AI;
+using System;
+using System.Reflection;
+
+namespace Si_RTS_AI.Faction
+{
+    /// <summary>
+    /// Bypass the "one construction at a time" self-throttle in AIConstructionHandler.
+    ///
+    /// Stock behavior:
+    ///   AIConstructionHandler.Think() early-returns if m_WaitingForBuildingPlacement
+    ///   is true. TryBuild() sets that flag before calling the async
+    ///   ConstructionPlacement.QueueFirstValidPlacementAroundPoint(...) (a search over
+    ///   up to 300 candidate positions in a 600m radius for a valid spot). The flag is
+    ///   only cleared when the placement callback fires — usually 1-3 seconds later,
+    ///   sometimes 10+ if terrain is complex or grid-snap is tight.
+    ///
+    ///   During that wait, no new construction can start. Think() cadence irrelevant.
+    ///
+    /// Human commanders don't hit this because they send RPC_ConstructRequest directly
+    /// per click — the game processes each placement independently, no throttle.
+    ///
+    /// Fix: for managed Alien teams, reset m_WaitingForBuildingPlacement to false at
+    /// the start of every Think() so multiple placements can queue concurrently.
+    /// Cost: parallel validator queries, which the placement system already supports
+    /// (it uses a static ActiveConstructionPlacements pool).
+    /// </summary>
+    internal static class AlienConcurrentPlacement
+    {
+        // Cached reflection handles — resolved on first use.
+        static FieldInfo? _waitingFlagField;
+        static bool _fieldResolved;
+
+        [HarmonyPatch(typeof(AIConstructionHandler), nameof(AIConstructionHandler.Think))]
+        static class Patch_ConstructionThink_Prefix
+        {
+            static void Prefix(AIConstructionHandler __instance)
+            {
+                try { ClearWaitingFlag(__instance); }
+                catch (Exception ex) { MelonLogger.Warning("[RTSA/P32] concurrent-placement prefix threw: " + ex.Message); }
+            }
+        }
+
+        static void ClearWaitingFlag(AIConstructionHandler h)
+        {
+            if (h == null || h.Commander == null || h.Commander.Team == null) return;
+
+            var team = h.Commander.Team;
+            if (!(team.name ?? "").Contains("Alien")) return;
+            if (!Suppression.Phase31_Production.OverrideByTeam.TryGetValue(team, out bool ov) || !ov) return;
+
+            if (!_fieldResolved)
+            {
+                _waitingFlagField = AccessTools.Field(typeof(AIConstructionHandler), "m_WaitingForBuildingPlacement");
+                _fieldResolved = true;
+                if (_waitingFlagField == null)
+                    MelonLogger.Warning("[RTSA/P32] m_WaitingForBuildingPlacement field not found — concurrent placement bypass disabled");
+            }
+            if (_waitingFlagField == null) return;
+
+            _waitingFlagField.SetValue(h, false);
+        }
+    }
+}

@@ -1,0 +1,330 @@
+using HarmonyLib;
+using MelonLoader;
+using Silica.AI;
+using System;
+using System.Collections.Generic;
+using UnityEngine;
+
+namespace Si_RTS_AI.Faction
+{
+    /// <summary>
+    /// Phase 3.2 v5 — simplified algorithm per user's spec:
+    ///
+    ///   for each visible biotics patch not already covered by a BioCache:
+    ///     if patch is in reach of some owned structure (team build coverage extends there):
+    ///       DIRECTLY invoke ConstructionPlacement.QueueFirstValidPlacementAroundPoint
+    ///       centered on the patch → BC lands ON biotics (bypasses TryBuild's 500m clamp)
+    ///     else:
+    ///       inject an AIRequest.Construct(Node, patchPos) — stock's queue processes it,
+    ///       nodes chain toward biotics one placement per Think tick (concurrent bypass
+    ///       makes this fast).
+    ///
+    /// Lesser Cyst injection: one per zone (1000m coverage) — shrimps migrate.
+    /// </summary>
+    internal static class AlienBaseBuilder
+    {
+        // "In reach" means an owned structure is within this many meters of the biotics
+        // patch. Slightly under the 500m TryBuild clamp so our direct-placement search
+        // (600m radius) reliably finds a valid position inside team build coverage.
+        const float DIRECT_PLACEMENT_MAX_DIST = 450f;
+
+        // How close a BC must be to a biotics patch to consider that patch "covered".
+        const float BC_COVERAGE_RADIUS = 200f;
+
+        // Widened Cyst coverage — one Cyst serves multiple biotics (shrimps migrate).
+        const float CYST_COVERAGE_RADIUS = 1000f;
+
+        // Per-tick sanity caps so we don't hammer the placement system.
+        const int MAX_DIRECT_BC_PER_TICK = 3;
+        const int MAX_NODE_INJECT_PER_TICK = 2;
+        const int MAX_CYST_INJECT_PER_TICK = 1;
+
+        // Hard team-level caps.
+        const int MAX_NODES_PER_TEAM = 40;
+        const int MAX_BCS_PER_TEAM = 10;
+        const int MAX_CYSTS_PER_TEAM = 6;
+
+        const int NODE_PRIORITY = 90;
+        const int CYST_PRIORITY = 55;
+
+        // Round counters for the summary block.
+        internal static int DirectBcAttempts;
+        internal static int DirectBcSuccesses;
+        internal static int DirectBcFailures;
+        internal static int NodeInjections;
+        internal static int CystInjections;
+        internal static int PatchesCovered;
+
+        // Scratch list, reused each tick to avoid GC churn on the enumeration path.
+        static readonly List<ResourceArea> _biotics = new List<ResourceArea>(16);
+
+        [HarmonyPatch(typeof(AIConstructionHandler), nameof(AIConstructionHandler.Think))]
+        static class Patch_Prefix
+        {
+            static void Prefix(AIConstructionHandler __instance)
+            {
+                try { Run(__instance); }
+                catch (Exception ex) { MelonLogger.Warning("[RTSA/P32] BaseBuilder threw: " + ex.Message); }
+            }
+        }
+
+        static void Run(AIConstructionHandler h)
+        {
+            var team = h?.Commander?.Team;
+            if (team == null) return;
+            if (!(team.name ?? "").Contains("Alien")) return;
+            if (!Suppression.Phase31_Production.OverrideByTeam.TryGetValue(team, out bool ov) || !ov) return;
+
+            // Look up the ConstructionData we work with.
+            var bcCd   = FindConstructionData(h, "Bio Cache");
+            var nodeCd = FindConstructionData(h, "Node");
+            var cystCd = FindConstructionData(h, "Lesser Spawning Cyst");
+            if (bcCd == null) return;   // BC is essential; others fall through if unavailable
+
+            // Find a structure that can Construct BioCache. Needed as the callingStructure
+            // for our direct QueueFirstValidPlacementAroundPoint invocation — its ObjectInfo
+            // needs BC in ConstructionOptions for the success callback's Construct() to fire.
+            Structure? bcAnchor = FindStructureThatCanBuild(team, bcCd);
+
+            _biotics.Clear();
+            int biCount = 0;
+            try { biCount = ResourceArea.GetKnownResourcesAreas(team, team.UsableResource, _biotics, ignoreEmpty: true); }
+            catch (Exception ex) { MelonLogger.Warning("[RTSA/P32] GetKnownResourcesAreas threw: " + ex.Message); return; }
+            if (biCount == 0) return;
+
+            int currentNodeCount = CountOwnedStructuresOfType(team, "Node");
+            int currentBcCount   = CountOwnedStructuresOfType(team, "Bio Cache");
+            int currentCystCount = CountOwnedStructuresOfType(team, "Lesser Spawning Cyst");
+
+            int directBcAttempted = 0, nodeInjected = 0, cystInjected = 0;
+            int coveredCount = 0;
+
+            for (int i = 0; i < _biotics.Count; i++)
+            {
+                var patch = _biotics[i];
+                if (patch == null) continue;
+                Vector3 patchPos = patch.SignalCenter;
+
+                bool hasBc   = HasStructureTypeNear(team, "Bio Cache",             patchPos, BC_COVERAGE_RADIUS);
+                bool hasCyst = HasStructureTypeNear(team, "Lesser Spawning Cyst",  patchPos, CYST_COVERAGE_RADIUS);
+
+                if (hasBc && hasCyst) { coveredCount++; continue; }
+
+                if (!hasBc && currentBcCount < MAX_BCS_PER_TEAM)
+                {
+                    // Distance to nearest owned structure — decides direct-place vs node-chain.
+                    float minDist = MinDistanceOwnedStructure(team, patchPos);
+                    if (minDist <= DIRECT_PLACEMENT_MAX_DIST)
+                    {
+                        // In reach — DIRECT placement, bypassing TryBuild's Nest-anchored clamp.
+                        if (directBcAttempted < MAX_DIRECT_BC_PER_TICK && bcAnchor != null)
+                        {
+                            TryDirectPlace(team, bcCd, bcAnchor, patchPos);
+                            directBcAttempted++;
+                            currentBcCount++;   // optimistically count; actual construct will succeed/fail via callback
+                        }
+                    }
+                    else
+                    {
+                        // Out of reach — chain nodes toward the patch.
+                        if (nodeCd != null && nodeInjected < MAX_NODE_INJECT_PER_TICK && currentNodeCount < MAX_NODES_PER_TEAM)
+                        {
+                            try
+                            {
+                                AIRequest.Construct(h, NODE_PRIORITY, nodeCd, patchPos);
+                                nodeInjected++;
+                                currentNodeCount++;
+                                NodeInjections++;
+                            }
+                            catch (Exception ex) { MelonLogger.Warning("[RTSA/P32] Node inject threw: " + ex.Message); }
+                        }
+                    }
+                }
+                else if (hasBc && !hasCyst)
+                {
+                    if (cystCd != null && cystInjected < MAX_CYST_INJECT_PER_TICK && currentCystCount < MAX_CYSTS_PER_TEAM)
+                    {
+                        try
+                        {
+                            AIRequest.Construct(h, CYST_PRIORITY, cystCd, patchPos);
+                            cystInjected++;
+                            currentCystCount++;
+                            CystInjections++;
+                        }
+                        catch (Exception ex) { MelonLogger.Warning("[RTSA/P32] Cyst inject threw: " + ex.Message); }
+                    }
+                }
+
+                if (directBcAttempted >= MAX_DIRECT_BC_PER_TICK
+                 && nodeInjected     >= MAX_NODE_INJECT_PER_TICK
+                 && cystInjected     >= MAX_CYST_INJECT_PER_TICK) break;
+            }
+
+            PatchesCovered = Math.Max(PatchesCovered, coveredCount);
+
+            if (directBcAttempted + nodeInjected + cystInjected > 0)
+            {
+                Si_RTS_AI.AppendToRound(
+                    $"[P32] team={team.name} directBc+={directBcAttempted} node+={nodeInjected} cyst+={cystInjected} " +
+                    $"patchesCovered={coveredCount}/{_biotics.Count} owned(N/BC/C)={currentNodeCount}/{currentBcCount}/{currentCystCount}");
+            }
+        }
+
+        // ---- Direct BC placement ----
+
+        static void TryDirectPlace(Team team, ConstructionData cd, Structure anchor, Vector3 patchPos)
+        {
+            DirectBcAttempts++;
+            try
+            {
+                ConstructionPlacement.QueueFirstValidPlacementAroundPoint(
+                    cd.ObjectPreviewSetup,
+                    team,
+                    anchor,
+                    patchPos,
+                    cd.GridSnapXZ,
+                    cd.GridSnapY,
+                    600f,   // search radius
+                    40f,    // maxTime seconds
+                    300,    // minStepsPerSecond
+                    OnDirectPlaceSuccess,
+                    OnDirectPlaceFailed);
+            }
+            catch (Exception ex) { MelonLogger.Warning("[RTSA/P32] direct placement threw: " + ex.Message); }
+        }
+
+        static void OnDirectPlaceSuccess(ConstructionData cd, Team callingTeam, Structure callingStructure, Vector3 position, Quaternion rotation)
+        {
+            DirectBcSuccesses++;
+            try
+            {
+                if (callingStructure != null && !callingStructure.IsDestroyed)
+                    callingStructure.Construct(cd, position, rotation);
+            }
+            catch (Exception ex) { MelonLogger.Warning("[RTSA/P32] callback Construct threw: " + ex.Message); }
+        }
+
+        static void OnDirectPlaceFailed(ConstructionData cd, Team callingTeam, Structure callingStructure)
+        {
+            DirectBcFailures++;
+        }
+
+        // ---- helpers ----
+
+        static ConstructionData? FindConstructionData(AIConstructionHandler h, string displayName)
+        {
+            var list = h.BuildableStructuresAll;
+            if (list == null) return null;
+            for (int i = 0; i < list.Count; i++)
+            {
+                var cd = list[i];
+                if (cd?.ObjectInfo == null) continue;
+                if (string.Equals(cd.ObjectInfo.DisplayName, displayName, StringComparison.OrdinalIgnoreCase))
+                    return cd;
+            }
+            return null;
+        }
+
+        static Structure? FindStructureThatCanBuild(Team team, ConstructionData targetCd)
+        {
+            try
+            {
+                var structs = team.Structures;
+                if (structs == null) return null;
+                for (int i = 0; i < structs.Count; i++)
+                {
+                    var s = structs[i];
+                    if (s == null || s.IsDestroyed) continue;
+                    if (s.ConstructionOptions != null && s.ConstructionOptions.Contains(targetCd))
+                        return s;
+                }
+            }
+            catch { }
+            return null;
+        }
+
+        static float MinDistanceOwnedStructure(Team team, Vector3 pos)
+        {
+            try
+            {
+                var structs = team.Structures;
+                if (structs == null || structs.Count == 0) return float.MaxValue;
+                float best = float.MaxValue;
+                for (int i = 0; i < structs.Count; i++)
+                {
+                    var s = structs[i];
+                    if (s == null || s.IsDestroyed) continue;
+                    Vector3 sp = s.transform.position;
+                    float dx = sp.x - pos.x, dz = sp.z - pos.z;
+                    float d2 = dx * dx + dz * dz;
+                    if (d2 < best) best = d2;
+                }
+                return Mathf.Sqrt(best);
+            }
+            catch { return float.MaxValue; }
+        }
+
+        static bool HasStructureTypeNear(Team team, string displayName, Vector3 pos, float radius)
+        {
+            try
+            {
+                var structs = team.Structures;
+                if (structs == null) return false;
+                float r2 = radius * radius;
+                for (int i = 0; i < structs.Count; i++)
+                {
+                    var s = structs[i];
+                    if (s == null || s.ObjectInfo == null) continue;
+                    if (!string.Equals(s.ObjectInfo.DisplayName, displayName, StringComparison.OrdinalIgnoreCase)) continue;
+                    Vector3 sp = s.transform.position;
+                    float dx = sp.x - pos.x, dz = sp.z - pos.z;
+                    if (dx * dx + dz * dz < r2) return true;
+                }
+            }
+            catch { }
+            return false;
+        }
+
+        static int CountOwnedStructuresOfType(Team team, string displayName)
+        {
+            try
+            {
+                var structs = team.Structures;
+                if (structs == null) return 0;
+                int n = 0;
+                for (int i = 0; i < structs.Count; i++)
+                {
+                    var s = structs[i];
+                    if (s?.ObjectInfo == null) continue;
+                    if (string.Equals(s.ObjectInfo.DisplayName, displayName, StringComparison.OrdinalIgnoreCase))
+                        n++;
+                }
+                return n;
+            }
+            catch { return 0; }
+        }
+
+        internal static void ResetForNewRound()
+        {
+            DirectBcAttempts = 0;
+            DirectBcSuccesses = 0;
+            DirectBcFailures = 0;
+            NodeInjections = 0;
+            CystInjections = 0;
+            PatchesCovered = 0;
+        }
+
+        internal static string BuildRoundSummaryFragment()
+        {
+            int total = DirectBcAttempts + NodeInjections + CystInjections;
+            if (total == 0 && PatchesCovered == 0) return "";
+            return "--- Phase 3.2 v5 (direct BC + node chain) ---\n" +
+                   $"  BC direct-placement attempts:      {DirectBcAttempts}\n" +
+                   $"  BC placements successful:          {DirectBcSuccesses}\n" +
+                   $"  BC placements failed:              {DirectBcFailures}\n" +
+                   $"  Node injections:                   {NodeInjections}\n" +
+                   $"  Cyst injections:                   {CystInjections}\n" +
+                   $"  Biotics patches covered:           {PatchesCovered}\n";
+        }
+    }
+}

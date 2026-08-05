@@ -1,0 +1,187 @@
+using MelonLoader;
+using Silica;
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Text;
+using UnityEngine;
+
+namespace Si_RTS_AI.Perception
+{
+    /// <summary>
+    /// Passive per-BC / per-Refinery telemetry emitter for calibrating the BC-placement
+    /// utility function. Fires every 30s per team; writes one JSON line per emission to
+    /// UserData/RTSA/bc_metrics.jsonl containing:
+    ///
+    ///   { ts, map, roundT, team, cash, delta, bcCount, workerCount, patches, bcs:[...] }
+    ///
+    /// where each element of bcs is:
+    ///
+    ///   { x, z, workersInRange, patchesInRange, nearestPatchDist }
+    ///
+    /// Post-analysis: fit saturation and distance-decay curves by regressing
+    /// team.delta on Σ per-bc features. Every soak automatically enriches the
+    /// dataset — no scenario-mode needed for a first pass, though the scenario
+    /// harness will give cleaner curves.
+    /// </summary>
+    internal static class BcMetrics
+    {
+        const float EMIT_INTERVAL_S  = 30f;
+        const float WORKER_RANGE_M   = 500f;   // "assigned to this BC" heuristic
+        const float PATCH_RANGE_M    = 500f;   // "servicable by this BC" heuristic
+
+        // Per-team state.
+        static readonly Dictionary<Team, float> _lastEmitAt = new Dictionary<Team, float>();
+        static readonly Dictionary<Team, int>   _lastCash   = new Dictionary<Team, int>();
+
+        internal static void TickAlien(Team team) => Tick(team, "Bio Cache", "Shrimp");
+        internal static void TickHuman(Team team) => Tick(team, "Refinery", "Harvester");
+
+        static void Tick(Team team, string bcDisplayName, string workerDisplayName)
+        {
+            if (team == null) return;
+            float now = Time.time;
+            if (_lastEmitAt.TryGetValue(team, out var last) && now - last < EMIT_INTERVAL_S) return;
+
+            int cashNow;
+            try { cashNow = team.TotalResources; } catch { return; }
+
+            // First observation for this team — establish baseline, skip this emission.
+            // Without it every first line reports a nonsense cash delta = current-cash.
+            if (!_lastCash.TryGetValue(team, out var lastCash))
+            {
+                _lastCash[team]   = cashNow;
+                _lastEmitAt[team] = now;
+                return;
+            }
+
+            int delta = cashNow - lastCash;
+            _lastCash[team]   = cashNow;
+            _lastEmitAt[team] = now;
+
+            // Snapshot the entities we need. Cheap — typical alien has ~10 BCs and
+            // ~30 workers, and this only fires twice a minute.
+            var bcPositions      = new List<Vector3>();
+            var workerPositions  = new List<Vector3>();
+            var patchPositions   = new List<Vector3>();
+            try
+            {
+                var structs = team.Structures;
+                if (structs != null)
+                {
+                    for (int i = 0; i < structs.Count; i++)
+                    {
+                        var s = structs[i];
+                        if (s == null || s.ObjectInfo == null || s.IsDestroyed) continue;
+                        if (!string.Equals(s.ObjectInfo.DisplayName, bcDisplayName, StringComparison.OrdinalIgnoreCase)) continue;
+                        bcPositions.Add(s.transform.position);
+                    }
+                }
+            } catch { }
+
+            try
+            {
+                var units = team.Units;
+                if (units != null)
+                {
+                    for (int i = 0; i < units.Count; i++)
+                    {
+                        var u = units[i];
+                        if (u == null || u.ObjectInfo == null || u.IsDestroyed) continue;
+                        if (!string.Equals(u.ObjectInfo.DisplayName, workerDisplayName, StringComparison.OrdinalIgnoreCase)) continue;
+                        workerPositions.Add(u.transform.position);
+                    }
+                }
+            } catch { }
+
+            // Resource areas by type — same source the AlienConstruction planner uses.
+            try
+            {
+                var all = ResourceArea.AllResourceAreas;
+                if (all != null)
+                {
+                    var uType = team.UsableResource;
+                    for (int i = 0; i < all.Count; i++)
+                    {
+                        var ra = all[i];
+                        if (ra == null || ra.IsEmpty) continue;
+                        if (ra.ResourceType != uType) continue;
+                        patchPositions.Add(ra.SignalCenter);
+                    }
+                }
+            } catch { }
+
+            // Build the JSON line.
+            var sb = new StringBuilder(256 + bcPositions.Count * 100);
+            sb.Append('{');
+            sb.Append("\"ts\":\"").Append(DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss")).Append("\",");
+            sb.Append("\"map\":\"").Append(Esc(MapLayers.LayerReplay.CurrentMap)).Append("\",");
+            sb.Append("\"roundT\":").Append(MapLayers.LayerReplay.CurrentRoundTime.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)).Append(',');
+            sb.Append("\"team\":\"").Append(Esc(team.name)).Append("\",");
+            sb.Append("\"cash\":").Append(cashNow).Append(',');
+            sb.Append("\"delta\":").Append(delta).Append(',');
+            sb.Append("\"windowS\":").Append(EMIT_INTERVAL_S.ToString("F0", System.Globalization.CultureInfo.InvariantCulture)).Append(',');
+            sb.Append("\"bcCount\":").Append(bcPositions.Count).Append(',');
+            sb.Append("\"workerCount\":").Append(workerPositions.Count).Append(',');
+            sb.Append("\"patchCount\":").Append(patchPositions.Count).Append(',');
+
+            sb.Append("\"bcs\":[");
+            for (int i = 0; i < bcPositions.Count; i++)
+            {
+                if (i > 0) sb.Append(',');
+                var bp = bcPositions[i];
+                int workersInRange  = CountWithin(bp, workerPositions, WORKER_RANGE_M);
+                int patchesInRange  = CountWithin(bp, patchPositions,  PATCH_RANGE_M);
+                float nearestPatch  = NearestDistance(bp, patchPositions);
+                sb.Append('{')
+                  .Append("\"x\":").Append(bp.x.ToString("F0", System.Globalization.CultureInfo.InvariantCulture)).Append(',')
+                  .Append("\"z\":").Append(bp.z.ToString("F0", System.Globalization.CultureInfo.InvariantCulture)).Append(',')
+                  .Append("\"workersInRange\":").Append(workersInRange).Append(',')
+                  .Append("\"patchesInRange\":").Append(patchesInRange).Append(',')
+                  .Append("\"nearestPatchDist\":").Append(nearestPatch.ToString("F0", System.Globalization.CultureInfo.InvariantCulture))
+                  .Append('}');
+            }
+            sb.Append("]}");
+
+            try
+            {
+                string dir = Path.Combine("UserData", "RTSA");
+                Directory.CreateDirectory(dir);
+                File.AppendAllText(Path.Combine(dir, "bc_metrics.jsonl"), sb.ToString() + "\n");
+            }
+            catch (Exception ex) { MelonLogger.Warning($"[BCMETRICS] append threw: {ex.Message}"); }
+        }
+
+        static int CountWithin(Vector3 origin, List<Vector3> pts, float r)
+        {
+            float r2 = r * r; int n = 0;
+            for (int i = 0; i < pts.Count; i++)
+            {
+                var d = pts[i] - origin;
+                if (d.x * d.x + d.z * d.z <= r2) n++;
+            }
+            return n;
+        }
+
+        static float NearestDistance(Vector3 origin, List<Vector3> pts)
+        {
+            if (pts.Count == 0) return -1f;
+            float best2 = float.MaxValue;
+            for (int i = 0; i < pts.Count; i++)
+            {
+                var d = pts[i] - origin;
+                float dsq = d.x * d.x + d.z * d.z;
+                if (dsq < best2) best2 = dsq;
+            }
+            return Mathf.Sqrt(best2);
+        }
+
+        static string Esc(string s) => (s ?? "").Replace("\\", "\\\\").Replace("\"", "\\\"");
+
+        internal static void ResetForNewRound()
+        {
+            _lastEmitAt.Clear();
+            _lastCash.Clear();
+        }
+    }
+}

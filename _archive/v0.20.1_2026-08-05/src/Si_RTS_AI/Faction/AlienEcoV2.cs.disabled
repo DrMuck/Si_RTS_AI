@@ -1,0 +1,247 @@
+using HarmonyLib;
+using MelonLoader;
+using Silica.AI;
+using System;
+using System.Collections.Generic;
+using UnityEngine;
+
+namespace Si_RTS_AI.Faction
+{
+    /// <summary>
+    /// Phase 3.2 v6 — MINIMAL. One goal only: 4 BioCaches at the 4 nearest biotics
+    /// patches for early eco. That's it.
+    ///
+    /// Algorithm every N Think() ticks:
+    ///   1. If we already have MAX_BCS BioCaches, do nothing (early eco is done).
+    ///   2. Enumerate visible biotics patches, sort by distance to nearest owned
+    ///      structure.
+    ///   3. Pick the closest patch NOT already covered by a BioCache within 200m.
+    ///   4. If it's in reach (≤ 500m from some owned structure) → inject ONE BC
+    ///      request. Stop. Next tick picks the next patch.
+    ///   5. If it's out of reach → inject ONE Node request toward it. Stop.
+    ///
+    /// No spam:
+    ///   - ONE inject per Think() tick.
+    ///   - Run only every 10 ticks (~5s at 0.5s Think, or 30s at 3s stock Think).
+    ///   - Skip if a matching request is already pending in Commander.Requests.
+    /// </summary>
+    internal static class AlienEcoV2
+    {
+        const int MAX_BCS = 4;                          // early-eco floor: 3-4 biotics per user's spec
+        const int MAX_NODES = 20;                       // safety cap
+        // Every biotics patch wants its OWN BioCache placed right on top of it. This
+        // constant is intentionally tight — a BC only counts as "serving" a biotics
+        // patch if it's within ASSIGNED_BC_RADIUS meters. Neighbouring biotics that
+        // happen to have a BC 150m away still count as "unserved" and get their own.
+        const float ASSIGNED_BC_RADIUS = 80f;
+        const float REACH_RADIUS = 500f;                // owned structure within 500m of biotics → in reach
+
+        // Run the injector every N Think() calls. At the stock 3s ThinkInterval this is
+        // an inject every 30s — plenty for early eco. If we later re-enable the 0.5s
+        // speedup, this becomes ~5s between attempts.
+        const int INJECT_EVERY_N_TICKS = 10;
+
+        static int _tickCounter;
+
+        internal static int InjectedBc;
+        internal static int InjectedNode;
+
+        [HarmonyPatch(typeof(AIConstructionHandler), nameof(AIConstructionHandler.Think))]
+        static class Patch_Prefix
+        {
+            static void Prefix(AIConstructionHandler __instance)
+            {
+                try { Run(__instance); }
+                catch (Exception ex) { MelonLogger.Warning("[RTSA/P32] EcoV2 threw: " + ex.Message); }
+            }
+        }
+
+        static readonly List<ResourceArea> _biotics = new List<ResourceArea>(16);
+
+        static void Run(AIConstructionHandler h)
+        {
+            var team = h?.Commander?.Team;
+            if (team == null) return;
+            if (!(team.name ?? "").Contains("Alien")) return;
+            if (!Suppression.Phase31_Production.OverrideByTeam.TryGetValue(team, out bool ov) || !ov) return;
+
+            // Rate limit — this handler runs every Think() but we only ACT once per N ticks
+            _tickCounter++;
+            if (_tickCounter % INJECT_EVERY_N_TICKS != 0) return;
+
+            // Have we already reached the early-eco floor?
+            int bcCount = CountOwnedStructuresOfType(team, "Bio Cache");
+            if (bcCount >= MAX_BCS) return;
+
+            // Look up ConstructionData.
+            var bcCd   = FindConstructionData(h, "Bio Cache");
+            var nodeCd = FindConstructionData(h, "Node");
+            if (bcCd == null) return;
+
+            // Enumerate visible biotics.
+            _biotics.Clear();
+            try { ResourceArea.GetKnownResourcesAreas(team, team.UsableResource, _biotics, ignoreEmpty: true); }
+            catch { return; }
+            if (_biotics.Count == 0) return;
+
+            // Sort by distance-to-nearest-owned-structure ascending — closest first.
+            _biotics.Sort((a, b) =>
+                MinDistanceOwnedStructure(team, a.SignalCenter).CompareTo(
+                MinDistanceOwnedStructure(team, b.SignalCenter)));
+
+            // Pick the FIRST uncovered patch.
+            foreach (var patch in _biotics)
+            {
+                if (patch == null) continue;
+                Vector3 pos = patch.SignalCenter;
+
+                // Skip only if this specific biotics patch has ITS OWN BC — a dedicated
+                // BC placed right on top. A BC 200m away that belongs to a different
+                // biotics does NOT count. Each biotics gets its own BC.
+                if (HasStructureTypeNear(team, "Bio Cache", pos, ASSIGNED_BC_RADIUS)) continue;
+
+                float minDist = MinDistanceOwnedStructure(team, pos);
+                if (minDist <= REACH_RADIUS)
+                {
+                    // In reach — inject ONE BC request at patch position. Stop.
+                    if (RequestAlreadyPendingForData(h.Commander, bcCd)) return;   // wait for previous to resolve
+
+                    try
+                    {
+                        AIRequest.Construct(h, 100, bcCd, pos);
+                        InjectedBc++;
+                        Si_RTS_AI.AppendToRound(
+                            $"[P32] team={team.name} inject=BC patchAt=({pos.x:F0},{pos.z:F0}) " +
+                            $"minDistToStructure={minDist:F0}m bcCount={bcCount}/{MAX_BCS}");
+                    }
+                    catch (Exception ex) { MelonLogger.Warning("[RTSA/P32] BC inject threw: " + ex.Message); }
+                    return;
+                }
+                else if (nodeCd != null)
+                {
+                    // Out of reach — chain nodes toward patch. ONE injection per tick.
+                    int nodeCount = CountOwnedStructuresOfType(team, "Node");
+                    if (nodeCount >= MAX_NODES) return;
+                    if (RequestAlreadyPendingForData(h.Commander, nodeCd)) return;
+
+                    try
+                    {
+                        AIRequest.Construct(h, 90, nodeCd, pos);
+                        InjectedNode++;
+                        Si_RTS_AI.AppendToRound(
+                            $"[P32] team={team.name} inject=Node targetPatchAt=({pos.x:F0},{pos.z:F0}) " +
+                            $"minDistToStructure={minDist:F0}m nodeCount={nodeCount}");
+                    }
+                    catch (Exception ex) { MelonLogger.Warning("[RTSA/P32] Node inject threw: " + ex.Message); }
+                    return;
+                }
+            }
+        }
+
+        // ---- helpers ----
+
+        static ConstructionData? FindConstructionData(AIConstructionHandler h, string displayName)
+        {
+            var list = h.BuildableStructuresAll;
+            if (list == null) return null;
+            for (int i = 0; i < list.Count; i++)
+            {
+                var cd = list[i];
+                if (cd?.ObjectInfo == null) continue;
+                if (string.Equals(cd.ObjectInfo.DisplayName, displayName, StringComparison.OrdinalIgnoreCase))
+                    return cd;
+            }
+            return null;
+        }
+
+        static bool RequestAlreadyPendingForData(AICommander commander, ConstructionData cd)
+        {
+            var reqs = commander?.Requests;
+            if (reqs == null) return false;
+            for (int i = 0; i < reqs.Count; i++)
+            {
+                var r = reqs[i];
+                if (r == null) continue;
+                if (r.Type != EAIRequestType.Construct) continue;
+                if (r.ConstructionData == cd) return true;
+            }
+            return false;
+        }
+
+        static float MinDistanceOwnedStructure(Team team, Vector3 pos)
+        {
+            try
+            {
+                var structs = team.Structures;
+                if (structs == null || structs.Count == 0) return float.MaxValue;
+                float best = float.MaxValue;
+                for (int i = 0; i < structs.Count; i++)
+                {
+                    var s = structs[i];
+                    if (s == null || s.IsDestroyed) continue;
+                    Vector3 sp = s.transform.position;
+                    float dx = sp.x - pos.x, dz = sp.z - pos.z;
+                    float d2 = dx * dx + dz * dz;
+                    if (d2 < best) best = d2;
+                }
+                return Mathf.Sqrt(best);
+            }
+            catch { return float.MaxValue; }
+        }
+
+        static bool HasStructureTypeNear(Team team, string displayName, Vector3 pos, float radius)
+        {
+            try
+            {
+                var structs = team.Structures;
+                if (structs == null) return false;
+                float r2 = radius * radius;
+                for (int i = 0; i < structs.Count; i++)
+                {
+                    var s = structs[i];
+                    if (s == null || s.ObjectInfo == null) continue;
+                    if (!string.Equals(s.ObjectInfo.DisplayName, displayName, StringComparison.OrdinalIgnoreCase)) continue;
+                    Vector3 sp = s.transform.position;
+                    float dx = sp.x - pos.x, dz = sp.z - pos.z;
+                    if (dx * dx + dz * dz < r2) return true;
+                }
+            }
+            catch { }
+            return false;
+        }
+
+        static int CountOwnedStructuresOfType(Team team, string displayName)
+        {
+            try
+            {
+                var structs = team.Structures;
+                if (structs == null) return 0;
+                int n = 0;
+                for (int i = 0; i < structs.Count; i++)
+                {
+                    var s = structs[i];
+                    if (s?.ObjectInfo == null) continue;
+                    if (string.Equals(s.ObjectInfo.DisplayName, displayName, StringComparison.OrdinalIgnoreCase))
+                        n++;
+                }
+                return n;
+            }
+            catch { return 0; }
+        }
+
+        internal static void ResetForNewRound()
+        {
+            _tickCounter = 0;
+            InjectedBc = 0;
+            InjectedNode = 0;
+        }
+
+        internal static string BuildRoundSummaryFragment()
+        {
+            if (InjectedBc == 0 && InjectedNode == 0) return "";
+            return "--- Phase 3.2 v6 (Alien early eco, MINIMAL) ---\n" +
+                   $"  BC injections (target: 4 total):   {InjectedBc}\n" +
+                   $"  Node injections:                   {InjectedNode}\n";
+        }
+    }
+}
