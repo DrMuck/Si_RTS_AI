@@ -4,8 +4,8 @@ Response to `bot-design-spec.md` §2–§3, written against the code that exists
 than in the abstract. **Design only; nothing here is implemented yet.**
 
 The spec's module list is the right end state. What follows is what each module can
-already stand on, the two contracts the spec does not yet name, and the order I
-would build in — which is deliberately not "all of it".
+already stand on, one contract the spec does not name, one I proposed and then had
+to withdraw, and the order I would build in — which is deliberately not "all of it".
 
 ---
 
@@ -27,33 +27,52 @@ manager, and formations.
 
 ---
 
-## 2. The contract the spec is missing: population
+## 2. Population: I had this wrong, and the correction removes work
 
-Eco and military spend the **same 185-unit ceiling**, and nothing arbitrates it.
-`WorkerPlan` will drive toward ~170 shrimps if left alone, which leaves fifteen
-units for an army — and the failure will present as "the army never arrives" while
-the cause is an eco setting.
+I claimed eco and military spend the same 185-unit ceiling, and that the
+PopulationBroker was the sharpest coupling between them. DrMuck: *"There is a unit
+cap for smaller and larger units! And the unitbalance Mod disables shrimps counting
+to the lesser unit cap. Military units count to the unit cap."*
 
-This wants the same shape as the money broker:
+Checked against the live constants dump, which the server wrote with the balance
+mod active:
 
 ```
-PopulationBroker
-  consumes: WorkerPlan trajectory + yield, ThreatMap pressure, active strategy
-  produces: workerBudget, armyBudget   (sum <= hard cap, both floors honoured)
+Shrimp      UnitCapType = Secondary   UnitCapValue = 0
+Harvester   UnitCapType = Primary     UnitCapValue = 0
 ```
 
-Two rules I would start with, both derived rather than tuned:
+So there are **two caps**, workers are typed onto them (Shrimp secondary, Harvester
+primary), and under this balance config a **Shrimp's cap weight is zero** — workers
+consume no cap at all. What I called a shared 185-unit ceiling is
+`AlienShrimpProducer.SHRIMP_HARD_CAP`, which is **our own** server-performance
+constant, not the game's limit.
 
-- **A worker that cannot earn is an army slot.** `WorkerPlan.YieldFalling` already
-  says when marginal workers stop converting into income. That is precisely the
-  moment population is worth more as army than as economy — the same signal, one
-  more consumer.
-- **A defended economy has a floor.** Army budget never falls below what standing
-  garrison duty needs (§2.2 item 1), because the Queen is a loss condition and
-  loss conditions are not traded against income.
+Consequences:
 
-Until this exists, any military build competes with a worker trajectory that does
-not know it is in a competition.
+- **There is no population tug-of-war to arbitrate.** Producing shrimps does not
+  take slots from the army under this configuration. The PopulationBroker as I
+  described it is not needed, and building it would have solved a problem that does
+  not exist.
+- **The genuinely shared resource is cash**, which already has a broker. Military
+  becomes a third `IActionSource` claimant beside eco and tech — the seam the
+  planner notes already anticipated — plus build capacity and server performance.
+- **The dependency is one-directional instead:** military spending slows the worker
+  trajectory through cash, and `WorkerPlan.BehindSchedule` will register that as a
+  deficit and try to spend *more* on producers. That feedback is worth watching, and
+  it is a money question, not a population one.
+
+**Read the caps at runtime rather than assuming either way.** The zero weight is a
+balance-mod choice; in vanilla, or under a different config, shrimps count again and
+the tug-of-war returns. `UnitCapType` / `UnitCapValue` are already visible in
+`ConstructionData`, so the military layer should ask rather than hardcode — the same
+rule the eco layer already follows for costs and ranges.
+
+What I could NOT confirm from the dump: the cap weights of individual military
+units, and where the per-team cap limits live. Every sampled entry read
+`UnitCapValue = 0`, which is either the mod zeroing broadly or the dump capturing a
+template rather than resolved values. That needs a live read before any military
+production planner prices a unit in cap terms.
 
 ## 3. The other missing piece: a combat measurement loop
 
@@ -75,20 +94,18 @@ threshold. Without it, "never trickle units in" is folklore we happen to agree w
 
 ## 4. Ordering (what I would actually build)
 
-1. **PopulationBroker** — the contract above. Small, and it unblocks everything else
-   from silently starving.
-2. **Combat instrumentation** — `combat.jsonl` plus engagement detection. No
+1. **Combat instrumentation** — `combat.jsonl` plus engagement detection. No
    behaviour change; it can run while the eco soak continues.
-3. **Defence** (§2.2) — garrison floor, threat-triggered recall, defending *tapped*
+2. **Defence** (§2.2) — garrison floor, threat-triggered recall, defending *tapped*
    biotics only. Measurable immediately as income lost to raids, which the existing
    eco metrics already show.
-4. **Threat analysis upgrade** (§2.3) — capability classes, staleness decay, FPS
+3. **Threat analysis upgrade** (§2.3) — capability classes, staleness decay, FPS
    player tracking. Defence gives it a consumer first, so it is built against a use.
-5. **Strategy planner + army manager** (§2.8, §2.7) — with hysteresis, once step 2
+4. **Strategy planner + army manager** (§2.8, §2.7) — with hysteresis, once step 1
    can say whether a re-plan helped.
-6. **Military production siting** (§2.4) — biasing the blueprint toward FOBs. Comes
-   after 3–5 because the risk term needs a threat map that is worth trusting.
-7. **Anchor nest** (§2.5) — extends `NodeManager`; naturally paired with 6.
+5. **Military production siting** (§2.4) — biasing the blueprint toward FOBs. Comes
+   after 2–4 because the risk term needs a threat map that is worth trusting.
+6. **Anchor nest** (§2.5) — extends `NodeManager`; naturally paired with 6.
 
 Deferred with reasons rather than dropped:
 
@@ -96,7 +113,7 @@ Deferred with reasons rather than dropped:
   needs a match-history pipeline that does not exist. Half-built learning is worse
   than an honest table.
 - **Formations** (§2.9). Real work, and its payoff cannot be seen until engagements
-  are measured. After step 2, not before.
+  are measured. After step 1, not before.
 
 ## 5. Two corrections to the spec's framing
 
