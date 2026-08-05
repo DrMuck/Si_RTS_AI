@@ -1,0 +1,172 @@
+using MelonLoader;
+using Silica;
+using System;
+using System.Collections.Generic;
+using System.Reflection;
+using UnityEngine;
+
+namespace Si_RTS_AI.Perception
+{
+    /// <summary>
+    /// WHICH BIO CACHE EARNED WHAT.
+    ///
+    /// Income has only ever been measured team-wide, which answers "is the
+    /// economy working" and none of the questions the expansion experiment
+    /// actually asks: what did this expansion cost, when did it first return
+    /// anything, and is it returning anything at all. A Bio Cache with no
+    /// workers looks identical to one quietly out-earning the base.
+    ///
+    /// Shrimps deposit into the Bio Cache's own resource holder, so the sum of
+    /// its POSITIVE storage deltas is what was delivered there. Sampled on the
+    /// AI tick (~3s) against a deposit that takes 8s to unload, so a delivery
+    /// cannot slip between samples.
+    ///
+    /// SELF-CHECKING, because the mechanism is an assumption. If the game moves
+    /// resources to the team pool without ever parking them in the structure,
+    /// every delta is zero and the attribution is silently all-zero — which
+    /// would look like "the expansions earned nothing" rather than "the meter
+    /// is broken". So the total attributed is compared against the team's own
+    /// cumulative income and the ratio is logged. Near 1.0 means the numbers
+    /// can be trusted; near 0 means this approach does not work here and the
+    /// analysis must not use it.
+    /// </summary>
+    internal static class BcIncome
+    {
+        struct Entry
+        {
+            public Vector3 Pos;
+            public int     LastStored;
+            public long    Deposited;      // sum of positive deltas
+            public float   FirstDepositT;  // round time of the first delivery, -1 until then
+            public float   BuiltAtT;       // round time we first saw it standing
+        }
+
+        // Bio Caches do not move, so position rounded to the metre is a stable
+        // identity across samples and across the game's own list reordering.
+        static readonly Dictionary<long, Entry> _bcs = new Dictionary<long, Entry>();
+        static long _attributed;
+        static float _lastCheckAt;
+
+        internal static void ResetForNewRound()
+        {
+            _bcs.Clear();
+            _attributed = 0;
+            _lastCheckAt = 0f;
+        }
+
+        static long Key(Vector3 p) =>
+            ((long)Mathf.RoundToInt(p.x) << 20) ^ (long)Mathf.RoundToInt(p.z);
+
+        internal static void Sample(Team team, string bcDisplayName)
+        {
+            if (team == null) return;
+            float roundT;
+            try { roundT = MapLayers.LayerReplay.CurrentRoundTime; } catch { return; }
+
+            try
+            {
+                var structs = team.Structures;
+                if (structs == null) return;
+                for (int i = 0; i < structs.Count; i++)
+                {
+                    var s = structs[i];
+                    if (s == null || s.ObjectInfo == null || s.IsDestroyed) continue;
+                    if (!string.Equals(s.ObjectInfo.DisplayName, bcDisplayName,
+                                       StringComparison.OrdinalIgnoreCase)) continue;
+
+                    Vector3 p = s.transform.position;
+                    long k = Key(p);
+                    int stored = ReadStored(s);
+
+                    if (!_bcs.TryGetValue(k, out var e))
+                    {
+                        e = new Entry { Pos = p, LastStored = stored, Deposited = 0,
+                                        FirstDepositT = -1f, BuiltAtT = roundT };
+                        _bcs[k] = e;
+                        continue;
+                    }
+
+                    int d = stored - e.LastStored;
+                    if (d > 0)
+                    {
+                        e.Deposited += d;
+                        _attributed += d;
+                        if (e.FirstDepositT < 0f) e.FirstDepositT = roundT;
+                    }
+                    e.LastStored = stored;
+                    _bcs[k] = e;
+                }
+            }
+            catch (Exception ex) { MelonLogger.Warning("[BC/INCOME] sample threw: " + ex.Message); }
+
+            MaybeSelfCheck(team, roundT);
+        }
+
+        /// <summary>Does the attribution add up to what the team actually
+        /// earned? If not, say so loudly rather than exporting zeros.</summary>
+        static void MaybeSelfCheck(Team team, float roundT)
+        {
+            if (Time.time - _lastCheckAt < 120f) return;
+            _lastCheckAt = Time.time;
+            if (roundT < 180f) return;
+
+            int teamCum = 0;
+            try { teamCum = EcoRateSampler.GetCumulativeIncome(team); } catch { }
+            if (teamCum <= 0) return;
+
+            float ratio = _attributed / (float)teamCum;
+            int earning = 0, idle = 0;
+            foreach (var kv in _bcs)
+                if (kv.Value.Deposited > 0) earning++; else idle++;
+
+            MelonLogger.Msg($"[BC/INCOME] attributed={_attributed} teamCumulative={teamCum} " +
+                            $"ratio={ratio:F2} bcs={_bcs.Count} earning={earning} untapped={idle}" +
+                            (ratio < 0.2f
+                                ? "  <-- ATTRIBUTION NOT WORKING, do not use per-BC income"
+                                : ""));
+        }
+
+        /// <summary>Per-Bio-Cache totals for the metrics line. Deposited is what
+        /// was delivered here; firstDepositT is time-to-first-return, which is
+        /// the number an expansion is actually judged on.</summary>
+        internal static bool TryGet(Vector3 pos, out long deposited, out float firstDepositT,
+                                    out float builtAtT)
+        {
+            if (_bcs.TryGetValue(Key(pos), out var e))
+            {
+                deposited = e.Deposited; firstDepositT = e.FirstDepositT; builtAtT = e.BuiltAtT;
+                return true;
+            }
+            deposited = 0; firstDepositT = -1f; builtAtT = -1f;
+            return false;
+        }
+
+        // Same reflected path EcoStateBuilder uses — ResourceHolders is not
+        // cleanly exposed through the typed API under Il2Cpp interop.
+        static PropertyInfo _piHolders, _piAmount;
+        static int ReadStored(object entity)
+        {
+            try
+            {
+                if (_piHolders == null)
+                    _piHolders = entity.GetType().GetProperty("ResourceHolders",
+                        BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                if (_piHolders == null) return 0;
+                var list = _piHolders.GetValue(entity) as System.Collections.IEnumerable;
+                if (list == null) return 0;
+                int total = 0;
+                foreach (var h in list)
+                {
+                    if (_piAmount == null)
+                        _piAmount = h.GetType().GetProperty("AmountStored",
+                            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                    if (_piAmount == null) return 0;
+                    var v = _piAmount.GetValue(h);
+                    if (v is int i) total += i;
+                }
+                return total;
+            }
+            catch { return 0; }
+        }
+    }
+}

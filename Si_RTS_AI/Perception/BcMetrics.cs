@@ -138,8 +138,16 @@ namespace Si_RTS_AI.Perception
                   .Append("\"z\":").Append(bp.z.ToString("F0", System.Globalization.CultureInfo.InvariantCulture)).Append(',')
                   .Append("\"workersInRange\":").Append(workersInRange).Append(',')
                   .Append("\"patchesInRange\":").Append(patchesInRange).Append(',')
-                  .Append("\"nearestPatchDist\":").Append(nearestPatch.ToString("F0", System.Globalization.CultureInfo.InvariantCulture))
-                  .Append('}');
+                  .Append("\"nearestPatchDist\":").Append(nearestPatch.ToString("F0", System.Globalization.CultureInfo.InvariantCulture));
+                // Per-Bio-Cache earnings: what was delivered here, and when the
+                // first delivery landed. "deposited 0 and standing for minutes"
+                // is the claimed-but-untapped case the expansion experiment is
+                // trying to count.
+                if (BcIncome.TryGet(bp, out long dep, out float firstT, out float builtT))
+                    sb.Append(",\"deposited\":").Append(dep)
+                      .Append(",\"firstDepositT\":").Append(firstT.ToString("F0", System.Globalization.CultureInfo.InvariantCulture))
+                      .Append(",\"builtAtT\":").Append(builtT.ToString("F0", System.Globalization.CultureInfo.InvariantCulture));
+                sb.Append('}');
             }
             sb.Append("]}");
 
