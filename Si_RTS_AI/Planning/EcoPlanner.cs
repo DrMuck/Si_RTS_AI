@@ -681,6 +681,28 @@ namespace Si_RTS_AI.Planning
                     float dx = s.bcs[i].pos.x - it.pos.x, dz = s.bcs[i].pos.z - it.pos.z;
                     if (dx * dx + dz * dz < m2) return true;
                 }
+
+                // THE SAME PATCH, TWICE.
+                //
+                // A 60m match is not enough on its own. The game slides a
+                // placement by up to ~100m, so a Bio Cache aimed at this patch
+                // can be standing and working it from outside that radius,
+                // while the plan item — held for up to 30s until the next
+                // replan — still reads as unbuilt and fires again. DrMuck found
+                // two such pairs in one round: (2531,2094)/(2638,2102) and
+                // (2175,2537)/(2267,2622).
+                //
+                // So ask the question the planner asks: is somebody already
+                // working the patch this site exists to tap?
+                int mine = EcoSimulator.NearestActivePatchIdxPublic(s, it.pos);
+                if (mine < 0) return false;
+                const float WORKS_M2 = 220f * 220f;
+                for (int i = 0; i < s.bcs.Count; i++)
+                {
+                    float dx = s.bcs[i].pos.x - it.pos.x, dz = s.bcs[i].pos.z - it.pos.z;
+                    if (dx * dx + dz * dz > WORKS_M2) continue;
+                    if (EcoSimulator.NearestActivePatchIdxPublic(s, s.bcs[i].pos) == mine) return true;
+                }
                 return false;
             }
             for (int i = 0; i < s.cysts.Count; i++)
