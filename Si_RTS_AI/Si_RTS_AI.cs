@@ -8,7 +8,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 
-[assembly: MelonInfo(typeof(Si_RTS_AI.Si_RTS_AI), "Si_RTS_AI", "0.21.2-unitcaps", "DrMuck")]
+[assembly: MelonInfo(typeof(Si_RTS_AI.Si_RTS_AI), "Si_RTS_AI", "0.21.3-combatlog", "DrMuck")]
 [assembly: MelonGame("Bohemia Interactive", "Silica")]
 
 namespace Si_RTS_AI
@@ -135,6 +135,9 @@ namespace Si_RTS_AI
             long tPeriodic = 0;
             long ts = System.Diagnostics.Stopwatch.GetTimestamp();
             PeriodicTelemetryTick();
+            // Observation only — no orders, no placements — so it is safe to run
+            // alongside an experiment whose rounds must stay comparable.
+            Perception.CombatLog.Tick();
             tPeriodic = (System.Diagnostics.Stopwatch.GetTimestamp() - ts) * 1000L / System.Diagnostics.Stopwatch.Frequency;
             RecentModWork.AddPeriodic(tPeriodic);
         }
@@ -407,6 +410,7 @@ namespace Si_RTS_AI
             Perception.BcMetrics.ResetForNewRound();
             Perception.BcIncome.ResetForNewRound();
             Perception.UnitCaps.ResetForNewRound();
+            Perception.CombatLog.ResetForNewRound();
             Perception.ShrimpStateSampler.ResetForNewRound();
             Perception.GameConstantsDumper.ResetForNewRound();
             Planning.EcoPlanner.ResetForNewRound();
