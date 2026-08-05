@@ -28,6 +28,7 @@ namespace Si_RTS_AI.Planning
         static MelonPreferences_Entry<float> _relocSpacings;
         static MelonPreferences_Entry<int>   _capHeadroomFrom;
         static MelonPreferences_Entry<bool>  _persist;
+        static MelonPreferences_Entry<int>   _workers10;
 
         internal static void Init()
         {
@@ -53,6 +54,9 @@ namespace Si_RTS_AI.Planning
                 _capHeadroomFrom = _cat.CreateEntry("NoCystsFromShrimpCount", 180,
                     "Stop planning producers at this shrimp count. Against the unit cap a Lesser Cyst cannot produce anything — the observed failure was a row of them through the middle of the map while the shrimps were all east.");
 
+                _workers10 = _cat.CreateEntry("WorkersByTenMinutes", 100,
+                    "Reference worker count by the ten-minute mark — the trajectory the economy aims at, from 14 soak rounds where workers-at-10min correlated 0.80 with income-at-25min. Being BEHIND it raises producer count, suspends the sustainable-capacity ceiling and widens expansion; being on it changes nothing. Lower on maps whose ground genuinely cannot feed that many.");
+
                 _persist = _cat.CreateEntry("PersistPlans", true,
                     "Write each plan revision to UserData/RTSA/blueprint/<round>/ and serve the latest at http://localhost:<port>/blueprint for the layers viewer.");
 
@@ -73,5 +77,6 @@ namespace Si_RTS_AI.Planning
         internal static float RelocationSpacings    => _relocSpacings != null ? _relocSpacings.Value : 3.5f;
         internal static int   ShrimpCapHeadroomFrom => _capHeadroomFrom != null ? _capHeadroomFrom.Value : 180;
         internal static bool  Persist               => _persist == null || _persist.Value;
+        internal static int   WorkersByTenMinutes   => _workers10 != null ? _workers10.Value : 100;
     }
 }

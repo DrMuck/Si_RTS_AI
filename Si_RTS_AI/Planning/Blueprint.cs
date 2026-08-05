@@ -572,6 +572,15 @@ namespace Si_RTS_AI.Planning
             // The config value is the manual answer to the same question.
             int budget = BlueprintConfig.CystStrategyAuto
                 ? ExpansionStrategy.Producers : BlueprintConfig.MaxCystsPerPlan;
+            // BEHIND THE TRAJECTORY OUTRANKS THE SWEEP.
+            //
+            // The sweep prices producers over its horizon and has been choosing
+            // zero or one; the soak rounds say producer count is the strongest
+            // single predictor of where the economy ends up. When the worker
+            // curve is behind its reference, that measurement wins — the sweep
+            // still decides the rest.
+            if (WorkerPlan.BehindSchedule && WorkerPlan.ProducersNeeded > budget)
+                budget = WorkerPlan.ProducersNeeded;
 
             // PRODUCERS GO WHERE MIGRATION DOES NOT REACH — WHICH IS OUTWARD.
             //

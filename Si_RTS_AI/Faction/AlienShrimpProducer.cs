@@ -245,7 +245,11 @@ namespace Si_RTS_AI.Faction
             // which makes it self-limiting rather than another constant.
             bool idleCash = false;
             try { idleCash = team.TotalResources >= SURPLUS_FOR_MORE_WORKERS; } catch { }
-            if (bcs.Count > 0 && (!Planning.EcoPlanner.CurrentPhaseIsExpand || idleCash))
+            // Behind the reference curve, the sustainable-capacity model is a
+            // statement about the long run — and the long run is exactly what
+            // is being lost while it holds. See WorkerPlan.
+            bool behind = Planning.WorkerPlan.BehindSchedule;
+            if (bcs.Count > 0 && (!Planning.EcoPlanner.CurrentPhaseIsExpand || idleCash || behind))
                 effectiveCap = Math.Min(SHRIMP_HARD_CAP, Math.Max(effectiveCap, bcs.Count * PER_BC_CAP));
 
             // KEEP HEADROOM FOR EXPANSIONS THAT DO NOT EXIST YET.
@@ -443,6 +447,7 @@ namespace Si_RTS_AI.Faction
             float perMin = dt > 0f ? gained * 60f / dt : 0f;
             float ceiling = cysts * 60f / Mathf.Max(1f, Planning.EcoSimulator.SHRIMP_BUILD_S);
 
+            Planning.WorkerPlan.NoteDuty(perMin, ceiling);
             MelonLogger.Msg($"[SHRIMP/PROD] {perMin:F1}/min against {ceiling:F1}/min from {cysts} producers " +
                             $"({(ceiling > 0f ? perMin / ceiling * 100f : 0f):F0}%) — " +
                             $"live={live} queued={queued} cap={cap} | " +

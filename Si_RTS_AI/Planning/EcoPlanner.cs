@@ -1315,6 +1315,14 @@ namespace Si_RTS_AI.Planning
             catch (System.Exception ex) { MelonLogger.Warning("[PLAN] Build threw at apply: " + ex.Message); return; }
 
             _currentTeam  = team;
+            try
+            {
+                int producing = 0;
+                for (int i = 0; i < state.cysts.Count; i++)
+                    if (state.cysts[i].finished && state.cysts[i].pos != state.nestPos) producing++;
+                WorkerPlan.Update(Perception.MapLayers.LayerReplay.CurrentRoundTime, state.totalShrimps, producing);
+            }
+            catch { }
             try { MapProfile.MaybeBuild(team, Perception.MapLayers.GridWorld.CurrentMapName); } catch { }
             try { OpenerPlanner.MaybePlan(state); } catch { }
             _currentPhase = ComputePhase(team, state);
@@ -2073,6 +2081,11 @@ namespace Si_RTS_AI.Planning
                     // simulation rather than a rule here — inside-out when the
                     // walk dominates, homogeneous when it does not.
                     int sitesAhead = BlueprintConfig.CystStrategyAuto ? ExpansionStrategy.SitesAhead : 4;
+                    // Workers need somewhere to work. Falling behind the
+                    // reference curve buys ground as well as producers — a
+                    // roster with nothing to harvest is the pile-up this whole
+                    // line of work started from.
+                    if (WorkerPlan.BehindSchedule) sitesAhead = Mathf.Max(sitesAhead, 8);
                     int sitesTouched = 0, lastSite = -1;
 
                     // ONE FRONT PER BRANCH.
