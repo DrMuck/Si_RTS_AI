@@ -51,9 +51,17 @@ as a runnable DLL at `_archive/v0.20.1_2026-08-05/` (copy over
 ```
 HeadlessTest_EndRoundAfterMinutes = 40
 HeadlessTest_ConfigCycle          = "adaptive,ratio2,ratio3,ratio5"
+HeadlessTest_RoundsPerMap         = 8
+HeadlessTest_MapRotation          = "NarakaCity,..."
 HeadlessTest_AutoRotateMap        = false
 HeadlessTest_ShrimpStateSampler   = false
 ```
+
+**The first attempt did not restart the map.** Ending a round does not reliably
+reload it, so the harness now issues `map <name> mp_strategy` after every
+force-end and reloads the SAME map until `RoundsPerMap` is reached (v0.23.1).
+That is the point rather than an accident — the arms need identical ground, and
+most maps randomise the alien spawn between rounds.
 
 Map **NarakaCity**. 12 rounds ≈ 8 h ⇒ 3 repetitions per arm.
 

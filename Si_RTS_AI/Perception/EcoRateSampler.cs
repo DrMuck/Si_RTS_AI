@@ -354,11 +354,49 @@ namespace Si_RTS_AI.Perception
         internal static bool TryMutateTeamResources(Team team, int delta, out string usedPath)
             => TryConsoleResourcesCommand(team, delta, out usedPath);
 
-        static bool TryConsoleResourcesCommand(Team team, int delta, out string usedPath)
+        /// <summary>
+        /// Run an arbitrary server console command through the executor this
+        /// class already resolves for the resources drain.
+        ///
+        /// Exposed because the test harness needs `map &lt;name&gt; mp_strategy` to
+        /// force the next round onto a chosen map, and the alternative was a
+        /// second reflection search for the same object. Resolution is lazy and
+        /// shared: whoever calls first pays for it.
+        /// </summary>
+        internal static bool TryRunConsoleCommand(string cmd)
         {
-            usedPath = "";
-            if (!_consoleResolved)
+            if (string.IsNullOrWhiteSpace(cmd)) return false;
+            EnsureConsoleResolved();
+            if (_consoleExec == null || _consoleType == null)
             {
+                MelonLogger.Warning($"[CONSOLE] no executor resolved — cannot run '{cmd}'");
+                return false;
+            }
+            try
+            {
+                object? target = _consoleIsStatic ? null : ResolveConsoleInstance();
+                var pars = _consoleExec.GetParameters();
+                var args = new object?[pars.Length];
+                args[0] = cmd;
+                for (int i = 1; i < pars.Length; i++) args[i] = Type.Missing;
+                _consoleExec.Invoke(target, args);
+                MelonLogger.Msg($"[CONSOLE] ran '{cmd}'");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Warning($"[CONSOLE] '{cmd}' threw: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Find the server console once. Shared by the resources drain and by
+        /// TryRunConsoleCommand, which the harness uses for map changes.
+        /// </summary>
+        static void EnsureConsoleResolved()
+        {
+            if (_consoleResolved) return;
                 _consoleResolved = true;
                 foreach (var name in new[] {
                     "DebugTools.DebugConsole",       // sibling of DebugConsoleHandler in same namespace
@@ -384,7 +422,7 @@ namespace Si_RTS_AI.Perception
                 if (_consoleType == null)
                 {
                     MelonLogger.Warning("[ECO] Console executor: no DebugConsoleHandler / DebugConsole type found via AccessTools.TypeByName.");
-                    return false;
+                    return;
                 }
                 // Signature filter used to check pars[0]==typeof(string), but Il2Cpp
                 // interop types (Il2CppSystem.String, Il2CppInterop wrapper types)
@@ -416,9 +454,14 @@ namespace Si_RTS_AI.Perception
                 {
                     MelonLogger.Warning($"[ECO] Console executor: {_consoleType.FullName} has no TryExecuteCommand/ExecuteCommand method. All methods:");
                     foreach (var s in allSigs) MelonLogger.Msg(s);
-                    return false;
+                    return;
                 }
-            }
+        }
+
+        static bool TryConsoleResourcesCommand(Team team, int delta, out string usedPath)
+        {
+            usedPath = "";
+            EnsureConsoleResolved();
             if (_consoleExec == null || _consoleType == null) return false;
 
             // Try several team-name flavours since the console command might want

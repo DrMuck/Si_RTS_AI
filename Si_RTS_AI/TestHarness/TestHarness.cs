@@ -76,6 +76,9 @@ namespace Si_RTS_AI.TestHarnessNs
         static MelonPreferences_Entry<bool>?   _shrimpStates;
         static MelonPreferences_Entry<bool>?   _defenceEnabled;
         static MelonPreferences_Entry<bool>?   _defenceExecute;
+        static MelonPreferences_Entry<int>?    _roundsPerMap;
+        static int _roundsOnThisMap;
+        static int _mapIndex;
         static int _armIndex;
         static MelonPreferences_Entry<bool>?   _autoRotateMap;
         static MelonPreferences_Entry<string>? _configId;
@@ -154,6 +157,8 @@ namespace Si_RTS_AI.TestHarnessNs
                 _mapRotation          = _cat.CreateEntry("HeadlessTest_MapRotation",         "NorthPolarCap,NarakaCity,WhisperingPlains", "Comma-separated map names to cycle through for soak testing. Logged at scene load and echoed at round end — auto-cycling isn't wired yet, so restart the server with the next map name in this list to rotate. Guards against overfitting AI tuning to a single map.");
                 _shrimpStates         = _cat.CreateEntry("HeadlessTest_ShrimpStateSampler", false,
                     "Log every shrimp's position once a second to UserData/RTSA/shrimp_states.jsonl. Off by default — it wrote 4.2 GB over a nineteen-hour soak and no eco benchmark reads it. Turn on only when characterising migration directly.");
+                _roundsPerMap         = _cat.CreateEntry("HeadlessTest_RoundsPerMap", 8,
+                    "Rounds to play on one map before moving to the next in HeadlessTest_MapRotation. The harness issues 'map <name> mp_strategy' after every force-end, so the SAME map is reloaded until this count is reached — an A/B run needs its arms on identical ground, and a spawn-randomised map change mid-experiment invalidates the comparison. 0 disables map commands entirely.");
                 _configCycle          = _cat.CreateEntry("HeadlessTest_ConfigCycle", "",
                     "A/B RIG. Comma-separated arm names applied one per round, cycling. Empty = off (preferences are used as-is). Each arm sets its own knobs and overwrites HeadlessTest_ConfigId, so every benchmark row is tagged with the arm that produced it. Arms rotate rather than running in blocks, so any drift over a long soak spreads evenly across them instead of landing on whichever ran last. Known arms: adaptive, ratio2, ratio3, ratio5 (all hold the worker cap at 10 — H1 — and differ only in producers per site); cap18 restores the stock cap for a control.");
                 _configId             = _cat.CreateEntry("HeadlessTest_ConfigId",            "baseline", "Free-form tag identifying the AI-config version this soak run represents (e.g. 'baseline', 'utility_bc_v1'). Written to each benchmark row so 'python analyze.py | group_by(configId)' can diff A/B eco.");
@@ -483,8 +488,44 @@ namespace Si_RTS_AI.TestHarnessNs
                 {
                     _forceEndRoundFired = true;
                     ForceEndRound(elapsed);
+                    QueueNextMap();
                 }
             }
+        }
+
+        /// <summary>
+        /// Load the next round's map explicitly, because ending a round does not
+        /// reliably restart the same one — DrMuck, 2026-08-05: "it doesn't start
+        /// match on the same map. We need to force a mapchange after the round is
+        /// ended via e.g. map narakacity mp_strategy".
+        ///
+        /// The SAME map is reloaded until RoundsPerMap is reached. That is the
+        /// point rather than an accident: an A/B run needs its arms on identical
+        /// ground, and most maps randomise the alien spawn between rounds, so
+        /// drifting onto another map mid-experiment silently invalidates the
+        /// comparison.
+        /// </summary>
+        static void QueueNextMap()
+        {
+            int perMap = _roundsPerMap?.Value ?? 8;
+            if (perMap <= 0) return;                   // map commands disabled
+
+            var rotation = ParseMapRotation();
+            if (rotation.Count == 0) return;
+
+            _roundsOnThisMap++;
+            if (_roundsOnThisMap >= perMap)
+            {
+                _roundsOnThisMap = 0;
+                _mapIndex = (_mapIndex + 1) % rotation.Count;
+                MelonLogger.Msg($"[RTSA/HT] {perMap} rounds played — rotating to '{rotation[_mapIndex]}'");
+            }
+
+            string next = rotation[_mapIndex];
+            MelonLogger.Msg($"[RTSA/HT] queueing next round: map {next} mp_strategy " +
+                            $"(round {_roundsOnThisMap + 1}/{perMap} on this map)");
+            try { Perception.EcoRateSampler.TryRunConsoleCommand($"map {next} mp_strategy"); }
+            catch (Exception ex) { MelonLogger.Warning("[RTSA/HT] map command threw: " + ex.Message); }
         }
 
         // Minimal auto-start (v0.7.37): after 3s, call SetTeamVersusMode ONCE from
