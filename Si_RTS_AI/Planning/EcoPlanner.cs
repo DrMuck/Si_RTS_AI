@@ -705,6 +705,27 @@ namespace Si_RTS_AI.Planning
             return false;
         }
 
+        /// <summary>Bio Caches currently under construction for this team. The
+        /// shrimp producer holds unit-cap headroom against this rather than
+        /// against a constant — see AlienShrimpProducer.</summary>
+        internal static int UnfinishedBcCount(Team team)
+        {
+            int n = 0;
+            try
+            {
+                var sites = ConstructionSite.ConstructionSites;
+                if (sites != null)
+                    for (int i = 0; i < sites.Count; i++)
+                    {
+                        var cs = sites[i];
+                        if (cs == null || cs.Team != team || cs.IsDestroyed || cs.ObjectInfo == null) continue;
+                        if (cs.ObjectInfo.DisplayName == "Bio Cache") n++;
+                    }
+            }
+            catch { }
+            return n;
+        }
+
         /// <summary>Hop distance for one Node along the chain, margin applied.</summary>
         static float NodeHopDistance(float reach) =>
             Mathf.Max(reach - PLACEMENT_MARGIN_M, reach * NODE_HOP_MIN_FRACTION);
@@ -717,9 +738,66 @@ namespace Si_RTS_AI.Planning
         internal static int   SlideSamples;
         internal static float SlideSumM, SlideMaxM;
 
+        // ---- How far a structure ACTUALLY reaches ---------------------------
+        //
+        // DrMuck, 2026-08-05, on a Bio Cache that landed short of its patch:
+        // "it seems it was placed instead of a node but without the knowledge
+        // of its modded extended build range."
+        //
+        // Worth settling by measurement rather than argument, because the two
+        // sources we have disagree. The game reports MaximumBaseStructureDistance
+        // = 200m for a Bio Cache and a PhysicalRadius of 9m, so the planner uses
+        // 209m. USER_RULES records a MEASURED radius of 37m (i.e. 237m), while
+        // the Badlands placement measurements in the same document imply an
+        // effective reach nearer 200m. Nobody has measured it under the balance
+        // mod at all.
+        //
+        // So: every structure that appears is measured against the nearest
+        // finished structure that could have anchored it. The largest distance
+        // observed is a lower bound on the true reach, and it is reported
+        // beside what the planner assumed.
+        internal static float ObservedBcAnchorMaxM, ObservedNodeAnchorMaxM;
+        static float _lastReachReportAt;
+
+        static void NoteAnchorDistance(Team team, string name, Vector3 actual)
+        {
+            try
+            {
+                var structs = team?.Structures;
+                if (structs == null) return;
+                float best = float.MaxValue;
+                for (int i = 0; i < structs.Count; i++)
+                {
+                    var st = structs[i];
+                    if (st == null || st.ObjectInfo == null || st.IsDestroyed) continue;
+                    Vector3 p = st.transform.position;
+                    float dx = p.x - actual.x, dz = p.z - actual.z;
+                    float d2 = dx * dx + dz * dz;
+                    if (d2 < 1f) continue;            // itself
+                    if (d2 < best) best = d2;
+                }
+                if (best == float.MaxValue) return;
+                float d = Mathf.Sqrt(best);
+                if (name == "Bio Cache" && d > ObservedBcAnchorMaxM) ObservedBcAnchorMaxM = d;
+                if (name == "Node"      && d > ObservedNodeAnchorMaxM) ObservedNodeAnchorMaxM = d;
+
+                if (Time.time - _lastReachReportAt > 120f)
+                {
+                    _lastReachReportAt = Time.time;
+                    MelonLogger.Msg($"[REACH] observed max anchor distance — " +
+                                    $"BioCache {ObservedBcAnchorMaxM:F0}m (planner assumes " +
+                                    $"{EcoSimulator.BcPlaceReachM:F0}m), " +
+                                    $"Node {ObservedNodeAnchorMaxM:F0}m (assumes " +
+                                    $"{EcoSimulator.NODE_REACH_M:F0}m)");
+                }
+            }
+            catch { }
+        }
+
         /// <summary>Called from the structure-spawn observer.</summary>
         internal static void NoteStructureSpawned(Team team, string name, Vector3 actual)
         {
+            NoteAnchorDistance(team, name, actual);
             if (team == null || !_fired.TryGetValue(team, out var log)) return;
             ActionKind want = name == "Node" ? ActionKind.PlaceNode
                             : name == "Bio Cache" ? ActionKind.PlaceBc
@@ -1409,8 +1487,24 @@ namespace Si_RTS_AI.Planning
                 {
                     int frontCost = Mathf.Max(1, EcoSimulator.NODE_COST + EcoSimulator.BC_COST);
                     int surplus   = Mathf.Max(0, state.cash - shrimpReserve);
+                    // EVERY BRANCH ADVANCES WHEN THERE IS CASH FOR IT.
+                    //
+                    // DrMuck, 2026-08-05: "if there is more than efficient
+                    // cash, it would be great if it is noded into each of the
+                    // branches simultaneously, it seems that is a limiting
+                    // factor in terms of aggressive expansion." He is right —
+                    // the ceiling was a flat 6 while the strategy sweep was
+                    // choosing twelve fronts, so the plan committed to breadth
+                    // the fire budget then refused to pay for.
+                    //
+                    // The ceiling exists so a starburst cannot drain the bank,
+                    // but cash is already checked per fire and the shrimp
+                    // reserve is already held back, so it only needs to track
+                    // how many fronts the strategy actually opened.
+                    int breadth = Mathf.Max(MAX_NODE_FIRES,
+                        BlueprintConfig.CystStrategyAuto ? ExpansionStrategy.SitesAhead : MAX_NODE_FIRES);
                     maxNodeFires  = FanOutAllowed(state)
-                        ? Mathf.Clamp(surplus / frontCost, 2, MAX_NODE_FIRES)
+                        ? Mathf.Clamp(surplus / frontCost, 2, breadth)
                         : 1;
                 }
                 else maxNodeFires = 1;

@@ -216,7 +216,17 @@ namespace Si_RTS_AI.Faction
                 int perSite = Planning.ShrimpGroupPlanner.TypicalGroupCapacity;
                 if (perSite > 0)
                 {
-                    int headroom = Math.Min(EXPANSION_SITES_HELD * perSite, effectiveCap / 4);
+                    // HOLD ROOM FOR THE SITES ACTUALLY GOING UP, NOT A CONSTANT.
+                    //
+                    // A flat two sites' worth of unit cap was held back whether
+                    // or not anything was being built, so when expansion was
+                    // slow the reservation just sat there and production stalled
+                    // against it — DrMuck watched shrimps stick around 57 with
+                    // 70,000 cash unspent. Reserve for what is under
+                    // construction, and when nothing is, produce.
+                    int sitesGoingUp = 0;
+                    try { sitesGoingUp = Planning.EcoPlanner.UnfinishedBcCount(team); } catch { }
+                    int headroom = Math.Min(Math.Max(1, sitesGoingUp) * perSite, effectiveCap / 4);
                     effectiveCap = Math.Max(1, effectiveCap - headroom);
                 }
             }
