@@ -35,6 +35,13 @@ namespace Si_RTS_AI.Perception
     {
         const float SAMPLE_INTERVAL_S = 1f;
 
+        /// <summary>
+        /// Per-shrimp positions, once a second. Useful when characterising
+        /// migration; 4.2 GB over a nineteen-hour soak otherwise, and none of
+        /// the eco benchmarks read it. Off unless something asks for it.
+        /// </summary>
+        internal static bool Enabled;
+
         // Names that count as "workers" (resource carriers) and "banks" (deposit points).
         // Matches the same categories BcMetrics/AlienConstruction use, so alien
         // shrimps + human harvester variants both get logged.
@@ -63,6 +70,7 @@ namespace Si_RTS_AI.Perception
         {
             if (team == null) return;
             float now = Time.time;
+            if (!Enabled) return;
             if (_lastSampleAt.TryGetValue(team, out var last) && now - last < SAMPLE_INTERVAL_S) return;
             _lastSampleAt[team] = now;
 

@@ -29,6 +29,8 @@ namespace Si_RTS_AI.Planning
         static MelonPreferences_Entry<int>   _capHeadroomFrom;
         static MelonPreferences_Entry<bool>  _persist;
         static MelonPreferences_Entry<int>   _workers10;
+        static MelonPreferences_Entry<int>   _workerCapPerBc;
+        static MelonPreferences_Entry<int>   _producerPerSites;
 
         internal static void Init()
         {
@@ -57,6 +59,16 @@ namespace Si_RTS_AI.Planning
                 _workers10 = _cat.CreateEntry("WorkersByTenMinutes", 100,
                     "Reference worker count by the ten-minute mark — the trajectory the economy aims at, from 14 soak rounds where workers-at-10min correlated 0.80 with income-at-25min. Being BEHIND it raises producer count, suspends the sustainable-capacity ceiling and widens expansion; being on it changes nothing. Lower on maps whose ground genuinely cannot feed that many.");
 
+                // ---- Experiment knobs (2026-08-05 A/B rig) --------------------
+                //
+                // Both default to the adaptive behaviour, so leaving them alone
+                // changes nothing. They exist so an arm of the soak can hold one
+                // variable still and sweep another.
+                _workerCapPerBc = _cat.CreateEntry("WorkerCapPerBioCache", 18,
+                    "Workers one Bio Cache may hold. H1 (deliberate under-saturation) lowers this so the freed unit cap goes to outer sites instead: the crowd curve pays 1.00 for the first six shrimps on a fresh patch and 0.70 for the thirteenth on a full one, so under-saturating pays whenever fresh ground is reachable.");
+                _producerPerSites = _cat.CreateEntry("ProducerPerSites", 0,
+                    "0 = adaptive (strategy sweep plus the worker trajectory decide). 1..N forces one Lesser Cyst per N planned sites — 2 means every other site gets a producer, 5 means one in five. The sweep arm for 'how many biotics to skip before the next gets a Cyst'. Placement stays worst-supplied-first, so the density changes and the outward bias does not.");
+
                 _persist = _cat.CreateEntry("PersistPlans", true,
                     "Write each plan revision to UserData/RTSA/blueprint/<round>/ and serve the latest at http://localhost:<port>/blueprint for the layers viewer.");
 
@@ -78,5 +90,7 @@ namespace Si_RTS_AI.Planning
         internal static int   ShrimpCapHeadroomFrom => _capHeadroomFrom != null ? _capHeadroomFrom.Value : 180;
         internal static bool  Persist               => _persist == null || _persist.Value;
         internal static int   WorkersByTenMinutes   => _workers10 != null ? _workers10.Value : 100;
+        internal static int   WorkerCapPerBioCache  => _workerCapPerBc != null ? _workerCapPerBc.Value : 18;
+        internal static int   ProducerPerSites      => _producerPerSites != null ? _producerPerSites.Value : 0;
     }
 }

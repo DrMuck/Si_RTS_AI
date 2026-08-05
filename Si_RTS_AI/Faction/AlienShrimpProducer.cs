@@ -38,7 +38,7 @@ namespace Si_RTS_AI.Faction
         // The team-wide ceiling is the real brake and is map-derived (see
         // ShrimpGroupPlanner.TeamCapacity), so a higher per-BC number no longer
         // risks the 255-worker overproduction that forced this down to 15.
-        const int   PER_BC_CAP = 18;
+        static int  PER_BC_CAP => Planning.BlueprintConfig.WorkerCapPerBioCache;
         // Radius around a BC that counts as "shrimps belonging to this BC".
         // Larger than the vanilla harvest range so we cover in-transit shrimps
         // returning to deposit. 60m ~ 2x harvest range on the maps we watch.

@@ -582,6 +582,15 @@ namespace Si_RTS_AI.Planning
             if (WorkerPlan.BehindSchedule && WorkerPlan.ProducersNeeded > budget)
                 budget = WorkerPlan.ProducersNeeded;
 
+            // FORCED RATIO — the experiment arm. One producer per N planned
+            // sites, which is DrMuck's "skip 1-4 biotics, then the next one
+            // gets a Lesser". Expressed as a density rather than as literal
+            // every-Nth-in-build-order so it composes with worst-supplied-first
+            // placement instead of fighting it.
+            int perSites = BlueprintConfig.ProducerPerSites;
+            if (perSites > 0)
+                budget = Mathf.Max(1, Mathf.CeilToInt(sites.Count / (float)perSites));
+
             // PRODUCERS GO WHERE MIGRATION DOES NOT REACH — WHICH IS OUTWARD.
             //
             // This walked the sites in BUILD order, so the nearest ones got the

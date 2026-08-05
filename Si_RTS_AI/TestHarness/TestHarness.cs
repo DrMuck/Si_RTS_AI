@@ -72,6 +72,9 @@ namespace Si_RTS_AI.TestHarnessNs
         static MelonPreferences_Entry<bool>?  _openerExecute;
         static MelonPreferences_Entry<int>?  _telemetryPort;
         static MelonPreferences_Entry<string>? _mapRotation;
+        static MelonPreferences_Entry<string>? _configCycle;
+        static MelonPreferences_Entry<bool>?   _shrimpStates;
+        static int _armIndex;
         static MelonPreferences_Entry<bool>?   _autoRotateMap;
         static MelonPreferences_Entry<string>? _configId;
         static MelonPreferences_Entry<bool>?   _ecoPlannerActive;
@@ -143,6 +146,10 @@ namespace Si_RTS_AI.TestHarnessNs
                 _autoRotateMap        = _cat.CreateEntry("HeadlessTest_AutoRotateMap", false,
                     "Load the next map in HeadlessTest_MapRotation after a force-end, instead of restarting the same one. OFF by default: it calls GameLevelLoader.StartLoadLevelCoroutine, which is not a verified API here, and a bad load on a live server is worse than a repeated map. Turn on for unattended soak runs, where staying on one map defeats the point of the rotation.");
                 _mapRotation          = _cat.CreateEntry("HeadlessTest_MapRotation",         "NorthPolarCap,NarakaCity,WhisperingPlains", "Comma-separated map names to cycle through for soak testing. Logged at scene load and echoed at round end — auto-cycling isn't wired yet, so restart the server with the next map name in this list to rotate. Guards against overfitting AI tuning to a single map.");
+                _shrimpStates         = _cat.CreateEntry("HeadlessTest_ShrimpStateSampler", false,
+                    "Log every shrimp's position once a second to UserData/RTSA/shrimp_states.jsonl. Off by default — it wrote 4.2 GB over a nineteen-hour soak and no eco benchmark reads it. Turn on only when characterising migration directly.");
+                _configCycle          = _cat.CreateEntry("HeadlessTest_ConfigCycle", "",
+                    "A/B RIG. Comma-separated arm names applied one per round, cycling. Empty = off (preferences are used as-is). Each arm sets its own knobs and overwrites HeadlessTest_ConfigId, so every benchmark row is tagged with the arm that produced it. Arms rotate rather than running in blocks, so any drift over a long soak spreads evenly across them instead of landing on whichever ran last. Known arms: adaptive, ratio2, ratio3, ratio5 (all hold the worker cap at 10 — H1 — and differ only in producers per site); cap18 restores the stock cap for a control.");
                 _configId             = _cat.CreateEntry("HeadlessTest_ConfigId",            "baseline", "Free-form tag identifying the AI-config version this soak run represents (e.g. 'baseline', 'utility_bc_v1'). Written to each benchmark row so 'python analyze.py | group_by(configId)' can diff A/B eco.");
                 _ecoPlannerActive     = _cat.CreateEntry("HeadlessTest_EcoPlannerActive",    false,   "Rolling-horizon eco planner action-execution switch. OFF (default): planner runs in shadow mode, logging [PLAN] recommendations only. ON: planner fires the winning action via HelperMethods.SpawnAtLocation when expected_gain exceeds the min-conviction threshold. Independent of AutoOverrideRtsai — works even when a human is commanding the alien team.");
 
@@ -204,6 +211,61 @@ namespace Si_RTS_AI.TestHarnessNs
         // ================================================================
         // Scene load — arm timers and (later) apply the auto-override.
         // ================================================================
+        /// <summary>
+        /// Apply the next arm of the A/B cycle, if one is configured.
+        ///
+        /// Preferences are only read at scene load and MelonLoader rewrites the
+        /// file from memory on shutdown, so without this an experiment can only
+        /// change configuration by restarting the server — which means somebody
+        /// has to be awake for it. Arms rotate per round instead.
+        /// </summary>
+        static void ApplyNextArm()
+        {
+            string spec = _configCycle?.Value ?? "";
+            if (string.IsNullOrWhiteSpace(spec)) return;
+
+            var arms = new List<string>();
+            foreach (var part in spec.Split(','))
+            {
+                var t = part.Trim();
+                if (t.Length > 0) arms.Add(t);
+            }
+            if (arms.Count == 0) return;
+
+            string arm = arms[_armIndex % arms.Count];
+            _armIndex++;
+
+            // Every arm holds the worker cap at 10 (H1) except the explicit
+            // control, so the sweep moves one variable: producers per site.
+            int cap = 10, perSites = 0;
+            switch (arm.ToLowerInvariant())
+            {
+                case "adaptive": perSites = 0; break;
+                case "ratio2":   perSites = 2; break;
+                case "ratio3":   perSites = 3; break;
+                case "ratio5":   perSites = 5; break;
+                case "cap18":    cap = 18; perSites = 0; break;
+                default:
+                    MelonLogger.Warning($"[RTSA/HT] Unknown arm '{arm}' — leaving preferences as they are.");
+                    return;
+            }
+
+            try
+            {
+                var bp = MelonPreferences.GetCategory("Si_RTS_AI_Blueprint");
+                var capEntry = bp?.GetEntry<int>("WorkerCapPerBioCache");
+                var ratioEntry = bp?.GetEntry<int>("ProducerPerSites");
+                if (capEntry != null)   capEntry.Value   = cap;
+                if (ratioEntry != null) ratioEntry.Value = perSites;
+                if (_configId != null) _configId.Value = arm;
+                MelonLogger.Msg($"[RTSA/HT] A/B arm {_armIndex}: '{arm}' " +
+                                $"(WorkerCapPerBioCache={cap} ProducerPerSites={perSites}) — " +
+                                $"benchmarks tagged configId='{arm}'");
+            }
+            catch (Exception ex)
+            { MelonLogger.Warning("[RTSA/HT] arm apply threw: " + ex.Message); }
+        }
+
         internal static void OnSceneLoaded(string sceneName)
         {
             RefreshCache();
@@ -232,6 +294,8 @@ namespace Si_RTS_AI.TestHarnessNs
             }
             _sceneActive    = true;
             _sceneLoadedAt  = Time.time;
+            Perception.ShrimpStateSampler.Enabled = _shrimpStates?.Value == true;
+            ApplyNextArm();
 
             if (!_cachedEnable) return;
             int mins    = ClampMinutes(_endRoundAfterMinutes?.Value ?? 10);
