@@ -44,7 +44,10 @@ evenly across arms instead of landing on whichever ran last.
 
 ## 3. Setup
 
-Mod **v0.21.1-bc-income**. Fallback if anything looks wrong: **v0.20.1**, archived
+Mod **v0.23.1-maprotation** — the map-command fix is required for the run to
+work at all, so the first attempt (v0.21.1) has to be restarted on this build.
+It also carries the military shadow code; set `DefenceEnabled=false` so its log
+lines do not clutter an economy run. Fallback if anything looks wrong: **v0.20.1**, archived
 as a runnable DLL at `_archive/v0.20.1_2026-08-05/` (copy over
 `E:\Steam\...\Silica Dedicated Server\Mods\Si_RTS_AI.dll`, restart, no rebuild).
 
@@ -55,6 +58,7 @@ HeadlessTest_RoundsPerMap         = 8
 HeadlessTest_MapRotation          = "NarakaCity,..."
 HeadlessTest_AutoRotateMap        = false
 HeadlessTest_ShrimpStateSampler   = false
+DefenceEnabled                    = false
 ```
 
 **The first attempt did not restart the map.** Ending a round does not reliably
