@@ -171,6 +171,7 @@ namespace Si_RTS_AI.Planning
         struct NetPoint { public Vector3 pos; public int branch; public float pathM; public int kids; }
 
         static readonly List<NetPoint> _net       = new List<NetPoint>(256);
+        static int _rootCount;
         static readonly List<int>      _terminals = new List<int>(128);
         static readonly List<float>    _bestCost  = new List<float>(128);
         static readonly List<int>      _bestAnchor= new List<int>(128);
@@ -200,6 +201,7 @@ namespace Si_RTS_AI.Planning
                                         branch = BranchKey(s.nodes[i].pos, s.nodes[i].pos - s.nestPos),
                                         pathM = Mathf.Sqrt(SqXZ(s.nodes[i].pos, s.nestPos)) });
             if (_net.Count == 0) return;
+            _rootCount = _net.Count;      // everything before this is standing
             ResolveRootPaths(s.nestPos);
 
             for (int p = 0; p < s.patches.Count; p++)
@@ -701,79 +703,65 @@ namespace Si_RTS_AI.Planning
         static void BridgePass()
         {
             Bridges.Clear();
-            if (Items.Count == 0) return;
+            if (_rootCount < 4) return;
 
-            var members = new Dictionary<int, List<int>>();
-            for (int i = 0; i < Items.Count; i++)
-            {
-                if (Items[i].kind == Kind.Cyst) continue;
-                if (!members.TryGetValue(Items[i].branch, out var l))
-                { l = new List<int>(8); members[Items[i].branch] = l; }
-                l.Add(i);
-            }
-
-            var branches = new List<int>(members.Keys);
+            // BRIDGE WHAT EXISTS, NOT WHAT IS PLANNED.
+            //
+            // This searched Items — which holds only UNBUILT work — so every
+            // bridge joined two chains that did not exist yet, its first hop had
+            // no anchor to build from, and the executor refused it as
+            // out-of-reach every single time. One candidate was re-proposed 98
+            // times in a round and never laid a node. A bridge is insurance on
+            // structures you own; planning one between two futures is not a
+            // bridge at all.
+            //
+            // Over the built network the question is simple: two structures that
+            // are FAR APART ALONG THE ROAD but close in a straight line. The
+            // Dijkstra pass above already put the road distance on every root.
             var found = new List<Bridge>(8);
-            for (int x = 0; x < branches.Count; x++)
-            for (int y = x + 1; y < branches.Count; y++)
+            for (int i = 0; i < _rootCount; i++)
             {
-                var A = members[branches[x]];
-                var B = members[branches[y]];
-                int protects = A.Count < B.Count ? A.Count : B.Count;
-                if (protects < BRIDGE_MIN_PROTECT) continue;
-
-                float bestSq = float.MaxValue; int ba = -1, bb = -1;
-                for (int i = 0; i < A.Count; i++)
-                for (int j = 0; j < B.Count; j++)
+                var A = _net[i];
+                if (A.pathM <= 0f) continue;                 // the Nest itself
+                for (int j = i + 1; j < _rootCount; j++)
                 {
-                    float d2 = SqXZ(Items[A[i]].pos, Items[B[j]].pos);
-                    if (d2 < bestSq) { bestSq = d2; ba = A[i]; bb = B[j]; }
+                    var B = _net[j];
+                    if (B.pathM <= 0f) continue;
+
+                    float gap = Mathf.Sqrt(SqXZ(A.pos, B.pos));
+                    if (gap <= EcoSimulator.NODE_REACH_M) continue;   // already neighbours
+                    int hops = Mathf.CeilToInt((gap - EcoSimulator.NODE_REACH_M) / HopM);
+                    if (hops > BRIDGE_MAX_HOPS) continue;
+
+                    // What the far side stops walking once the link exists.
+                    float far = Mathf.Max(A.pathM, B.pathM);
+                    float near = Mathf.Min(A.pathM, B.pathM);
+                    float saved = far - (near + gap);
+                    if (saved <= BRIDGE_MIN_SAVED_M) continue;
+
+                    // Structures on the far side of the join — everything whose
+                    // road home is at least as long as the far endpoint's.
+                    int beyond = 0;
+                    for (int k = 0; k < _rootCount; k++)
+                        if (_net[k].pathM >= far) beyond++;
+                    if (beyond < BRIDGE_MIN_PROTECT) continue;
+
+                    found.Add(new Bridge
+                    {
+                        a = A.pathM > B.pathM ? B.pos : A.pos,   // build FROM the near side
+                        b = A.pathM > B.pathM ? A.pos : B.pos,
+                        branchA = A.branch, branchB = B.branch,
+                        hops = hops, protects = beyond,
+                        savedM = saved, beyond = beyond,
+                    });
                 }
-                if (ba < 0) continue;
-
-                float gap = Mathf.Sqrt(bestSq);
-                // Touching already — the fork they share is the connection.
-                if (gap <= EcoSimulator.NODE_REACH_M) continue;
-                int hops = Mathf.CeilToInt((gap - EcoSimulator.NODE_REACH_M) / HopM);
-                if (hops > BRIDGE_MAX_HOPS) continue;
-
-                // A BRIDGE IS A SHORTCUT BEFORE IT IS INSURANCE.
-                //
-                // DrMuck, 2026-08-05: "maybe we should give perspective bridges
-                // more weight — early bridge build could avoid mega nodelines
-                // and support more uniform expansion." That is right, and now
-                // that anchors are priced on the path back to the Nest it is
-                // also mechanical: joining a far branch to a near one REWRITES
-                // that path for everything beyond the join, so the next replan
-                // stops treating the far tip as expensive and starts growing
-                // ribs from it. A bridge does not just protect a branch, it
-                // makes the ground behind it cheap to build on.
-                //
-                // Value in the currency everything else uses: metres of road
-                // removed, times the structures that stop walking them.
-                float pa = Items[ba].pathM, pb = Items[bb].pathM;
-                float far = Mathf.Max(pa, pb), near = Mathf.Min(pa, pb);
-                float saved = far - (near + gap);
-                int beyond = pa > pb ? A.Count : B.Count;
-
-                found.Add(new Bridge
-                {
-                    a = Items[ba].pos, b = Items[bb].pos,
-                    branchA = branches[x], branchB = branches[y],
-                    hops = hops, protects = protects,
-                    savedM = saved, beyond = beyond,
-                });
             }
 
             found.Sort((p, q) => BridgeValue(q).CompareTo(BridgeValue(p)));
             for (int i = 0; i < found.Count && i < BRIDGE_MAX; i++) Bridges.Add(found[i]);
 
-            // BUILD THE BEST ONE. Only the best one, and only ever one at a
-            // time — the worry about over-bridging is the right worry, and a
-            // loop earns nothing directly, so it queues behind ground. Its
-            // items carry site = -1, which exempts them from the sites-ahead
-            // window and the one-front-per-branch rule: a bridge is not a
-            // front, it is what makes the other fronts cheaper.
+            // Emit the best one as buildable Nodes, starting at the NEAR end so
+            // the first hop hangs off something that is standing.
             if (Bridges.Count == 0) return;
             var win = Bridges[0];
             float len = Mathf.Sqrt(SqXZ(win.a, win.b));
@@ -791,10 +779,14 @@ namespace Si_RTS_AI.Planning
                 });
                 prevPt = np;
             }
-            MelonLogger.Msg($"[BLUEPRINT] bridge b{win.branchA}-b{win.branchB}: {win.hops} node(s), " +
-                            $"saves {win.savedM:F0}m of road for {win.beyond} structures, " +
-                            $"protects {win.protects}");
+            MelonLogger.Msg($"[BLUEPRINT] bridge: {win.hops} node(s) from " +
+                            $"({win.a.x:F0},{win.a.z:F0}) to ({win.b.x:F0},{win.b.z:F0}) — " +
+                            $"saves {win.savedM:F0}m of road for {win.beyond} structures");
         }
+
+        /// <summary>Road actually removed before a link is worth its nodes. A
+        /// shortcut that saves fifty metres is not a bridge.</summary>
+        const float BRIDGE_MIN_SAVED_M = 300f;
 
         /// <summary>
         /// What a bridge is worth per node it costs. Two terms, both in seconds:
