@@ -27,8 +27,26 @@ namespace Si_RTS_AI.Perception
     internal static class BcMetrics
     {
         const float EMIT_INTERVAL_S  = 30f;
-        const float WORKER_RANGE_M   = 500f;   // "assigned to this BC" heuristic
-        const float PATCH_RANGE_M    = 500f;   // "servicable by this BC" heuristic
+        /// <summary>
+        /// How close a shrimp must be to count as working THIS Bio Cache.
+        ///
+        /// Was 500m, which counted each shrimp against every Bio Cache within
+        /// half a kilometre — measured at 2.3 Bio Caches per shrimp on a real
+        /// base, so 46 structures reported 425 "workers" for a team of 181.
+        /// "21 sites have workers" then meant "21 sites are within 500m of
+        /// somebody", which is nearly free on a clustered base and told us
+        /// nothing. DrMuck, 2026-08-06: "500m in range is useless."
+        ///
+        /// 60m is what AlienShrimpProducer already uses for the same question
+        /// when it decides whether a Bio Cache is at its worker cap, so the two
+        /// now agree on what "belongs to this Bio Cache" means.
+        /// </summary>
+        const float WORKER_RANGE_M   = 60f;
+
+        /// <summary>Patches this Bio Cache could plausibly be working. Matches
+        /// Blueprint.BC_WORKS_M — wide enough to contain the game's placement
+        /// slide, not so wide that every patch on the map counts.</summary>
+        const float PATCH_RANGE_M    = 220f;
 
         // Per-team state.
         static readonly Dictionary<Team, float> _lastEmitAt = new Dictionary<Team, float>();
@@ -124,6 +142,10 @@ namespace Si_RTS_AI.Perception
             sb.Append("\"bcCount\":").Append(bcPositions.Count).Append(',');
             sb.Append("\"workerCount\":").Append(workerPositions.Count).Append(',');
             sb.Append("\"patchCount\":").Append(patchPositions.Count).Append(',');
+            // Self-describing, so rounds recorded either side of a radius change
+            // cannot be silently averaged together.
+            sb.Append("\"workerRangeM\":").Append(WORKER_RANGE_M.ToString("F0", System.Globalization.CultureInfo.InvariantCulture)).Append(',');
+            sb.Append("\"patchRangeM\":").Append(PATCH_RANGE_M.ToString("F0", System.Globalization.CultureInfo.InvariantCulture)).Append(',');
 
             sb.Append("\"bcs\":[");
             for (int i = 0; i < bcPositions.Count; i++)
