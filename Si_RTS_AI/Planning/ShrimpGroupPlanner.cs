@@ -224,6 +224,53 @@ namespace Si_RTS_AI.Planning
         const float REASSIGN_COOLDOWN_S = 60f;
         const float ASSIGN_TTL_S        = 240f;  // forget stale assignments
         const float REISSUE_DRIFT_M     = 220f;  // drifted this far from its target -> re-order
+
+        /// <summary>
+        /// Is this shrimp still on the job its assignment describes? True when it
+        /// is near the target patch OR near the Bio Cache that serves that patch,
+        /// because the harvest cycle legitimately runs between the two.
+        /// Measuring against the patch alone turned every unload trip into a
+        /// "drift" and re-ordered the shrimp back mid-delivery.
+        /// </summary>
+        static bool NearAssignedWork(UnityEngine.Vector3 pos, UnityEngine.Vector3 target)
+        {
+            float dx = pos.x - target.x, dz = pos.z - target.z;
+            if (dx * dx + dz * dz < REISSUE_DRIFT_M * REISSUE_DRIFT_M) return true;
+
+            // The depot for that patch — nearest Bio Cache to the TARGET, not to
+            // the shrimp, so a shrimp halfway to the wrong side of the map does
+            // not excuse itself by standing near some other Bio Cache.
+            var depot = NearestBcTo(target);
+            if (depot == UnityEngine.Vector3.zero) return false;
+            float bx = pos.x - depot.x, bz = pos.z - depot.z;
+            return bx * bx + bz * bz < REISSUE_DRIFT_M * REISSUE_DRIFT_M;
+        }
+
+        static UnityEngine.Vector3 NearestBcTo(UnityEngine.Vector3 p)
+        {
+            var best = UnityEngine.Vector3.zero;
+            float bd = float.MaxValue;
+            try
+            {
+                var team = _lastTeam;
+                var structs = team?.Structures;
+                if (structs == null) return best;
+                for (int i = 0; i < structs.Count; i++)
+                {
+                    var st = structs[i];
+                    if (st?.ObjectInfo == null || st.IsDestroyed) continue;
+                    if (st.ObjectInfo.DisplayName != "Bio Cache") continue;
+                    var q = st.transform.position;
+                    float dx = q.x - p.x, dz = q.z - p.z;
+                    float d = dx * dx + dz * dz;
+                    if (d < bd) { bd = d; best = q; }
+                }
+            }
+            catch { }
+            return best;
+        }
+
+        static Team _lastTeam;
         const float REISSUE_COOLDOWN_S  = 15f;
 
         struct Assignment
@@ -374,6 +421,7 @@ namespace Si_RTS_AI.Planning
         public static void MaybeRun(Team team)
         {
             if (team == null) return;
+            _lastTeam = team;   // depot lookup for the drift test
             string tn = team.name ?? "";
             if (!tn.Contains("Alien")) return;
             if (!global::Si_RTS_AI.TestHarnessNs.TestHarness.IsRoundActive) return;
@@ -1240,9 +1288,19 @@ namespace Si_RTS_AI.Planning
                 if (!_assign.TryGetValue(u, out var a)) continue;
                 if (now - a.AssignedAt > ASSIGN_TTL_S) { _assign.Remove(u); continue; }
                 if (now - a.LastOrderAt < REISSUE_COOLDOWN_S) continue;
+                // A HARVESTING SHRIMP IS SUPPOSED TO LEAVE ITS PATCH.
+                //
+                // Drift was measured from the assignment target alone, so every
+                // trip to a Bio Cache to unload read as wandering off and got a
+                // move order — mid-unload. DrMuck watching the replay: "they
+                // bouncing back and forth between a biotics, like ah let's go to
+                // another biotics, ah not let's go back!" The counter agrees:
+                // reissued=2009 in one round against 181 shrimps.
+                //
+                // The work cycle is patch AND depot, so a shrimp is only adrift
+                // when it is far from BOTH. Being at the depot is the job.
                 var p = u.transform.position;
-                float dx = p.x - a.Target.x, dz = p.z - a.Target.z;
-                if (dx * dx + dz * dz < REISSUE_DRIFT_M * REISSUE_DRIFT_M) continue;
+                if (NearAssignedWork(p, a.Target)) continue;
                 IssueMove(u, a.Target);
                 a.LastOrderAt = now;
                 _assign[u] = a;

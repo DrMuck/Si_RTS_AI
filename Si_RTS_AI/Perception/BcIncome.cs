@@ -57,12 +57,14 @@ namespace Si_RTS_AI.Perception
         static readonly Dictionary<long, Entry> _bcs = new Dictionary<long, Entry>();
         static long _attributed;
         static float _lastCheckAt;
+        static bool _probed;
 
         internal static void ResetForNewRound()
         {
             _bcs.Clear();
             _attributed = 0;
             _lastCheckAt = 0f;
+            _probed = false;
         }
 
         static long Key(Vector3 p) =>
@@ -78,6 +80,41 @@ namespace Si_RTS_AI.Perception
             {
                 var structs = team.Structures;
                 if (structs == null) return;
+
+                // ONE-SHOT PROBE. The meter produced nothing at all on
+                // 2026-08-05 — no attribution, and not even the "attribution not
+                // working" warning it was built to emit, which is the worse
+                // failure: a self-check that fails silently. Static reading did
+                // not settle whether the structures are not matching, the
+                // reflection is returning null, or the storage simply never
+                // holds anything. So the next round says which.
+                if (!_probed && roundT > 120f)
+                {
+                    _probed = true;
+                    int matched = 0; string firstName = "-"; int firstStored = -1;
+                    bool holdersFound = false;
+                    for (int i = 0; i < structs.Count; i++)
+                    {
+                        var st = structs[i];
+                        if (st?.ObjectInfo == null || st.IsDestroyed) continue;
+                        if (firstName == "-") firstName = st.ObjectInfo.DisplayName ?? "?";
+                        if (!string.Equals(st.ObjectInfo.DisplayName, bcDisplayName,
+                                           StringComparison.OrdinalIgnoreCase)) continue;
+                        matched++;
+                        if (firstStored < 0)
+                        {
+                            firstStored = ReadStored(st);
+                            holdersFound = _piHolders != null;
+                        }
+                    }
+                    MelonLogger.Msg($"[BC/INCOME] probe: structures={structs.Count} " +
+                                    $"matching '{bcDisplayName}'={matched} firstSeenName='{firstName}' " +
+                                    $"storedOnFirstMatch={firstStored} ResourceHoldersProp=" +
+                                    (holdersFound ? "found" : "NULL") +
+                                    (matched == 0 ? "  <-- name mismatch, nothing will ever be attributed" :
+                                     firstStored == 0 ? "  <-- storage reads 0; if it stays 0 the game does not park resources in the structure" : ""));
+                }
+
                 for (int i = 0; i < structs.Count; i++)
                 {
                     var s = structs[i];
@@ -132,7 +169,15 @@ namespace Si_RTS_AI.Perception
 
             int teamCum = 0;
             try { teamCum = EcoRateSampler.GetCumulativeIncome(team); } catch { }
-            if (teamCum <= 0) return;
+            if (teamCum <= 0)
+            {
+                // Was a silent return, which is how the meter managed to report
+                // nothing at all rather than reporting that it could not report.
+                MelonLogger.Msg($"[BC/INCOME] no team cumulative income yet " +
+                                $"(roundT={roundT:F0}s, bcs tracked={_bcs.Count}) — " +
+                                "cannot check attribution");
+                return;
+            }
 
             float ratio = _attributed / (float)teamCum;
             int earning = 0, idle = 0;
