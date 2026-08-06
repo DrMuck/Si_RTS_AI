@@ -8,7 +8,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 
-[assembly: MelonInfo(typeof(Si_RTS_AI.Si_RTS_AI), "Si_RTS_AI", "0.26.1-cut-vertices", "DrMuck")]
+[assembly: MelonInfo(typeof(Si_RTS_AI.Si_RTS_AI), "Si_RTS_AI", "0.27.0-json-config", "DrMuck")]
 [assembly: MelonGame("Bohemia Interactive", "Silica")]
 
 namespace Si_RTS_AI
@@ -310,6 +310,7 @@ namespace Si_RTS_AI
         public override void OnLateInitializeMelon()
         {
             Commands.Register();
+            Planning.RtsaiConfig.Reload();
             // Register sub-planners with the money broker. Order doesn't
             // matter — broker sorts proposals by score × urgency each tick.
             Planning.MoneyBroker.Register(new Planning.TechPlanner());
@@ -375,6 +376,10 @@ namespace Si_RTS_AI
             }
 
             _obs.Clear(); _actions.Clear(); _spawns.Clear();
+            // Re-read rtsai.json first, so everything reset below starts the
+            // round on whatever the file says right now. This is the one
+            // configuration path that does not need the server stopped.
+            Planning.RtsaiConfig.Reload();
             Phase2.ClearForNewRound();
             Suppression.Phase31_Production.ResetForNewRound();
             Faction.AlienConstruction.ResetForNewRound();

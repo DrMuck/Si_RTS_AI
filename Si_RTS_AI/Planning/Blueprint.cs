@@ -733,11 +733,22 @@ namespace Si_RTS_AI.Planning
             // two ends are along the existing road, against how far apart they
             // are in a straight line. Two ends that are 60m apart and 3km around
             // are the loop worth building.
+            //
+            // BOTH RULES ARE KEPT. `bridgeMode` in rtsai.json selects which one
+            // prices a candidate, because the shortcut rule is not simply the
+            // wrong earlier attempt — when the network is one long line rather
+            // than a fan of branches, the road HOME is the thing worth
+            // shortening, and that is the case it was right about. Two
+            // objectives, one A/B switch, no lost work.
+            var mode = RtsaiConfig.BridgeModeOrDefault(RtsaiConfig.BridgeMode.Loop);
+            bool shortcut = mode == RtsaiConfig.BridgeMode.Shortcut;
+            int maxHops = shortcut ? BRIDGE_SHORTCUT_MAX_HOPS : BRIDGE_MAX_HOPS;
+
             var found = new List<Bridge>(8);
             var adj = BuildAdjacency();
             FindCutVertices(adj);
             var byStart = new Dictionary<int, List<int>>();
-            float maxSpan = EcoSimulator.NODE_REACH_M + BRIDGE_MAX_HOPS * HopM;
+            float maxSpan = EcoSimulator.NODE_REACH_M + maxHops * HopM;
             for (int i = 0; i < _rootCount; i++)
             for (int j = i + 1; j < _rootCount; j++)
             {
@@ -755,15 +766,25 @@ namespace Si_RTS_AI.Planning
                     float gap = Mathf.Sqrt(SqXZ(_net[kv.Key].pos, _net[j].pos));
                     int hops = Mathf.CeilToInt((gap - EcoSimulator.NODE_REACH_M) / HopM);
                     float byRoad = road[j];
+                    float far = Mathf.Max(_net[kv.Key].pathM, _net[j].pathM);
 
-                    // Unreachable along the network means the link would JOIN
-                    // two severed pieces, which is the most valuable case there
-                    // is — price it at the whole span rather than discarding it
-                    // as infinite.
-                    float saved = float.IsInfinity(byRoad) ? maxSpan * 4f : byRoad - gap;
+                    float saved;
+                    if (shortcut)
+                    {
+                        // v0.25: what the far side stops walking on its way HOME.
+                        if (_net[kv.Key].pathM <= 0f || _net[j].pathM <= 0f) continue;
+                        saved = far - (Mathf.Min(_net[kv.Key].pathM, _net[j].pathM) + gap);
+                    }
+                    else
+                    {
+                        // Unreachable along the network means the link would JOIN
+                        // two severed pieces, which is the most valuable case there
+                        // is — price it at the whole span rather than discarding it
+                        // as infinite.
+                        saved = float.IsInfinity(byRoad) ? maxSpan * 4f : byRoad - gap;
+                    }
                     if (saved <= BRIDGE_MIN_SAVED_M) continue;
 
-                    float far = Mathf.Max(_net[kv.Key].pathM, _net[j].pathM);
                     int beyond = 0;
                     for (int k = 0; k < _rootCount; k++) if (_net[k].pathM >= far) beyond++;
                     if (beyond < BRIDGE_MIN_PROTECT) continue;
@@ -774,9 +795,14 @@ namespace Si_RTS_AI.Planning
                     // branch and asked for links that avoid exactly that. A cut
                     // vertex on the road between the two ends is that structure:
                     // bypass it and the branch behind it survives losing it.
+                    //
+                    // Not counted in shortcut mode, which leaves BridgeValue
+                    // exactly the v0.25 formula — the arm has to be the old rule,
+                    // not the old rule with today's insurance term bolted on.
                     int cuts = 0;
-                    for (int at = parent[j]; at >= 0 && at != kv.Key; at = parent[at])
-                        if (_isCut != null && at < _isCut.Length && _isCut[at]) cuts++;
+                    if (!shortcut)
+                        for (int at = parent[j]; at >= 0 && at != kv.Key; at = parent[at])
+                            if (_isCut != null && at < _isCut.Length && _isCut[at]) cuts++;
 
                     bool startIsNear = _net[kv.Key].pathM <= _net[j].pathM;
                     found.Add(new Bridge
@@ -794,8 +820,10 @@ namespace Si_RTS_AI.Planning
             for (int i = 0; i < found.Count && i < BRIDGE_MAX; i++) Bridges.Add(found[i]);
 
             // Emit the best one as buildable Nodes, starting at the NEAR end so
-            // the first hop hangs off something that is standing.
-            if (Bridges.Count == 0) return;
+            // the first hop hangs off something that is standing. `off` still
+            // ranks and publishes them, so the viewer keeps drawing what the two
+            // rules WOULD have built — that is the control arm.
+            if (Bridges.Count == 0 || mode == RtsaiConfig.BridgeMode.Off) return;
             var win = Bridges[0];
             float len = Mathf.Sqrt(SqXZ(win.a, win.b));
             if (len < 1f) return;
@@ -812,7 +840,8 @@ namespace Si_RTS_AI.Planning
                 });
                 prevPt = np;
             }
-            MelonLogger.Msg($"[BLUEPRINT] bridge: {win.hops} node(s) from " +
+            MelonLogger.Msg($"[BLUEPRINT] bridge({mode.ToString().ToLowerInvariant()}): " +
+                            $"{win.hops} node(s) from " +
                             $"({win.a.x:F0},{win.a.z:F0}) to ({win.b.x:F0},{win.b.z:F0}) — " +
                             $"saves {win.savedM:F0}m of road for {win.beyond} structures, " +
                             $"bypasses {win.cuts} single point(s) of failure");
@@ -961,6 +990,10 @@ namespace Si_RTS_AI.Planning
         /// loop is affordable — DrMuck, 2026-08-06: "bridging bigger loops is
         /// more welcome."</summary>
         const int BRIDGE_MAX_HOPS = 8;
+
+        /// <summary>What v0.25 allowed one link to cost. Shortcut mode keeps it,
+        /// so that arm is the earlier rule as it actually ran.</summary>
+        const int BRIDGE_SHORTCUT_MAX_HOPS = 6;
 
         const int BRIDGE_MAX = 3;
 

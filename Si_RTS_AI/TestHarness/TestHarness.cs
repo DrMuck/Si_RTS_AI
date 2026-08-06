@@ -252,8 +252,10 @@ namespace Si_RTS_AI.TestHarnessNs
             if (string.IsNullOrWhiteSpace(spec)) spec = DEFAULT_ARMS;
             if (string.Equals(spec.Trim(), "off", StringComparison.OrdinalIgnoreCase))
             {
+                Planning.RtsaiConfig.ArmActive = false;
+                Planning.RtsaiConfig.ArmBridgeMode = null;
                 MelonLogger.Msg("[RTSA/HT] A/B arms disabled (ConfigCycle=off) — " +
-                                "rounds run on whatever the preferences already say.");
+                                "rounds run on whatever the preferences and rtsai.json say.");
                 return;
             }
 
@@ -271,6 +273,10 @@ namespace Si_RTS_AI.TestHarnessNs
             // Every arm holds the worker cap at 10 (H1) except the explicit
             // control, so the sweep moves one variable: producers per site.
             int cap = 10, perSites = 0;
+            // Bridge arms hold producer density at the incumbent ratio3 and move
+            // only how a loop is priced, so the two experiments never share a
+            // round. See RtsaiConfig.BridgeMode.
+            Planning.RtsaiConfig.BridgeMode? bridge = null;
             switch (arm.ToLowerInvariant())
             {
                 case "adaptive": perSites = 0; break;
@@ -279,6 +285,12 @@ namespace Si_RTS_AI.TestHarnessNs
                 case "ratio4":   perSites = 4; break;
                 case "ratio5":   perSites = 5; break;
                 case "cap18":    cap = 18; perSites = 0; break;
+                case "bridgeloop":
+                    perSites = 3; bridge = Planning.RtsaiConfig.BridgeMode.Loop; break;
+                case "bridgeshortcut":
+                    perSites = 3; bridge = Planning.RtsaiConfig.BridgeMode.Shortcut; break;
+                case "bridgeoff":
+                    perSites = 3; bridge = Planning.RtsaiConfig.BridgeMode.Off; break;
                 default:
                     MelonLogger.Warning($"[RTSA/HT] Unknown arm '{arm}' — leaving preferences as they are.");
                     return;
@@ -292,9 +304,12 @@ namespace Si_RTS_AI.TestHarnessNs
                 if (capEntry != null)   capEntry.Value   = cap;
                 if (ratioEntry != null) ratioEntry.Value = perSites;
                 if (_configId != null) _configId.Value = arm;
+                Planning.RtsaiConfig.ArmBridgeMode = bridge;
+                Planning.RtsaiConfig.ArmActive = true;
                 MelonLogger.Msg($"[RTSA/HT] A/B arm {_armIndex}: '{arm}' " +
-                                $"(WorkerCapPerBioCache={cap} ProducerPerSites={perSites}) — " +
-                                $"benchmarks tagged configId='{arm}'");
+                                $"(WorkerCapPerBioCache={cap} ProducerPerSites={perSites}" +
+                                (bridge.HasValue ? $" bridgeMode={bridge.Value.ToString().ToLowerInvariant()}" : "") +
+                                $") — benchmarks tagged configId='{arm}'");
             }
             catch (Exception ex)
             { MelonLogger.Warning("[RTSA/HT] arm apply threw: " + ex.Message); }

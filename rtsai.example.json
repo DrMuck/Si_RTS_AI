@@ -1,0 +1,40 @@
+{
+  "_readme": [
+    "Copy to <server>/UserData/rtsai.json. READ ONLY — the mod never writes it,",
+    "so unlike MelonPreferences.cfg an edit survives a shutdown, and it is re-read",
+    "at every map load, so an edit takes effect on the NEXT ROUND with the server",
+    "still running.",
+    "",
+    "Every key is optional. Delete a line and the MelonPreferences value applies.",
+    "Delete the whole file and nothing changes at all.",
+    "",
+    "While the A/B rig is cycling arms (HeadlessTest_ConfigCycle), the rig owns",
+    "workerCapPerBioCache and producerPerSites — the keys are ignored and the log",
+    "says so once. Set HeadlessTest_ConfigCycle=off to steer from here instead."
+  ],
+
+  "_bridgeMode": [
+    "How a cross-branch link is priced. Both rules are live code:",
+    "  loop     — value is the DETOUR REMOVED between the two ends, measured over",
+    "             the built network, times a bonus for each single point of failure",
+    "             it bypasses. Prefers big rings. Up to 8 nodes per link. (v0.26)",
+    "  shortcut — value is how much the far side's road HOME to the Nest shortens.",
+    "             Prefers small cuts near the base; will not build a ring between",
+    "             two equally distant branches. Up to 6 nodes. (v0.25)",
+    "  off      — links are still planned, ranked, logged and drawn in the viewer,",
+    "             but none are built. The control arm.",
+    "Also available as A/B arms: bridgeloop, bridgeshortcut, bridgeoff."
+  ],
+  "bridgeMode": "loop",
+
+  "_eco": "Economy knobs worth changing between rounds.",
+  "blueprintDrivesPhase2": true,
+  "replanIntervalS": 30,
+  "workersByTenMinutes": 100,
+  "cystStrategyAuto": true,
+  "maxCystsPerPlan": 4,
+
+  "_rigOwned": "Ignored while arms are cycling — see _readme.",
+  "workerCapPerBioCache": 10,
+  "producerPerSites": 3
+}

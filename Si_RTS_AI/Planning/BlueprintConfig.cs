@@ -80,17 +80,24 @@ namespace Si_RTS_AI.Planning
             catch (System.Exception ex) { MelonLogger.Warning("[RTSA/CONFIG] Blueprint init threw: " + ex.Message); }
         }
 
-        internal static bool  Enabled               => _enabled == null || _enabled.Value;
-        internal static float ReplanS               => _replanS != null ? _replanS.Value : 30f;
+        // Each accessor asks rtsai.json first and falls back to the preference,
+        // so a key left out of the file — or no file at all — behaves exactly as
+        // before. Only the knobs worth changing BETWEEN ROUNDS are overlaid;
+        // MaxSites, spacings and Persist stay preference-only because changing
+        // them mid-soak would make rounds incomparable without saying so.
+        internal static bool  Enabled               => RtsaiConfig.Bool("blueprintDrivesPhase2", _enabled == null || _enabled.Value);
+        internal static float ReplanS               => RtsaiConfig.Float("replanIntervalS", _replanS != null ? _replanS.Value : 30f);
         internal static int   MaxSites              => _maxSites != null ? _maxSites.Value : 24;
-        internal static int   MaxCystsPerPlan       => _maxCysts != null ? _maxCysts.Value : 4;
-        internal static bool  CystStrategyAuto      => _cystAuto == null || _cystAuto.Value;
+        internal static int   MaxCystsPerPlan       => RtsaiConfig.Int("maxCystsPerPlan", _maxCysts != null ? _maxCysts.Value : 4);
+        internal static bool  CystStrategyAuto      => RtsaiConfig.Bool("cystStrategyAuto", _cystAuto == null || _cystAuto.Value);
         internal static float StaffedEnough         => _staffedEnough != null ? _staffedEnough.Value : 0.8f;
         internal static float RelocationSpacings    => _relocSpacings != null ? _relocSpacings.Value : 3.5f;
         internal static int   ShrimpCapHeadroomFrom => _capHeadroomFrom != null ? _capHeadroomFrom.Value : 180;
         internal static bool  Persist               => _persist == null || _persist.Value;
-        internal static int   WorkersByTenMinutes   => _workers10 != null ? _workers10.Value : 100;
-        internal static int   WorkerCapPerBioCache  => _workerCapPerBc != null ? _workerCapPerBc.Value : 18;
-        internal static int   ProducerPerSites      => _producerPerSites != null ? _producerPerSites.Value : 0;
+        internal static int   WorkersByTenMinutes   => RtsaiConfig.Int("workersByTenMinutes", _workers10 != null ? _workers10.Value : 100);
+
+        // The rig owns these two — see RtsaiConfig.IntUnlessArm.
+        internal static int   WorkerCapPerBioCache  => RtsaiConfig.IntUnlessArm("workerCapPerBioCache", _workerCapPerBc != null ? _workerCapPerBc.Value : 18);
+        internal static int   ProducerPerSites      => RtsaiConfig.IntUnlessArm("producerPerSites", _producerPerSites != null ? _producerPerSites.Value : 0);
     }
 }
