@@ -2400,6 +2400,23 @@ namespace Si_RTS_AI.Planning
             try { ShrimpGroupPlanner.MaybeRun(team); }
             catch (System.Exception ex) { MelonLogger.Warning("[PLAN] ShrimpGroupPlanner.MaybeRun threw: " + ex.Message); }
 
+            // ATTACHED HERE BECAUSE THIS PATH DEMONSTRABLY RUNS.
+            //
+            // These four sat at the end of AlienConstruction.HandleTick, which
+            // the planner short-circuits — the same reason the shrimp producer
+            // was moved here months ago, and the comment above it says so. The
+            // symptom was silence: per-Bio-Cache attribution tracked nothing for
+            // two nights and never logged a word about it, because the code was
+            // never reached rather than because it failed.
+            try { Perception.BcIncome.Sample(team, "Bio Cache"); }
+            catch (System.Exception ex) { MelonLogger.Warning("[PLAN] BcIncome threw: " + ex.Message); }
+            try { Perception.UnitCaps.Resolve(team); }
+            catch (System.Exception ex) { MelonLogger.Warning("[PLAN] UnitCaps threw: " + ex.Message); }
+            try { DefencePlanner.Tick(team); }
+            catch (System.Exception ex) { MelonLogger.Warning("[PLAN] DefencePlanner threw: " + ex.Message); }
+            try { BattalionManager.Tick(team); }
+            catch (System.Exception ex) { MelonLogger.Warning("[PLAN] BattalionManager threw: " + ex.Message); }
+
             // When the planner has money and plans nothing, say what the
             // enumerator actually offered — guessing at this from the outside
             // cost most of a session.

@@ -576,10 +576,6 @@ namespace Si_RTS_AI.Faction
             // per round despite Phase 3.1 picking Shrimp 76 times.
             AlienShrimpProducer.Tick(team);
             Perception.EcoRateSampler.Tick(team);
-            Perception.BcIncome.Sample(team, "Bio Cache");
-            Perception.UnitCaps.Resolve(team);
-            Planning.DefencePlanner.Tick(team);
-            Planning.BattalionManager.Tick(team);
 
             return false;   // skip stock Think entirely
         }
