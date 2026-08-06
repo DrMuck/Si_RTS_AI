@@ -160,7 +160,7 @@ namespace Si_RTS_AI.TestHarnessNs
                 _roundsPerMap         = _cat.CreateEntry("HeadlessTest_RoundsPerMap", 6,
                     "Rounds to play on one map before moving on. After every force-end the harness issues 'map <CURRENT MAP> mp_strategy' — the map actually loaded, not a list position — so the run stays where it is until this count is reached, then advances to the next entry in HeadlessTest_MapRotation after the current one. An A/B run needs its arms on identical ground. 0 disables map commands entirely.");
                 _configCycle          = _cat.CreateEntry("HeadlessTest_ConfigCycle", "",
-                    "A/B RIG. EMPTY MEANS THE DEFAULT ARM CYCLE, not 'no experiment' — an empty value silently ran 25 identical rounds on 2026-08-05 while looking like a configured A/B. Write 'off' to genuinely disable arms. Comma-separated arm names applied one per round, cycling. Empty = off (preferences are used as-is). Each arm sets its own knobs and overwrites HeadlessTest_ConfigId, so every benchmark row is tagged with the arm that produced it. Arms rotate rather than running in blocks, so any drift over a long soak spreads evenly across them instead of landing on whichever ran last. Known arms: adaptive, ratio2, ratio3, ratio5 (all hold the worker cap at 10 — H1 — and differ only in producers per site); cap18 restores the stock cap for a control.");
+                    "A/B RIG. EMPTY MEANS THE DEFAULT ARM CYCLE, not 'no experiment' — an empty value silently ran 25 identical rounds on 2026-08-05 while looking like a configured A/B. Write 'off' to genuinely disable arms. Comma-separated arm names applied one per round, cycling. Empty = off (preferences are used as-is). Each arm sets its own knobs and overwrites HeadlessTest_ConfigId, so every benchmark row is tagged with the arm that produced it. Arms rotate rather than running in blocks, so any drift over a long soak spreads evenly across them instead of landing on whichever ran last. Known arms: adaptive, ratio2, ratio3, ratio4, ratio5 (all hold the worker cap at 10 — H1 — and differ only in producers per site); cap18 restores the stock cap for a control.");
                 _configId             = _cat.CreateEntry("HeadlessTest_ConfigId",            "baseline", "Free-form tag identifying the AI-config version this soak run represents (e.g. 'baseline', 'utility_bc_v1'). Written to each benchmark row so 'python analyze.py | group_by(configId)' can diff A/B eco.");
                 _ecoPlannerActive     = _cat.CreateEntry("HeadlessTest_EcoPlannerActive",    false,   "Rolling-horizon eco planner action-execution switch. OFF (default): planner runs in shadow mode, logging [PLAN] recommendations only. ON: planner fires the winning action via HelperMethods.SpawnAtLocation when expected_gain exceeds the min-conviction threshold. Independent of AutoOverrideRtsai — works even when a human is commanding the alien team.");
 
@@ -231,7 +231,11 @@ namespace Si_RTS_AI.TestHarnessNs
         /// has to be awake for it. Arms rotate per round instead.
         /// </summary>
         /// <summary>The cycle used when none is configured. See ApplyNextArm.</summary>
-        const string DEFAULT_ARMS = "adaptive,ratio2,ratio3,ratio5";
+        // The cycle in use when none is configured. Currently the ratio3 vs
+        // ratio4 head-to-head DrMuck asked for on 2026-08-06 — the earlier
+        // four-arm sweep put the optimum somewhere in this gap, so the pair is
+        // worth more rounds than another spread of the whole range.
+        const string DEFAULT_ARMS = "ratio3,ratio4";
 
         static void ApplyNextArm()
         {
@@ -272,6 +276,7 @@ namespace Si_RTS_AI.TestHarnessNs
                 case "adaptive": perSites = 0; break;
                 case "ratio2":   perSites = 2; break;
                 case "ratio3":   perSites = 3; break;
+                case "ratio4":   perSites = 4; break;
                 case "ratio5":   perSites = 5; break;
                 case "cap18":    cap = 18; perSites = 0; break;
                 default:
