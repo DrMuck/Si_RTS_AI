@@ -96,6 +96,38 @@ rest into `~disabled/` (NarakaCity already follows this convention). Reversible.
 Older sampler logs were moved to `UserData/RTSA/_archive_samplers/` before the run,
 so everything present tomorrow belongs to this experiment.
 
+## 4b. Status at 2026-08-06 15:20 — the run is live
+
+Mod **v0.24.1-tick-attach**. Arms cycling correctly (`[RTSA/HT] A/B arm N`), and
+the per-Bio-Cache meter finally works after being attached to a tick path the
+planner short-circuits:
+
+```
+[BC/INCOME] attributed=68996 teamCumulative=96180 ratio=0.72 bcs=19 earning=13 untapped=6
+```
+
+**Read the ratio as ~0.7 by design, not as a shortfall.** The Nest is also a
+deposit point, so team income legitimately exceeds the sum of Bio Cache
+deposits. Per-BC numbers are relative, not shares of total.
+
+The probe's "storage reads 0" warning fires on Bio Caches too young to have
+received anything — cosmetic false alarm, ignore it if `deposited` values are
+non-zero elsewhere. Fix pending, not deployed mid-run.
+
+First arm-tagged rounds (NarakaCity, 1-2 per arm — too few to rank):
+
+| arm | 10m | 20m | final |
+|---|---|---|---|
+| adaptive | 75k / 64k | 221k / 282k | 629k / 899k |
+| ratio2 | 78k / **100k** | 443k / 413k | 1036k / 806k |
+| ratio3 | 65k | 419k | 907k |
+| ratio5 | 65k | 404k | 1001k |
+
+Two things to check with more rounds: `ratio2` produced the first round ever to
+hit the 100k target, and every ratio arm beat both adaptive rounds at 20 minutes
+by far more than the 15% noise floor. If that survives repetition it says the
+adaptive producer logic chooses worse than a fixed ratio.
+
 ## 5. Validity checks — do these BEFORE reading results
 
 1. **Spawn.** Every round's nest must be `(2520,1275)`. Any round that differs is
