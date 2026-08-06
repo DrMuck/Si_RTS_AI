@@ -273,6 +273,28 @@ namespace Si_RTS_AI.Planning
         static Team _lastTeam;
         const float REISSUE_COOLDOWN_S  = 15f;
 
+        /// <summary>How long a relocated shrimp is left alone to complete its
+        /// trip before it may be reassigned again. Longer than a walk across a
+        /// couple of patch spacings, so a group cannot claw back the shrimp it
+        /// released while that shrimp is still in transit.</summary>
+        const float RELOCATE_COOLDOWN_S = 90f;
+
+        /// <summary>Is there still anything to harvest near this target? A patch
+        /// with resources left within roughly a Bio Cache's working radius.</summary>
+        static bool AnyLivePatchNear(System.Collections.Generic.List<Patch> patches,
+                                     UnityEngine.Vector3 target)
+        {
+            const float NEAR_M = 220f;
+            if (patches == null) return true;      // no information: do not act
+            for (int i = 0; i < patches.Count; i++)
+            {
+                if (patches[i].remaining <= 0) continue;
+                float dx = patches[i].pos.x - target.x, dz = patches[i].pos.z - target.z;
+                if (dx * dx + dz * dz < NEAR_M * NEAR_M) return true;
+            }
+            return false;
+        }
+
         struct Assignment
         {
             public Vector3 Target;
@@ -1299,6 +1321,24 @@ namespace Si_RTS_AI.Planning
                 //
                 // The work cycle is patch AND depot, so a shrimp is only adrift
                 // when it is far from BOTH. Being at the depot is the job.
+                // DO NOT DRAG A SHRIMP BACK TO A PATCH THAT IS DONE.
+                //
+                // The game relocates a shrimp by itself when its patch runs
+                // out — that is a vanilla feature we rely on. But our
+                // assignment still named the old spot, so the sticky re-issue
+                // hauled it back the moment it set off, and the pair fought
+                // until the patch was truly empty. DrMuck saw it in the replay
+                // at 9m30: "a lot of shrimps want to relocate, but then are
+                // being pulled back to their biotics", repeatedly.
+                //
+                // If nothing live remains near the target, the assignment is
+                // stale. Release it and let the shrimp go where it was going.
+                if (!AnyLivePatchNear(patches, a.Target))
+                {
+                    _assign.Remove(u);
+                    continue;
+                }
+
                 var p = u.transform.position;
                 if (NearAssignedWork(p, a.Target)) continue;
                 IssueMove(u, a.Target);
@@ -1332,8 +1372,22 @@ namespace Si_RTS_AI.Planning
                 // best patch — they are the ones on the outside of the jam.
                 g.Members.Sort((x, y) =>
                     SqDist(y.transform.position, g.BestPatch).CompareTo(SqDist(x.transform.position, g.BestPatch)));
-                for (int k = 0; k < surplus && k < g.Members.Count; k++)
-                    donors.Add(new KeyValuePair<Unit, int>(g.Members[k], gi));
+                for (int k = 0, taken = 0; k < g.Members.Count && taken < surplus; k++)
+                {
+                    // JUST MOVED IS NOT AVAILABLE TO MOVE.
+                    //
+                    // Desired is recomputed every tick, so a group that gives up
+                    // a shrimp can read as a deficit on the very next pass and
+                    // ask for one back — the same shrimp, still walking. Nothing
+                    // stopped that: the re-issue cooldown governs re-ordering to
+                    // the SAME target, not being handed a new one. A shrimp that
+                    // has just been sent somewhere finishes the trip.
+                    var cand = g.Members[k];
+                    if (_assign.TryGetValue(cand, out var ca) &&
+                        now - ca.AssignedAt < RELOCATE_COOLDOWN_S) continue;
+                    donors.Add(new KeyValuePair<Unit, int>(cand, gi));
+                    taken++;
+                }
             }
 
             // TWO BUDGETS, NOT ONE.
