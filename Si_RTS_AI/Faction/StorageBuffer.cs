@@ -50,6 +50,7 @@ namespace Si_RTS_AI.Faction
         static Vector3 _centre;
         static bool _haveCentre;
         static bool _announced;
+        static string _classname;
 
         internal static void ResetForNewRound()
         {
@@ -57,6 +58,59 @@ namespace Si_RTS_AI.Faction
             _centre = Vector3.zero;
             _haveCentre = false;
             _announced = false;
+            _classname = null;
+        }
+
+        /// <summary>Prefab names worth trying, best first, then the first one
+        /// that actually spawns. A probe costs one throwaway structure, which is
+        /// cheaper than a night of empty piles.</summary>
+        static string ResolveClassname(ConstructionData cd, Team team)
+        {
+            var names = new List<string>(4);
+            void Add(string s)
+            {
+                if (string.IsNullOrEmpty(s)) return;
+                s = s.Replace("(Clone)", "").Trim();
+                if (!names.Contains(s)) names.Add(s);
+            }
+
+            // ObjectToBuild and ObjectInfo.Prefab both point at the real
+            // structure prefab ("Alien_BioCache"); ObjectInfo.name is the data
+            // asset and is only worth trying last.
+            Add(NameOfMember(cd, "ObjectToBuild"));
+            try { Add(NameOfMember(cd.ObjectInfo, "Prefab")); } catch { }
+            try { Add(cd.ObjectInfo?.name); } catch { }
+
+            foreach (var n in names)
+            {
+                try
+                {
+                    var probe = HelperMethods.SpawnAtLocation(n, _centre, Quaternion.identity, team.Index);
+                    if (probe != null)
+                    {
+                        MelonLogger.Msg($"[BUFFER] prefab '{n}' spawns (tried: {string.Join(", ", names)})");
+                        return n;      // the probe itself counts as the first cache
+                    }
+                }
+                catch (Exception ex)
+                { MelonLogger.Warning($"[BUFFER] probe '{n}' threw: {ex.Message}"); }
+            }
+            MelonLogger.Warning($"[BUFFER] none of these spawned: {string.Join(", ", names)}");
+            return null;
+        }
+
+        /// <summary>UnityEngine.Object.name of a member, whether the build
+        /// exposes it as a property or a field.</summary>
+        static string NameOfMember(object owner, string member)
+        {
+            if (owner == null) return null;
+            try
+            {
+                var t = owner.GetType();
+                object v = t.GetProperty(member)?.GetValue(owner) ?? t.GetField(member)?.GetValue(owner);
+                return v is UnityEngine.Object uo ? uo.name : null;
+            }
+            catch { return null; }
         }
 
         /// <summary>True for a position inside the scaffold pile. Consumers that
@@ -91,15 +145,29 @@ namespace Si_RTS_AI.Faction
                 _haveCentre = true;
             }
 
-            string classname = "";
-            try { classname = bcCd.ObjectInfo != null ? bcCd.ObjectInfo.name : ""; } catch { }
-            if (string.IsNullOrEmpty(classname))
+            // SPAWN BY PREFAB NAME, NOT BY ObjectInfo NAME.
+            //
+            // The first version passed bcCd.ObjectInfo.name, which is
+            // "ObjectInfo_Alien_BioCache" — a data asset, not something
+            // SpawnAtLocation can instantiate. All 100 calls returned null and
+            // the round got no buffer. The prefab is "Alien_BioCache", reachable
+            // as ObjectToBuild or ObjectInfo.Prefab. Both are reflected because
+            // the Il2Cpp surface differs between builds, and every candidate is
+            // tried until one spawns rather than trusting any single field.
+            if (_classname == null)
             {
-                MelonLogger.Warning("[BUFFER] no prefab name on the Bio Cache ConstructionData — " +
-                                    "storage buffer cannot spawn");
-                _placed[team] = want;      // do not retry every tick
-                return;
+                _classname = ResolveClassname(bcCd, team);
+                if (_classname == null)
+                {
+                    MelonLogger.Warning("[BUFFER] no spawnable prefab name found on the Bio Cache " +
+                                        "ConstructionData — storage buffer disabled for this round");
+                    _placed[team] = want;      // do not retry every tick
+                    return;
+                }
+                done += 1;                     // the successful probe is cache #1
+                _placed[team] = done;
             }
+            string classname = _classname;
 
             int capBefore = 0;
             try { capBefore = team.ResourceCapacity; } catch { }
