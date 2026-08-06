@@ -27,6 +27,17 @@
   ],
   "bridgeMode": "loop",
 
+  "_autoResourceDrain": [
+    "false (default) — cash is left alone. At capacity the game clamps it, so",
+    "  income stops accruing and cumulIncome reads as money that really existed.",
+    "true — cash is cut to 70% of team capacity whenever it passes 75%, and",
+    "  cumulIncome credits what was drained. That makes the benchmark measure",
+    "  EARNING POWER past the cap, at the price of destroying the money: it took",
+    "  315k out of a 988k NarakaCity round on 2026-08-06. Only for measurement.",
+    "Capacity is roughly 4,000 per Bio Cache, so the cap moves with the base."
+  ],
+  "autoResourceDrain": false,
+
   "_eco": "Economy knobs worth changing between rounds.",
   "blueprintDrivesPhase2": true,
   "replanIntervalS": 30,

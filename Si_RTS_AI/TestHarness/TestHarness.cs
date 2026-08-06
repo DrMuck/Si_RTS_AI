@@ -82,6 +82,7 @@ namespace Si_RTS_AI.TestHarnessNs
         static int _armIndex;
         static MelonPreferences_Entry<bool>?   _autoRotateMap;
         static MelonPreferences_Entry<string>? _configId;
+        static bool _drainAnnounced;
         static MelonPreferences_Entry<bool>?   _ecoPlannerActive;
 
         // Per-scene runtime state.
@@ -199,8 +200,27 @@ namespace Si_RTS_AI.TestHarnessNs
             // AutoResourceDrain toggles the EcoRateSampler's saturation drain.
             // Independent of TestMode — a soak measurement without the harness
             // may still want the drain to keep income measurable past cap.
-            global::Si_RTS_AI.Perception.EcoRateSampler.AutoDrainEnabled =
-                _autoResourceDrain?.Value ?? false;
+            //
+            // rtsai.json wins, because this one DESTROYS MONEY and the only way
+            // to see it is a sawtooth in the cash trace. On 2026-08-06 it took
+            // 315k out of a 988k round — a third of everything earned — while
+            // the preference default said false and the stored cfg said true.
+            // A switch with that much authority must be changeable without a
+            // restart and must announce itself.
+            bool drain = Planning.RtsaiConfig.Bool("autoResourceDrain",
+                                                   _autoResourceDrain?.Value ?? false);
+            if (drain != global::Si_RTS_AI.Perception.EcoRateSampler.AutoDrainEnabled || !_drainAnnounced)
+            {
+                _drainAnnounced = true;
+                MelonLogger.Msg(drain
+                    ? "[RTSA/CONFIG] AutoResourceDrain ON — team cash is cut to 70% of capacity " +
+                      "whenever it passes 75%. cumulIncome credits what was drained, so it measures " +
+                      "EARNING POWER and not money the AI ever had to spend."
+                    : "[RTSA/CONFIG] AutoResourceDrain OFF — cash is left alone. At capacity the game " +
+                      "clamps it instead, so income simply stops accruing; cumulIncome then reads as " +
+                      "money that really existed.");
+            }
+            global::Si_RTS_AI.Perception.EcoRateSampler.AutoDrainEnabled = drain;
             // Per-faction master switches. Alien defaults true; humans false.
             global::Si_RTS_AI.Faction.FactionControl.AlienEnabled    = _rtsaiAlien?.Value    ?? true;
             global::Si_RTS_AI.Faction.FactionControl.SolEnabled      = _rtsaiSol?.Value      ?? false;
