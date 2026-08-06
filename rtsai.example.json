@@ -50,6 +50,16 @@
   "endRoundAfterMinutes": 25,
   "roundsPerMap": 24,
 
+  "_testMode": [
+    "true  — soak: the harness auto-joins, force-ends the round after",
+    "        endRoundAfterMinutes, cycles the map, and suppressCombat applies.",
+    "false — PLAYABLE: no forced round end, no map cycling, aliens fight.",
+    "TO PLAY AGAINST THE ALIEN AI, set testMode false. suppressCombat only has",
+    "any effect while testMode is true, so leaving it true is harmless then."
+  ],
+  "testMode": true,
+  "suppressCombat": true,
+
   "_eco": "Economy knobs worth changing between rounds.",
   "blueprintDrivesPhase2": true,
   "replanIntervalS": 30,

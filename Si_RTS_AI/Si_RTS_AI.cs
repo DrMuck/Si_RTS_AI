@@ -1,4 +1,4 @@
-using MelonLoader;
+﻿using MelonLoader;
 using HarmonyLib;
 using UnityEngine;
 using Silica;
@@ -8,19 +8,19 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 
-[assembly: MelonInfo(typeof(Si_RTS_AI.Si_RTS_AI), "Si_RTS_AI", "0.27.2-rig-json", "DrMuck")]
+[assembly: MelonInfo(typeof(Si_RTS_AI.Si_RTS_AI), "Si_RTS_AI", "0.27.3-playable", "DrMuck")]
 [assembly: MelonGame("Bohemia Interactive", "Silica")]
 
 namespace Si_RTS_AI
 {
     /// <summary>
-    /// Si_RTS_AI — replacement / augmentation of Silica's built-in commander AI.
+    /// Si_RTS_AI â€” replacement / augmentation of Silica's built-in commander AI.
     /// (Renamed from Si_RTS_AI. See ARCHITECTURE.md for the current design.)
     ///
     /// Phase 1 (current): OBSERVABILITY ONLY. Logs both AI commander decisions
     /// AND player RTS actions to help characterize what needs replacing. Two outputs:
     ///
-    ///   1) Rolling per-tick summary (MelonLogger) — throttled, one per commander per
+    ///   1) Rolling per-tick summary (MelonLogger) â€” throttled, one per commander per
     ///      N Think() ticks:
     ///        [RTSA/OBS] [Sol] tick=25 reqs=8 type={Construct:3,Unit:5} task={Guard:4,...} ...
     ///
@@ -94,7 +94,7 @@ namespace Si_RTS_AI
             MelonLogger.Msg($"[RTSA] Per-round dump dir: {Path.GetFullPath(_sessionLogDir)}");
             MelonLogger.Msg($"[RTSA] AI summary cadence: every {LOG_EVERY_N_TICKS} Think() ticks per team.");
 
-            // Headless test harness — MelonPreferences-gated soak-test driver.
+            // Headless test harness â€” MelonPreferences-gated soak-test driver.
             TestHarnessNs.TestHarness.Init();
             Planning.EcoPlannerConfig.Init();
             Planning.BlueprintConfig.Init();
@@ -102,7 +102,7 @@ namespace Si_RTS_AI
 
         public override void OnUpdate()
         {
-            // FPS EMA — sampled every main-thread frame. TelemetryServer
+            // FPS EMA â€” sampled every main-thread frame. TelemetryServer
             // reads _serverFps from any thread; it's a plain float write so
             // torn reads produce visible garbage very rarely, and the chart
             // averages anyway.
@@ -114,7 +114,7 @@ namespace Si_RTS_AI
                 Perception.FpsSampler.OnFrame(dt, _serverFps);
             }
 
-            // Lag-spike detector — user 2026-07-08: "server fps has sometimes
+            // Lag-spike detector â€” user 2026-07-08: "server fps has sometimes
             // lag spikes ... maybe too many orders at the same time?" Any
             // frame taking >LAG_SPIKE_MS gets logged with recent-mod-activity
             // breakdown so we can see if our mod was on the critical path.
@@ -124,18 +124,18 @@ namespace Si_RTS_AI
                 MelonLogger.Msg($"[RTSA/LAG] spike dt={dt*1000f:F0}ms  {recent}");
             }
 
-            // Drain 1 deferred layer write per frame — spreads the ~15-file
+            // Drain 1 deferred layer write per frame â€” spreads the ~15-file
             // snapshot burst across many frames so it never appears as a spike.
             Perception.MapLayers.LayerReplay.DrainPending();
 
             TestHarnessNs.TestHarness.Tick();
 
-            // Time the periodic dispatcher itself — attribute cost to mod
+            // Time the periodic dispatcher itself â€” attribute cost to mod
             // even outside per-team measurement.
             long tPeriodic = 0;
             long ts = System.Diagnostics.Stopwatch.GetTimestamp();
             PeriodicTelemetryTick();
-            // Observation only — no orders, no placements — so it is safe to run
+            // Observation only â€” no orders, no placements â€” so it is safe to run
             // alongside an experiment whose rounds must stay comparable.
             Perception.CombatLog.Tick();
             tPeriodic = (System.Diagnostics.Stopwatch.GetTimestamp() - ts) * 1000L / System.Diagnostics.Stopwatch.Frequency;
@@ -152,7 +152,7 @@ namespace Si_RTS_AI
         /// Every hot path (broker tick, shrimp producer, relocator, planner
         /// fires, shrimp order issuance) reports its ms cost + item count via
         /// the Add* methods below. When a lag spike hits, SnapshotAndReset()
-        /// dumps and clears the accumulator — attributing the spike to the
+        /// dumps and clears the accumulator â€” attributing the spike to the
         /// mod paths that ran in the window before it.
         /// </summary>
         internal static class RecentModWork
@@ -188,10 +188,10 @@ namespace Si_RTS_AI
         // Fires ~1x/sec regardless of whether any team has an AI commander.
         //
         // Rationale: LayerReplay.MaybeSnapshot, BcMetrics.TickX, and every other
-        // observability call used to live INSIDE AIConstructionHandler.Think() —
+        // observability call used to live INSIDE AIConstructionHandler.Think() â€”
         // which the game only ticks for AI-commanded teams. The moment a human
         // player took commander control, the game stopped ticking Think() for
-        // that team → our Harmony prefix went silent → viewer froze on the last
+        // that team â†’ our Harmony prefix went silent â†’ viewer froze on the last
         // snapshot. Player-commanded rounds were completely invisible to the
         // telemetry pipeline, which is precisely the rounds we most want to
         // observe (the human demonstrating "good eco" as a reference).
@@ -207,7 +207,7 @@ namespace Si_RTS_AI
 
         // Cost-tracking: if any subsystem call exceeds this many milliseconds
         // on the main thread, log it. Server FPS 240 = 4.17ms per frame, so
-        // 50ms freezes the game for ~12 frames — very visible to the viewer
+        // 50ms freezes the game for ~12 frames â€” very visible to the viewer
         // and to any human player.
         const long SLOW_TICK_LOG_THRESHOLD_MS = 50;
         static readonly System.Diagnostics.Stopwatch _sw = new System.Diagnostics.Stopwatch();
@@ -261,25 +261,25 @@ namespace Si_RTS_AI
                     RecentModWork.AddBcMetrics(tBcMetrics);
                     RecentModWork.AddShrimpState(tShrimpState);
                     RecentModWork.AddEcoRate(tEcoRate);
-                    // MoneyBroker tick BEFORE EcoPlanner — gives TechPlanner
+                    // MoneyBroker tick BEFORE EcoPlanner â€” gives TechPlanner
                     // first dibs on cash when it's ready. Otherwise Eco would
                     // spend money on the next BC/Cyst and starve tech placement,
                     // pushing the first Cortex a tick later per BC (compounds
-                    // fast — user saw Cortex arriving ~5min mark when target
+                    // fast â€” user saw Cortex arriving ~5min mark when target
                     // per their commander replay is ~3min).
-                    // Skip Alien-side planners when RTSAI_Alien=false —
+                    // Skip Alien-side planners when RTSAI_Alien=false â€”
                     // stock game AI runs for Alien instead. Telemetry
                     // samplers above keep running (observability only).
                     if (Faction.FactionControl.IsEnabled(team))
                     {
                         Planning.MoneyBroker.Tick(team);
                         tPlan    = TimedMs(() => Planning.EcoPlanner.MaybePlan(team));
-                        // Basic military manager tick — Alien only. Guarded internally
+                        // Basic military manager tick â€” Alien only. Guarded internally
                         // by MilitaryManager.Enabled (opt-in preference).
                         if ((team.name ?? "").Contains("Alien"))
                         {
                             Faction.MilitaryManager.Tick(team);
-                            // Map discovery — starter Crabs sweep the star.
+                            // Map discovery â€” starter Crabs sweep the star.
                             // Runs ahead of everything that reads the explored
                             // layer, because BC candidates are FoW-gated.
                             Planning.ScoutPlanner.Tick(team);
@@ -305,21 +305,21 @@ namespace Si_RTS_AI
             }
         }
 
-        // Runs AFTER all mods have loaded — SilicaAdminMod is guaranteed available here.
+        // Runs AFTER all mods have loaded â€” SilicaAdminMod is guaranteed available here.
         // Same pattern KGT uses for its /koh and /buy command registration.
         public override void OnLateInitializeMelon()
         {
             Commands.Register();
             Planning.RtsaiConfig.Reload();
             // Register sub-planners with the money broker. Order doesn't
-            // matter — broker sorts proposals by score × urgency each tick.
+            // matter â€” broker sorts proposals by score Ã— urgency each tick.
             Planning.MoneyBroker.Register(new Planning.TechPlanner());
         }
 
         public override void OnSceneWasLoaded(int buildIndex, string sceneName)
         {
             // Flush the previous round's summary into its own log BEFORE we clear state.
-            // We only bother when the previous log path exists — first scene load has none.
+            // We only bother when the previous log path exists â€” first scene load has none.
             if (!string.IsNullOrEmpty(_roundLogPath))
             {
                 string summary = Phase2.BuildRoundSummary();
@@ -431,7 +431,7 @@ namespace Si_RTS_AI
             _sceneReady = true;
 
             _roundLogPath = Path.Combine(_sessionLogDir, $"round-{DateTime.Now:yyyyMMdd_HHmmss}-{Safe(sceneName)}.log");
-            AppendToRound($"# Si_RTS_AI observability log — scene={sceneName} startedAt={DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+            AppendToRound($"# Si_RTS_AI observability log â€” scene={sceneName} startedAt={DateTime.Now:yyyy-MM-dd HH:mm:ss}");
             AppendToRound($"# categories: [AI] commander Think summary, [ORDER] unit order (attack/move/stop), [SPAWN_S] structure, [SPAWN_U] unit, [PILOT] player controlled-unit change, [TEAM] player team change");
             AppendToRound($"# Phase 2 additions: AIConstructionHandler + AIUnitHandler observability rolled into the round-summary block at the end of this file.");
 
@@ -439,9 +439,9 @@ namespace Si_RTS_AI
             // during a previous scene are gone by now. Re-hook every scene, not just once.
             _eventsHooked = false;
             HookGameEvents();
-            MelonLogger.Msg($"[RTSA] New round → logging to {_roundLogPath}");
+            MelonLogger.Msg($"[RTSA] New round â†’ logging to {_roundLogPath}");
 
-            // Headless test harness — must run AFTER Phase31 reset so its AutoOverride
+            // Headless test harness â€” must run AFTER Phase31 reset so its AutoOverride
             // (which populates Phase31.OverrideByTeam) sticks for this round.
             TestHarnessNs.TestHarness.OnSceneLoaded(sceneName);
         }
@@ -546,7 +546,7 @@ namespace Si_RTS_AI
                 GameEvents.OnUnitDestroyed           += OnUnitDestroyed;
 
                 // Note: /rtsai chat command uses SilicaAdminMod's PlayerMethods.RegisterPlayerCommand
-                // (see OnLateInitializeMelon below) — no GameEvents.OnChatMessage sub needed here.
+                // (see OnLateInitializeMelon below) â€” no GameEvents.OnChatMessage sub needed here.
 
                 _eventsHooked = true;
                 MelonLogger.Msg("[RTSA] GameEvents hooked (orders + selections + spawns).");
@@ -557,15 +557,15 @@ namespace Si_RTS_AI
             }
         }
 
-        // GameEvents callbacks are cleared on scene transition — re-hook each new scene.
-        // Attribution rules — a unit's order can come from three sources:
-        //   1. PILOTED  — unit.ControlledBy != null → someone in first-person mode is
+        // GameEvents callbacks are cleared on scene transition â€” re-hook each new scene.
+        // Attribution rules â€” a unit's order can come from three sources:
+        //   1. PILOTED  â€” unit.ControlledBy != null â†’ someone in first-person mode is
         //                 personally driving the unit, and the order came from them.
-        //   2. COMMANDER-PLAYER — team has no AI commander enabled (a human is the
-        //                 team's RTS commander) → the order was issued top-down by
+        //   2. COMMANDER-PLAYER â€” team has no AI commander enabled (a human is the
+        //                 team's RTS commander) â†’ the order was issued top-down by
         //                 the human commander clicking select + right-click.
-        //   3. COMMANDER-AI — team has an AI commander enabled → the order was
-        //                 emitted by the AI's Think() → group routing.
+        //   3. COMMANDER-AI â€” team has an AI commander enabled â†’ the order was
+        //                 emitted by the AI's Think() â†’ group routing.
         // Note: we can't easily tell WHICH human commander issued a given order
         // (there's no "issuer" field on the event), only that it came from the
         // player-commander of that team.
@@ -676,7 +676,7 @@ namespace Si_RTS_AI
             p2.StructuresSpawned++;
             Bump(p2.StructureBuiltByName, name);
 
-            // Layer invalidation — only trigger on layer-relevant structure types so we
+            // Layer invalidation â€” only trigger on layer-relevant structure types so we
             // don't rebuild after every random Alien creature spawn.
             if (string.Equals(name, "Bio Cache",           StringComparison.OrdinalIgnoreCase)) Perception.MapLayers.AlienEcoLayers.OnBcChanged();
             if (string.Equals(name, "Lesser Spawning Cyst", StringComparison.OrdinalIgnoreCase)) Perception.MapLayers.AlienEcoLayers.OnCystChanged();
@@ -687,7 +687,7 @@ namespace Si_RTS_AI
             try { sp = structure.transform.position; } catch { }
             AppendToRound($"[SPAWN_S] team={ResolveTeamName(team)} structure={name} at=({sp.x:F0},{sp.z:F0})");
             // Measure how far the game's placement search moved this from where
-            // the planner asked for it — sets the chain-anchor margin.
+            // the planner asked for it â€” sets the chain-anchor margin.
             try { Planning.EcoPlanner.NoteStructureSpawned(team, name, sp); } catch { }
         }
 
@@ -695,7 +695,7 @@ namespace Si_RTS_AI
         {
             if (unit == null || unit.ObjectInfo == null) return;
             // Filter out common noise: dropped drops / debris / soldiers spawning from
-            // barracks fire this too, which is fine — that's real production data.
+            // barracks fire this too, which is fine â€” that's real production data.
             var team = unit.Team;
             var tally = GetSpawnTally(team);
             tally.UnitsSpawned++;
@@ -802,15 +802,15 @@ namespace Si_RTS_AI
 
         // BUCKET, NOT A KEY, FOR TEAM-LESS EVENTS.
         //
-        // This was a "sentinel key" that was itself null — `static readonly Team
-        // _placeholderTeam = null!` — so `if (team == null) team =
+        // This was a "sentinel key" that was itself null â€” `static readonly Team
+        // _placeholderTeam = null!` â€” so `if (team == null) team =
         // _placeholderTeam` assigned null to null and the very next line did
         // Dictionary.TryGetValue(null), which throws ArgumentNullException. The
         // `null!` is what hid it: the compiler was told not to warn about the
         // one thing that mattered.
         //
         // It fired on every structure or unit that spawns before its team is
-        // assigned — the handlers run from Structure.Awake() — 27 times in the
+        // assigned â€” the handlers run from Structure.Awake() â€” 27 times in the
         // 2026-08-01 server log.
         //
         // Counting still happens, into a plain bucket, so the events are not

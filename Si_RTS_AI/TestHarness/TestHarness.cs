@@ -187,12 +187,19 @@ namespace Si_RTS_AI.TestHarnessNs
 
         static void RefreshCache()
         {
-            bool testModeOn = _testMode?.Value ?? false;
+            // ONE SWITCH SEPARATES A SOAK FROM A GAME YOU CAN PLAY.
+            //
+            // testMode gates the whole harness: auto-join, the forced round end,
+            // map cycling, combat suppression, the broke-enemy hack. Leaving it
+            // on while a human plays means the round dies mid-match and the
+            // aliens never shoot back. In rtsai.json so the box can be turned
+            // from soak to playable between rounds.
+            bool testModeOn = Planning.RtsaiConfig.Bool("testMode", _testMode?.Value ?? false);
             _cachedEnable                = testModeOn;
             _cachedPreventEmptyEndround  = _preventEmptyEndround?.Value ?? false;
             // Push suppress-combat flag to the Harmony-patch reader.
             global::Si_RTS_AI.Faction.SuppressCombat.Enabled =
-                testModeOn && (_suppressCombat?.Value ?? false);
+                testModeOn && Planning.RtsaiConfig.Bool("suppressCombat", _suppressCombat?.Value ?? false);
             // EnemyBroke only takes effect while TestMode is on — outside
             // test mode we always leave humans alone regardless of pref.
             bool enemyBroke = _enemyBroke?.Value ?? false;
