@@ -8,7 +8,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 
-[assembly: MelonInfo(typeof(Si_RTS_AI.Si_RTS_AI), "Si_RTS_AI", "0.27.3-playable", "DrMuck")]
+[assembly: MelonInfo(typeof(Si_RTS_AI.Si_RTS_AI), "Si_RTS_AI", "0.28.0-storage-buffer", "DrMuck")]
 [assembly: MelonGame("Bohemia Interactive", "Silica")]
 
 namespace Si_RTS_AI
@@ -385,6 +385,7 @@ namespace Si_RTS_AI
             Faction.AlienConstruction.ResetForNewRound();
             Faction.AlienShrimpProducer.ResetForNewRound();
             Faction.AlienShrimpAntiAttack.ResetForNewRound();
+            Faction.StorageBuffer.ResetForNewRound();
             Planning.ShrimpGroupPlanner.ResetForNewRound();
             Planning.ScoutPlanner.ResetForNewRound();
             Planning.MapProfile.ResetForNewRound();

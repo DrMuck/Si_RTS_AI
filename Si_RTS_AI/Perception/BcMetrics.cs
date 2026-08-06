@@ -92,6 +92,10 @@ namespace Si_RTS_AI.Perception
                         var s = structs[i];
                         if (s == null || s.ObjectInfo == null || s.IsDestroyed) continue;
                         if (!string.Equals(s.ObjectInfo.DisplayName, bcDisplayName, StringComparison.OrdinalIgnoreCase)) continue;
+                        // The storage scaffold is not economy — a hundred spawned
+                        // caches beside the Nest would otherwise read as a hundred
+                        // idle sites and wreck every per-Bio-Cache number.
+                        if (Faction.StorageBuffer.IsBufferPos(s.transform.position)) continue;
                         bcPositions.Add(s.transform.position);
                     }
                 }

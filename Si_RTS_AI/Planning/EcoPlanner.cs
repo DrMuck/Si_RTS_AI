@@ -2417,6 +2417,15 @@ namespace Si_RTS_AI.Planning
             try { BattalionManager.Tick(team); }
             catch (System.Exception ex) { MelonLogger.Warning("[PLAN] BattalionManager threw: " + ex.Message); }
 
+            // Storage scaffold — off unless rtsai.json asks for it. Same attach
+            // point and for the same reason as the four above.
+            try
+            {
+                Faction.StorageBuffer.Tick(team, state.nestPos, Faction.AlienConstruction.BcCd,
+                                           Perception.MapLayers.LayerReplay.CurrentRoundTime);
+            }
+            catch (System.Exception ex) { MelonLogger.Warning("[PLAN] StorageBuffer threw: " + ex.Message); }
+
             // When the planner has money and plans nothing, say what the
             // enumerator actually offered — guessing at this from the outside
             // cost most of a session.

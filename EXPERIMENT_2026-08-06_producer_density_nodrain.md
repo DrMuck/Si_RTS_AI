@@ -1,6 +1,6 @@
-# Experiment — producer density, re-measured without the drain
+﻿# Experiment â€” producer density, re-measured without the drain
 
-**Runs overnight 2026-08-06 → 07. Read this before touching the results.**
+**Runs overnight 2026-08-06 â†’ 07. Read this before touching the results.**
 
 The military merge happens tomorrow on top of whatever this says, so the one
 thing this run has to deliver is a producer density that is not an artefact.
@@ -10,7 +10,7 @@ thing this run has to deliver is a producer density that is not an artefact.
 ## 1. Why every earlier number is void
 
 `AutoResourceDrain` was on. It cut team cash to 70% of capacity whenever it
-passed 75%, and `cumulIncome` credited what it destroyed — so the headline
+passed 75%, and `cumulIncome` credited what it destroyed â€” so the headline
 number measured **earning power past the cap, not money the AI ever had**. The
 ledger of the ratio3 round of 2026-08-06:
 
@@ -41,50 +41,52 @@ beat. `WorkerCapPerBioCache = 10` in every arm (H1 held on), so one variable mov
 Arms rotate **per round**, so drift over the night spreads evenly instead of
 landing on whichever ran last.
 
-## 3. Settings — all in `UserData/rtsai.json`, no restart needed to change them
+## 3. Settings â€” all in `UserData/rtsai.json`, no restart needed to change them
 
 ```json
 "autoResourceDrain":   false,
 "configCycle":         "adaptive,ratio2,ratio3,ratio4",
 "endRoundAfterMinutes": 25,
 "roundsPerMap":         24,
-"bridgeMode":          "loop"
+"bridgeMode":          "loop",
+"storageBufferCaches":  100,
+"storageBufferAtMinute": 10
 ```
 
 Requires **v0.27.2** or later (earlier builds do not read this file). Map
-`NarakaCity`, the only map whose alien spawn does not move between rounds — it
+`NarakaCity`, the only map whose alien spawn does not move between rounds â€” it
 must be the loaded map when the server starts, because `roundsPerMap` holds
 whatever is running rather than choosing it.
 
 ### Why 25 minutes and not 35
 
 With the drain off the bank fills and the game clamps it, so income flattens
-once cash reaches capacity (~4,000 per Bio Cache — about 280k at 70 caches).
+once cash reaches capacity (~4,000 per Bio Cache â€” about 280k at 70 caches).
 Past that point every arm reads the same, which would bury the difference rather
 than measure it. 25 minutes also buys ~18 rounds instead of ~13, so 4-5
 repetitions per arm against a 15% noise floor.
 
 `bridgeMode` stays `loop` all night. Two experiments in one soak means neither
-result is attributable — the bridge arms wait for their own run.
+result is attributable â€” the bridge arms wait for their own run.
 
 ## 4. Read the checkpoints, not the finish
 
 Primary comparison at **10 / 15 / 20 minutes**, which is pre-cap on every arm.
 Final `cumulIncome` is secondary and is only meaningful if the round never
-pinned at capacity — check the cash trace before quoting it.
+pinned at capacity â€” check the cash trace before quoting it.
 
 Secondary, and now more interesting than before: **how long an arm sits at the
 cap**. A cap-bound economy is one that should have been buying something, which
 is exactly the argument the money broker will need tomorrow.
 
-## 5. Validity checks — before reading anything
+## 5. Validity checks â€” before reading anything
 
 1. `[RTSA/CONFIG] AutoResourceDrain OFF` in the log. If it says ON, the round
    belongs to the old regime and is not part of this run.
 2. `[RTSA/HT] A/B arm N: '<name>'` every round. A round without it ran
    unconfigured and groups with nothing.
 3. Nest at `(2520,1275)` every round. Any other spawn is discarded, not analysed.
-4. Fewer than 3 usable rounds in an arm ⇒ report it as an anecdote, not a rank.
+4. Fewer than 3 usable rounds in an arm â‡’ report it as an anecdote, not a rank.
 
 ## 6. Analysis
 
@@ -94,4 +96,5 @@ python eco_sim/plot_arms_curves.py   2026-08-06T23
 ```
 
 `plot_arms_curves.py` has `ARM_COLOUR` / `ARMS` set for the older four-arm
-sweep — swap `ratio5` for `ratio4` before running it on this data.
+sweep â€” swap `ratio5` for `ratio4` before running it on this data.
+

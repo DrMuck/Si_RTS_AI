@@ -24,6 +24,19 @@
   ],
   "autoResourceDrain": false,
 
+  "_storageBuffer": [
+    "A pile of FREE Bio Caches spawned beside the Nest at a fixed minute, purely",
+    "to raise team storage capacity so income stops clipping at the cap.",
+    "Capacity is ~4,000 per Bio Cache, so 100 caches ~ +400,000.",
+    "They are SPAWNED (admin path): no cost, no build time, no placement checks,",
+    "stacked on one spot. They measure nothing about the bot's expansion and are",
+    "excluded from bc_metrics and the per-Bio-Cache income meter.",
+    "0 disables. This is a measurement scaffold — turn it off for a real game."
+  ],
+  "storageBufferCaches": 100,
+  "storageBufferAtMinute": 10,
+  "storageBufferOffsetM": 150,
+
   "_bridgeMode": [
     "How a cross-branch link is priced. Both rules are live code:",
     "  loop     — value is the DETOUR REMOVED between the two ends, measured over",

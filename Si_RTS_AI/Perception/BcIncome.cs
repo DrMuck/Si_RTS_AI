@@ -121,6 +121,9 @@ namespace Si_RTS_AI.Perception
                     if (s == null || s.ObjectInfo == null || s.IsDestroyed) continue;
                     if (!string.Equals(s.ObjectInfo.DisplayName, bcDisplayName,
                                        StringComparison.OrdinalIgnoreCase)) continue;
+                    // Scaffold caches hold capacity, not economy — attributing
+                    // deposits to them would make the meter's ratio meaningless.
+                    if (Faction.StorageBuffer.IsBufferPos(s.transform.position)) continue;
 
                     Vector3 p = s.transform.position;
                     long k = Key(p);

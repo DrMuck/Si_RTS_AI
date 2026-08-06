@@ -111,6 +111,10 @@ namespace Si_RTS_AI.Faction
         static ConstructionData? _cystCd;
         static ConstructionData? _nodeCd;
 
+        /// <summary>The Bio Cache ConstructionData once resolved, for callers
+        /// that need its prefab name rather than to place one (StorageBuffer).</summary>
+        internal static ConstructionData? BcCd => _bcCd;
+
         // Pending placements keyed by target position (use squared-distance dedup on position).
         // Value = tick number when fired.
         static readonly Dictionary<Vector3, int> _pendingBc   = new Dictionary<Vector3, int>();
