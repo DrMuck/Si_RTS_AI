@@ -678,8 +678,9 @@ namespace Si_RTS_AI.Planning
             public int branchA, branchB;
             public int hops;      // Nodes needed to close the gap
             public int protects;  // structures on the smaller of the two sides
-            public float savedM;  // network path the far side stops walking
+            public float savedM;  // road the loop removes between its two ends
             public int beyond;    // structures that walk the shorter road
+            public int cuts;      // single points of failure it bypasses
         }
 
         /// <summary>Cross-branch joins worth making, best first. SHADOW —
@@ -718,41 +719,73 @@ namespace Si_RTS_AI.Planning
             // Over the built network the question is simple: two structures that
             // are FAR APART ALONG THE ROAD but close in a straight line. The
             // Dijkstra pass above already put the road distance on every root.
+            // A LOOP IS NOT A SHORTCUT TO THE NEST.
+            //
+            // The first version priced a link as far-path minus near-path minus
+            // gap — the saving on the road HOME. For two branches that are both
+            // far out, which is exactly what a big loop joins, that number is
+            // near zero or negative, so every worthwhile loop was rejected on
+            // value while small shortcuts near the base got built. DrMuck named
+            // three links worth having and all three fit the hop budget already;
+            // they failed here.
+            //
+            // What a link is worth is the DETOUR IT REMOVES: how far apart the
+            // two ends are along the existing road, against how far apart they
+            // are in a straight line. Two ends that are 60m apart and 3km around
+            // are the loop worth building.
             var found = new List<Bridge>(8);
+            var adj = BuildAdjacency();
+            FindCutVertices(adj);
+            var byStart = new Dictionary<int, List<int>>();
+            float maxSpan = EcoSimulator.NODE_REACH_M + BRIDGE_MAX_HOPS * HopM;
             for (int i = 0; i < _rootCount; i++)
+            for (int j = i + 1; j < _rootCount; j++)
             {
-                var A = _net[i];
-                if (A.pathM <= 0f) continue;                 // the Nest itself
-                for (int j = i + 1; j < _rootCount; j++)
+                float gap = Mathf.Sqrt(SqXZ(_net[i].pos, _net[j].pos));
+                if (gap <= EcoSimulator.NODE_REACH_M || gap > maxSpan) continue;
+                if (!byStart.TryGetValue(i, out var l)) { l = new List<int>(4); byStart[i] = l; }
+                l.Add(j);
+            }
+
+            foreach (var kv in byStart)
+            {
+                var road = RoadDistancesFrom(kv.Key, adj, out var parent);
+                foreach (int j in kv.Value)
                 {
-                    var B = _net[j];
-                    if (B.pathM <= 0f) continue;
-
-                    float gap = Mathf.Sqrt(SqXZ(A.pos, B.pos));
-                    if (gap <= EcoSimulator.NODE_REACH_M) continue;   // already neighbours
+                    float gap = Mathf.Sqrt(SqXZ(_net[kv.Key].pos, _net[j].pos));
                     int hops = Mathf.CeilToInt((gap - EcoSimulator.NODE_REACH_M) / HopM);
-                    if (hops > BRIDGE_MAX_HOPS) continue;
+                    float byRoad = road[j];
 
-                    // What the far side stops walking once the link exists.
-                    float far = Mathf.Max(A.pathM, B.pathM);
-                    float near = Mathf.Min(A.pathM, B.pathM);
-                    float saved = far - (near + gap);
+                    // Unreachable along the network means the link would JOIN
+                    // two severed pieces, which is the most valuable case there
+                    // is — price it at the whole span rather than discarding it
+                    // as infinite.
+                    float saved = float.IsInfinity(byRoad) ? maxSpan * 4f : byRoad - gap;
                     if (saved <= BRIDGE_MIN_SAVED_M) continue;
 
-                    // Structures on the far side of the join — everything whose
-                    // road home is at least as long as the far endpoint's.
+                    float far = Mathf.Max(_net[kv.Key].pathM, _net[j].pathM);
                     int beyond = 0;
-                    for (int k = 0; k < _rootCount; k++)
-                        if (_net[k].pathM >= far) beyond++;
+                    for (int k = 0; k < _rootCount; k++) if (_net[k].pathM >= far) beyond++;
                     if (beyond < BRIDGE_MIN_PROTECT) continue;
 
+                    // SINGLE POINTS OF FAILURE ON THAT ROAD.
+                    //
+                    // DrMuck named three structures whose loss would sever a
+                    // branch and asked for links that avoid exactly that. A cut
+                    // vertex on the road between the two ends is that structure:
+                    // bypass it and the branch behind it survives losing it.
+                    int cuts = 0;
+                    for (int at = parent[j]; at >= 0 && at != kv.Key; at = parent[at])
+                        if (_isCut != null && at < _isCut.Length && _isCut[at]) cuts++;
+
+                    bool startIsNear = _net[kv.Key].pathM <= _net[j].pathM;
                     found.Add(new Bridge
                     {
-                        a = A.pathM > B.pathM ? B.pos : A.pos,   // build FROM the near side
-                        b = A.pathM > B.pathM ? A.pos : B.pos,
-                        branchA = A.branch, branchB = B.branch,
+                        a = startIsNear ? _net[kv.Key].pos : _net[j].pos,
+                        b = startIsNear ? _net[j].pos : _net[kv.Key].pos,
+                        branchA = _net[kv.Key].branch, branchB = _net[j].branch,
                         hops = hops, protects = beyond,
-                        savedM = saved, beyond = beyond,
+                        savedM = saved, beyond = beyond, cuts = cuts,
                     });
                 }
             }
@@ -781,8 +814,118 @@ namespace Si_RTS_AI.Planning
             }
             MelonLogger.Msg($"[BLUEPRINT] bridge: {win.hops} node(s) from " +
                             $"({win.a.x:F0},{win.a.z:F0}) to ({win.b.x:F0},{win.b.z:F0}) — " +
-                            $"saves {win.savedM:F0}m of road for {win.beyond} structures");
+                            $"saves {win.savedM:F0}m of road for {win.beyond} structures, " +
+                            $"bypasses {win.cuts} single point(s) of failure");
         }
+
+
+
+        /// <summary>
+        /// Structures whose loss splits the network — Tarjan's articulation
+        /// points over the built graph. A branch hanging off one of these is a
+        /// single point of failure, and a link that bypasses one converts that
+        /// into a loop. This is the principled answer to WHERE redundancy pays:
+        /// anywhere else, a link buys road and nothing else.
+        /// </summary>
+        static bool[] _isCut;
+
+        static void FindCutVertices(List<int>[] adj)
+        {
+            _isCut = new bool[_rootCount];
+            var disc = new int[_rootCount];
+            var low = new int[_rootCount];
+            var parent = new int[_rootCount];
+            for (int i = 0; i < _rootCount; i++) { disc[i] = -1; parent[i] = -1; }
+            int timer = 0;
+
+            // Iterative DFS — a recursive one would blow the stack on a large
+            // late-game network.
+            var stack = new Stack<(int node, int childIdx)>();
+            for (int root = 0; root < _rootCount; root++)
+            {
+                if (disc[root] >= 0) continue;
+                int rootChildren = 0;
+                stack.Push((root, 0));
+                disc[root] = low[root] = timer++;
+                while (stack.Count > 0)
+                {
+                    var (u, ci) = stack.Pop();
+                    if (ci < adj[u].Count)
+                    {
+                        stack.Push((u, ci + 1));
+                        int v = adj[u][ci];
+                        if (disc[v] < 0)
+                        {
+                            parent[v] = u;
+                            if (u == root) rootChildren++;
+                            disc[v] = low[v] = timer++;
+                            stack.Push((v, 0));
+                        }
+                        else if (v != parent[u])
+                        {
+                            if (disc[v] < low[u]) low[u] = disc[v];
+                        }
+                    }
+                    else if (parent[u] >= 0)
+                    {
+                        int p = parent[u];
+                        if (low[u] < low[p]) low[p] = low[u];
+                        if (p != root && low[u] >= disc[p]) _isCut[p] = true;
+                    }
+                }
+                if (rootChildren > 1) _isCut[root] = true;
+            }
+        }
+
+        /// <summary>Which built structures can reach which, at building range.</summary>
+        static List<int>[] BuildAdjacency()
+        {
+            var adj = new List<int>[_rootCount];
+            float link = EcoSimulator.BcPlaceReachM, link2 = link * link;
+            for (int i = 0; i < _rootCount; i++) adj[i] = new List<int>(6);
+            for (int i = 0; i < _rootCount; i++)
+                for (int j = i + 1; j < _rootCount; j++)
+                    if (SqXZ(_net[i].pos, _net[j].pos) <= link2)
+                    { adj[i].Add(j); adj[j].Add(i); }
+            return adj;
+        }
+
+        /// <summary>Road distance from one structure to every other, along the
+        /// network as it stands. This is what makes a loop measurable: the gap
+        /// between two ends in a straight line means nothing until you know how
+        /// far apart they are by road.</summary>
+        static float[] RoadDistancesFrom(int src, List<int>[] adj) =>
+            RoadDistancesFrom(src, adj, out _);
+
+        static float[] RoadDistancesFrom(int src, List<int>[] adj, out int[] parent)
+        {
+            parent = new int[_rootCount];
+            for (int i = 0; i < _rootCount; i++) parent[i] = -1;
+            var dist = new float[_rootCount];
+            var done = new bool[_rootCount];
+            for (int i = 0; i < _rootCount; i++) dist[i] = float.PositiveInfinity;
+            dist[src] = 0f;
+            for (int n = 0; n < _rootCount; n++)
+            {
+                int u = -1; float best = float.PositiveInfinity;
+                for (int i = 0; i < _rootCount; i++)
+                    if (!done[i] && dist[i] < best) { best = dist[i]; u = i; }
+                if (u < 0) break;
+                done[u] = true;
+                foreach (int v in adj[u])
+                {
+                    if (done[v]) continue;
+                    float nd = dist[u] + Mathf.Sqrt(SqXZ(_net[u].pos, _net[v].pos));
+                    if (nd < dist[v]) { dist[v] = nd; parent[v] = u; }
+                }
+            }
+            return dist;
+        }
+
+        /// <summary>How much a bypassed single point of failure multiplies what
+        /// a link is worth. Redundancy is the reason loops exist, so it is not a
+        /// tie-breaker.</summary>
+        const float CUT_VERTEX_WEIGHT = 3f;
 
         /// <summary>Road actually removed before a link is worth its nodes. A
         /// shortcut that saves fifty metres is not a bridge.</summary>
@@ -798,7 +941,12 @@ namespace Si_RTS_AI.Planning
         {
             float walkSaved = Mathf.Max(0f, b.savedM) * b.beyond
                             / Mathf.Max(1f, EcoSimulator.SHRIMP_SPEED);
-            float insurance = b.protects * EcoSimulator.BC_BUILD_S;
+            // Every cut vertex bypassed is a branch that stops depending on one
+            // structure surviving. Weighted against what it protects, because
+            // removing a single point of failure in front of forty structures
+            // is worth more than in front of four.
+            float insurance = b.protects * EcoSimulator.BC_BUILD_S
+                            * (1f + b.cuts * CUT_VERTEX_WEIGHT);
             return (walkSaved + insurance) / Mathf.Max(1, b.hops * EcoSimulator.NODE_COST);
         }
 
@@ -809,7 +957,10 @@ namespace Si_RTS_AI.Planning
         /// <summary>Nodes a bridge may cost. Not a map-distance ceiling — the
         /// thing that made the old loop finder reject the bridge that mattered —
         /// but a bound on what one join may spend.</summary>
-        const int BRIDGE_MAX_HOPS = 6;
+        /// <summary>Nodes one link may cost. Raised from 6 so a genuinely big
+        /// loop is affordable — DrMuck, 2026-08-06: "bridging bigger loops is
+        /// more welcome."</summary>
+        const int BRIDGE_MAX_HOPS = 8;
 
         const int BRIDGE_MAX = 3;
 
