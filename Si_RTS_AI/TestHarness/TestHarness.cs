@@ -259,7 +259,10 @@ namespace Si_RTS_AI.TestHarnessNs
 
         static void ApplyNextArm()
         {
-            string spec = _configCycle?.Value ?? "";
+            // rtsai.json first, so the cycle for a soak can be changed between
+            // rounds with the server up — the preference form of this knob is
+            // what cost 25 rounds on 2026-08-05.
+            string spec = Planning.RtsaiConfig.Str("configCycle", _configCycle?.Value ?? "");
 
             // EMPTY IS NOT "NO EXPERIMENT" — IT IS THE DEFAULT CYCLE.
             //
@@ -376,7 +379,7 @@ namespace Si_RTS_AI.TestHarnessNs
             ApplyNextArm();
 
             if (!_cachedEnable) return;
-            int mins    = ClampMinutes(_endRoundAfterMinutes?.Value ?? 10);
+            int mins    = ClampMinutes(Planning.RtsaiConfig.Int("endRoundAfterMinutes", _endRoundAfterMinutes?.Value ?? 10));
             int autoTo  = ClampTimeoutSeconds(_autoStartTimeoutSeconds?.Value ?? 45);
             bool supHumanAI = global::Si_RTS_AI.Faction.SuppressHumanAI.Enabled;
             string cfgId   = _configId?.Value ?? "-";
@@ -546,7 +549,7 @@ namespace Si_RTS_AI.TestHarnessNs
             // (2) force-end after N minutes
             if (!_forceEndRoundFired)
             {
-                int mins = ClampMinutes(_endRoundAfterMinutes?.Value ?? 10);
+                int mins = ClampMinutes(Planning.RtsaiConfig.Int("endRoundAfterMinutes", _endRoundAfterMinutes?.Value ?? 10));
                 float thresholdSeconds = mins * 60f;
                 float elapsed = Time.time - _sceneLoadedAt;
                 if (elapsed >= thresholdSeconds)
@@ -578,7 +581,7 @@ namespace Si_RTS_AI.TestHarnessNs
         /// </summary>
         static void QueueNextMap()
         {
-            int perMap = _roundsPerMap?.Value ?? 6;
+            int perMap = Planning.RtsaiConfig.Int("roundsPerMap", _roundsPerMap?.Value ?? 6);
             if (perMap <= 0) return;                   // map commands disabled
 
             string next = _currentMapName;

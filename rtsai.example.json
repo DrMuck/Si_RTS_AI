@@ -8,10 +8,21 @@
     "Every key is optional. Delete a line and the MelonPreferences value applies.",
     "Delete the whole file and nothing changes at all.",
     "",
-    "While the A/B rig is cycling arms (HeadlessTest_ConfigCycle), the rig owns",
-    "workerCapPerBioCache and producerPerSites — the keys are ignored and the log",
-    "says so once. Set HeadlessTest_ConfigCycle=off to steer from here instead."
+    "While the A/B rig is cycling arms, the rig owns workerCapPerBioCache and",
+    "producerPerSites — those keys are ignored and the log says so once. Set",
+    "configCycle to 'off' to steer them from here instead."
   ],
+
+  "_autoResourceDrain": [
+    "false (default) — cash is left alone. At capacity the game clamps it, so",
+    "  income stops accruing and cumulIncome reads as money that really existed.",
+    "true — cash is cut to 70% of team capacity whenever it passes 75%, and",
+    "  cumulIncome credits what was drained. That makes the benchmark measure",
+    "  EARNING POWER past the cap, at the price of destroying the money: it took",
+    "  315k out of a 988k NarakaCity round on 2026-08-06. Only for measurement.",
+    "Capacity is roughly 4,000 per Bio Cache, so the cap moves with the base."
+  ],
+  "autoResourceDrain": false,
 
   "_bridgeMode": [
     "How a cross-branch link is priced. Both rules are live code:",
@@ -27,16 +38,17 @@
   ],
   "bridgeMode": "loop",
 
-  "_autoResourceDrain": [
-    "false (default) — cash is left alone. At capacity the game clamps it, so",
-    "  income stops accruing and cumulIncome reads as money that really existed.",
-    "true — cash is cut to 70% of team capacity whenever it passes 75%, and",
-    "  cumulIncome credits what was drained. That makes the benchmark measure",
-    "  EARNING POWER past the cap, at the price of destroying the money: it took",
-    "  315k out of a 988k NarakaCity round on 2026-08-06. Only for measurement.",
-    "Capacity is roughly 4,000 per Bio Cache, so the cap moves with the base."
+  "_rig": [
+    "The A/B rig. configCycle rotates one arm per round; 'off' means the arms",
+    "stop and the knobs below apply instead. Arms: adaptive, ratio2..ratio5,",
+    "cap18, bridgeloop, bridgeshortcut, bridgeoff.",
+    "roundsPerMap holds the same map for that many rounds before the rotation",
+    "advances — high on purpose, because arms need identical ground and only",
+    "NarakaCity has a single spawn layout."
   ],
-  "autoResourceDrain": false,
+  "configCycle": "adaptive,ratio2,ratio3,ratio4",
+  "endRoundAfterMinutes": 25,
+  "roundsPerMap": 24,
 
   "_eco": "Economy knobs worth changing between rounds.",
   "blueprintDrivesPhase2": true,
