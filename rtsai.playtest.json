@@ -88,6 +88,21 @@
   ],
   "lockAlienCommander": true,
 
+  "_maxUnbuiltNodes": [
+    "Nodes ORDERED AND NOT YET STANDING, across the whole map. A chain builds one",
+    "node at a time, so an eighth site earns nothing until the seven ahead of it",
+    "finish — it is just cash frozen in something that does not work yet, on",
+    "ground we may not still want by then. NarakaCity 2026-08-07: 99 nodes built",
+    "for 18 Bio Caches, and the enemy destroyed 57 of them.",
+    "This is a limit on WORK IN PROGRESS, not on order rate — maxNodeFronts caps",
+    "how many are ordered per tick and says nothing about how many earlier orders",
+    "are still half-built, which is why it did not help. Repair is exempt: the",
+    "structures past a break are already built and already dying.",
+    "3 is a chain that keeps moving without running ahead of itself. 1 is strictly",
+    "sequential and slow. There is no 'off'."
+  ],
+  "maxUnbuiltNodes": 3,
+
   "_maxNodeFronts": [
     "Hard ceiling on how many fronts may be NODING at once, above every budget",
     "the planner computes for itself — the per-tick node fire budget, the escape",

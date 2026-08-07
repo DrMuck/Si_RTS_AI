@@ -1058,6 +1058,30 @@ namespace Si_RTS_AI.Planning
 
         const int PIONEER_MAX = 3;
 
+        /// <summary>
+        /// UNFINISHED NODES ALLOWED TO STAND AT ONCE, ACROSS THE WHOLE MAP.
+        ///
+        /// DrMuck, 2026-08-07: "there were built too many nodes upfront. Like 8+
+        /// nodes placed for a chain, but nodes in a chain build one by one."
+        ///
+        /// That is the whole defect in one sentence, and it is not about how many
+        /// fronts advance — maxNodeFronts was already set to 2 and did nothing
+        /// about it, because it caps how many nodes are ordered per TICK and says
+        /// nothing about how many previous orders are still standing there
+        /// half-built. Three hops a cycle, cycle after cycle, is eight sites in
+        /// under a minute.
+        ///
+        /// A chain builds sequentially, so the eighth site earns nothing until the
+        /// seven ahead of it finish. Every one of them is cash converted into a
+        /// thing that does not work yet, on ground we may not still want by the
+        /// time it does — and on NarakaCity the enemy destroyed 57 of them.
+        ///
+        /// So the ceiling is on WORK IN PROGRESS rather than on order rate, which
+        /// is the only form of it a chain cannot walk around: the planner may ask
+        /// for another node exactly when a node it already ordered has finished.
+        /// </summary>
+        static int MaxUnbuiltNodes => Mathf.Max(1, RtsaiConfig.Int("maxUnbuiltNodes", 3));
+
         /// <summary>Hops of a REPAIR line that may be laid in one plan cycle.
         /// Higher than the expansion equivalent because a break is losing
         /// structures every second it stands, and because the repair only
@@ -1735,6 +1759,13 @@ namespace Si_RTS_AI.Planning
                 }
                 else maxNodeFires = 1;
 
+                // Nodes ordered and not yet standing. Counted from the snapshot
+                // the whole tick is planned against, so every fire path sees the
+                // same number.
+                int unbuiltNodes = 0;
+                for (int i = 0; i < state.nodes.Count; i++)
+                    if (!state.nodes[i].finished) unbuiltNodes++;
+
                 // A RESCUE IS NOT AN EXPANSION, AND MUST NOT QUEUE BEHIND ONE.
                 //
                 // Every gate below exists to stop expansion outrunning the
@@ -1783,6 +1814,18 @@ namespace Si_RTS_AI.Planning
                         }
                         if (c.kind == ActionKind.PlaceNode && nodeFiresThisTick >= maxNodeFires) { Skip("nodeRate"); return true; }
                     }
+                    // WORK IN PROGRESS, checked for every node on every path —
+                    // blueprint chain, reach extension, loop, escape hatch. A cap
+                    // one of them could bypass would be the Lesser Cyst share
+                    // again: configured, and quietly doing nothing.
+                    //
+                    // A RESCUE IS EXEMPT. Reconnecting a severed branch is the one
+                    // case where the nodes ahead of it are not speculative — they
+                    // are already built and dying — and a rescue that queued
+                    // behind the very stubs it is trying to reach could never run.
+                    if (c.kind == ActionKind.PlaceNode && !rescue
+                        && unbuiltNodes + nodeFiresThisTick >= MaxUnbuiltNodes)
+                    { Skip("nodesInFlight"); return true; }
                     if (c.cost > cashLeft) return true;   // skip this one, try next
                     // Never let a Node eat the cash the next Bio Cache needs.
                     // This is what pinned Naraka at 0 cash for five minutes:

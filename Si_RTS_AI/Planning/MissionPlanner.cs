@@ -285,6 +285,19 @@ namespace Si_RTS_AI.Planning
         /// </summary>
         internal static int SpendableCash(Team team)
         {
+            // THE OPENING IS NOT NEGOTIABLE. DrMuck, 2026-08-07: "Military should
+            // never rob the opener."
+            //
+            // Not a reserve, not a share, not a trajectory test that can read the
+            // wrong way for thirty seconds — nothing at all until the opening
+            // queue is empty. The measured version of this rule cost 9,000 cash
+            // against an opener whose whole plan was 9,000, because at t+79s the
+            // worker curve had not started and "on track" was technically true.
+            // A categorical rule cannot produce that failure; a trajectory test
+            // did, on its first round.
+            try { if (OpenerPlanner.QueueActive) return 0; }
+            catch { }
+
             int cash = 0;
             try { cash = team.TotalResources; } catch { }
             // ONE definition, in WorkerPlan. This had its own copy for a day and
