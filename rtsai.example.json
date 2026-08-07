@@ -77,7 +77,7 @@
     "advances — high on purpose, because arms need identical ground and only",
     "NarakaCity has a single spawn layout."
   ],
-  "configCycle": "ratio3ap",
+  "configCycle": "adaptive,ratio2,ratio3,ratio4",
   "endRoundAfterMinutes": 25,
   "roundsPerMap": 24,
 
@@ -104,25 +104,6 @@
   ],
   "chainExtendPerTick": 2,
   "chainExtendDemandPerTick": 3,
-
-  "_maxNodesAheadPerSite": [
-    "Unfinished nodes one site's chain may have in flight at once. A branch may",
-    "lay several hops in a tick because a node anchors the next while still",
-    "building — useful, but once out-of-reach hops stopped being skipped (v0.40.0)",
-    "runs of 8+ appeared. 4 keeps a chain moving without a long unfinished road."
-  ],
-  "maxNodesAheadPerSite": 4,
-
-  "_maxBcPatchGradient": [
-    "Height a Bio Cache may sit above or below its patch, as a GRADIENT: rise",
-    "over horizontal run. Everything else in the planner measures on the flat,",
-    "which is right for build ranges and wrong for anything a shrimp has to walk",
-    "— a cache on a rock, a cliff shoulder or a roof is metres from its patch and",
-    "a long detour on foot. 0.5 means 20m of rise needs 40m of ground.",
-    "A site whose only cache fails this stays open, so the plan sites another.",
-    "0 disables the test."
-  ],
-  "maxBcPatchGradient": 0.5,
 
   "_timeScale": [
     "Simulation speed. 1 = real time. 2 finishes a 25 game-minute round in about",
