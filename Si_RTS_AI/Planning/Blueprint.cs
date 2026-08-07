@@ -155,10 +155,47 @@ namespace Si_RTS_AI.Planning
         // start), so a balance mod that changes structure ranges changes the
         // blueprint with it.
 
-        /// <summary>How close a Bio Cache has to get to its patch before the
-        /// chain has arrived. Mirrors EcoPlanner.IsPatchBcReachable so the plan
-        /// does not lay a node the executor then judges unnecessary.</summary>
-        static float BcTapReachM => EcoSimulator.BcPlaceReachM + 40f;
+        /// <summary>
+        /// How close the chain has to get to a patch before a Bio Cache there is
+        /// actually placeable.
+        ///
+        /// THIS WAS OPTIMISTIC TWICE OVER, AND IT STRANDED SITES.
+        ///
+        /// It read BcPlaceReachM + 40, or 249m, and measured from where nodes are
+        /// PLANNED. Both are wrong in the same direction. The game's observed
+        /// maximum Bio Cache anchor distance is 192m, not 249m; and a node lands
+        /// ~45m short of its planned hop, so the position the plan measures from
+        /// does not exist. NarakaCity 2026-08-07, the site at (1092,2005): the
+        /// plan measured 244m from the planned hop (1239,1810), called it "+0n"
+        /// and stopped extending, while the node had landed at (1205,1770) — 261m
+        /// from the patch, out of reach — so no Bio Cache could be placed and the
+        /// branch sat there. Three separate defects at that one corner today all
+        /// reduce to this: the plan believing ground was reached when it was not.
+        ///
+        /// Now it takes the MEASURED reach when the round has produced one, and
+        /// subtracts a node's slide so the last hop is judged by where it will
+        /// really land. The cost is roughly one extra node on some sites; the
+        /// alternative is a site that never completes at all.
+        /// </summary>
+        static float BcTapReachM
+        {
+            get
+            {
+                float measured = EcoPlanner.ObservedBcAnchorMaxM;
+                float reach = measured > 1f ? Mathf.Min(measured, EcoSimulator.BcPlaceReachM)
+                                            : EcoSimulator.BcPlaceReachM;
+                return Mathf.Max(BC_TAP_REACH_FLOOR_M, reach - NODE_SLIDE_MARGIN_M);
+            }
+        }
+
+        /// <summary>How far short of its planned hop a node typically lands.
+        /// Measured repeatedly at 45-63m on NarakaCity.</summary>
+        const float NODE_SLIDE_MARGIN_M = 45f;
+
+        /// <summary>Never demand the chain get closer than this, however
+        /// pessimistic the measurements get — below it every site would want a
+        /// node on top of its patch.</summary>
+        const float BC_TAP_REACH_FLOOR_M = 140f;
 
         /// <summary>One node hop. Same 0.75 of reach the executor steps with,
         /// leaving margin for the game sliding a placement.</summary>
