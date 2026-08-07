@@ -1,0 +1,128 @@
+{
+  "_readme": [
+    "OVERNIGHT MILITARY SOAK — copy over <server>/UserData/rtsai.json.",
+    "",
+    "Autonomous: the harness auto-joins a fake client, force-ends each round at",
+    "40 minutes and restarts the map. Sol and Centauri run VANILLA AI; the alien",
+    "runs Si_RTS_AI. Combat is ON, which is the whole point — this is the first",
+    "night the military layer issues orders against an opponent that shoots back.",
+    "",
+    "TWO PREFERENCES MUST ALSO BE SET, and they live in MelonPreferences.cfg",
+    "because they are vanilla/harness settings rather than ours. Edit only while",
+    "the server is STOPPED — MelonLoader rewrites that file from memory on",
+    "shutdown and reverts anything changed while it runs:",
+    "    VersusAutoSelectMode = \"HUMANS_VS_HUMANS_VS_ALIENS\"",
+    "    EnemyBroke           = false",
+    "EnemyBroke is the dangerous one. It zeroes human cash and purges their",
+    "starter units every second while testMode is true, so leaving it on would",
+    "have produced a night of rounds with no vanilla AI to fight and a log that",
+    "looked entirely normal."
+  ],
+
+  "_soak": [
+    "testMode true — auto-join, force-end, map restart.",
+    "suppressCombat FALSE — it is gated on testMode, so the soak default would",
+    "  have silenced every attack order in the game. This is the line that makes",
+    "  tonight a combat test rather than another eco run.",
+    "endRoundAfterMinutes 40 — long enough for the push trigger to have a chance:",
+    "  it needs a full 120s army-growth window, banked cash, and a discovered",
+    "  enemy structure before it will commit to anything.",
+    "roundsPerMap 24 — one map all night. Combat variance is already large, so",
+    "  holding the ground constant is what makes two rounds comparable at all.",
+    "storageBufferCaches 0 — a measurement scaffold, and with combat on it is",
+    "  also a hundred free structures parked next to the Nest for the enemy."
+  ],
+  "testMode": true,
+  "suppressCombat": false,
+  "endRoundAfterMinutes": 40,
+  "roundsPerMap": 24,
+  "storageBufferCaches": 0,
+  "storageBufferAtMinute": 10,
+  "storageBufferOffsetM": 150,
+  "autoResourceDrain": false,
+
+  "_configCycle": [
+    "ARMS ARE OFF TONIGHT, deliberately, and this is the one place I would push",
+    "back on the plan.",
+    "",
+    "The producer-density arms measure income at 25 minutes. With combat on, how",
+    "much a round earns is dominated by whether the enemy walked into the base at",
+    "minute 18 — variance that swamps a producer-density difference the two clean",
+    "soaks could not separate anyway (2026-08-06: every arm inside +/-6%). Twelve",
+    "rounds a night at 40 minutes is far too few to pull it back out.",
+    "",
+    "The military layer has meanwhile NEVER completed a round issuing orders",
+    "against an opponent that fights. The first question is not which ratio wins,",
+    "it is whether the thing behaves — and that question wants one configuration",
+    "repeated, so a bad round is a bad round rather than a bad arm.",
+    "",
+    "To run arms anyway it is one line: put back",
+    "\"configCycle\": \"adaptive,ratio2,ratio3,ratio4\". Nothing else changes."
+  ],
+  "configCycle": "off",
+
+  "_military": [
+    "Everything on. This is bring-up steps 2 and 3 at once, which is not the order",
+    "the docs recommend — but a soak can afford to look silly and a played game",
+    "cannot, and offence is the least measured code in the mod.",
+    "",
+    "WHAT TO READ IN THE MORNING, in order:",
+    "  1. combat.jsonl rows with \"sides\":2 — the first two-sided engagements this",
+    "     project has ever recorded. Everything about pricing calibrates off them.",
+    "     Rows are tagged with the mission kind that owned the ground, so exchange",
+    "     ratios can be read per kind: garrison vs defend vs push.",
+    "  2. [MISSION] posture lines. Did it ever push? Against what estimate? If",
+    "     'theirs~0' all night, the enemy-value field is not seeing anything and",
+    "     the push guard is doing its job for the wrong reason.",
+    "  3. [BATTALION] — do defend battalions get units now, or is the garrison",
+    "     still taking everything? That was the round-one defect.",
+    "  4. [PLAN/EXEC] REPAIR vs REPAIR BLOCKED. Repair fired zero times out of 22",
+    "     proposals before v0.43.0.",
+    "  5. Alien structures lost, in the round summary. 70 lost of 125 built was",
+    "     the round-one number to beat."
+  ],
+  "military": {
+    "enabled": true,
+    "execute": true,
+    "produce": true,
+    "offence": true,
+
+    "strengthMargin": 1.5,
+
+    "homeShare": 0.25,
+    "homeCapShare": 0.5,
+    "maxDefendMissions": 3,
+
+    "ecoReserve": 15000,
+    "lesserCystShare": 0.25,
+
+    "pushGrowthFloor": 20.0,
+    "pushMargin": 1.5,
+    "pushRetreatFraction": 0.4
+  },
+
+  "_lockAlienCommander": [
+    "Harmless here — the fake client joins a human team and never takes the alien",
+    "seat. Left on so the soak runs the same configuration as the played game."
+  ],
+  "lockAlienCommander": true,
+
+  "maxUnbuiltNodes": 3,
+  "maxNodeFronts": 2,
+
+  "_eco": "The tuned economy, unchanged, so tonight only adds combat as a variable.",
+  "pileUpMaxPerPatch": 10,
+  "pileUpMaxDetourM": 0,
+  "bridgeMode": "loop",
+  "chainExtendPerTick": 2,
+  "chainExtendDemandPerTick": 3,
+  "timeScale": 1,
+  "tapReachMode": "measured",
+  "blueprintDrivesPhase2": true,
+  "replanIntervalS": 30,
+  "workersByTenMinutes": 100,
+  "cystStrategyAuto": true,
+  "maxCystsPerPlan": 4,
+  "workerCapPerBioCache": 10,
+  "producerPerSites": 3
+}
