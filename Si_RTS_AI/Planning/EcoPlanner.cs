@@ -2230,8 +2230,44 @@ namespace Si_RTS_AI.Planning
                     int demandExtendsLeft = Mathf.Max(0, RtsaiConfig.Int("chainExtendDemandPerTick", 3));
 
                     var plan = Blueprint.Items;
+
+                    // THE LOUDEST DEMAND IS SERVED FIRST, NOT THE EARLIEST ITEM.
+                    //
+                    // Jumping the build-order window is not enough when cash is
+                    // the binding constraint: the demanded items were still
+                    // evaluated in plan order, so whichever sat earlier in the
+                    // list took the money. NarakaCity 2026-08-07, six minutes in
+                    // with ~15k in hand: (1744,1478) raised demand at 13:01:07
+                    // and got its Bio Cache at 13:04:05, while (2209,348) raised
+                    // demand 49s LATER and was served in 73s. By then the first
+                    // site's shrimps were hauling 610m. DrMuck: "expansion to
+                    // 1732.8, 1478.8 lack behind. Expansion to 2221.5, 364.0
+                    // seems to happen right on time."
+                    //
+                    // Demand is a count of shrimps already walking or hauling, so
+                    // ordering by it spends scarce cash where the most work is
+                    // already waiting on it.
+                    var demandOf = new float[plan.Count];
+                    var order    = new List<int>(plan.Count);
                     for (int i = 0; i < plan.Count; i++)
                     {
+                        order.Add(i);
+                        if (plan[i].kind == Blueprint.Kind.Cyst) continue;
+                        try { demandOf[i] = ShrimpGroupPlanner.WalkedPastDemand(plan[i].pos); } catch { }
+                    }
+                    order.Sort((a, b) =>
+                    {
+                        bool da = demandOf[a] >= HAUL_DEMAND_JUMPS_QUEUE;
+                        bool db = demandOf[b] >= HAUL_DEMAND_JUMPS_QUEUE;
+                        if (da != db) return da ? -1 : 1;                  // demanded first
+                        if (da && demandOf[a] != demandOf[b])
+                            return demandOf[b].CompareTo(demandOf[a]);     // loudest first
+                        return a.CompareTo(b);                            // else plan order
+                    });
+
+                    for (int oi = 0; oi < order.Count; oi++)
+                    {
+                        int i = order[oi];
                         var it = plan[i];
                         if (BlueprintAlreadyStanding(it, state))
                         {
@@ -2272,8 +2308,7 @@ namespace Si_RTS_AI.Planning
                         // is already happening and paid for. So it jumps the
                         // window, exactly as a bridge does, and the chain
                         // extension above then nodes toward it.
-                        float haulDemand = 0f;
-                        try { haulDemand = ShrimpGroupPlanner.WalkedPastDemand(it.pos); } catch { }
+                        float haulDemand = demandOf[i];
                         bool demanded = haulDemand >= HAUL_DEMAND_JUMPS_QUEUE
                                      && it.kind != Blueprint.Kind.Cyst;
 
