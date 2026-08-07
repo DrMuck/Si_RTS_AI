@@ -573,8 +573,10 @@ namespace Si_RTS_AI.Planning
             var depot = NearestBcTo(p);
             if (depot == Vector3.zero) return;
             float dx = depot.x - p.x, dz = depot.z - p.z;
-            float haul = Mathf.Sqrt(dx * dx + dz * dz);
-            if (haul < LONG_HAUL_M) return;
+            // Compared squared — this runs per standing shrimp per census, ~180
+            // times a second. The root is taken only for the log line below.
+            float haul2 = dx * dx + dz * dz;
+            if (haul2 < LONG_HAUL_M * LONG_HAUL_M) return;
 
             float t = Time.time;
             if (_haulNotedAt.TryGetValue(fi, out float last) && t - last < HAUL_NOTE_COOLDOWN_S) return;
@@ -589,7 +591,7 @@ namespace Si_RTS_AI.Planning
                 _lastHaulLogAt = now;
                 MelonLogger.Msg($"[SHRIMP-SUP] long haul: shrimps working " +
                                 $"({_freePatches[fi].x:F0},{_freePatches[fi].z:F0}) unload " +
-                                $"{haul:F0}m away — wants a Bio Cache there");
+                                $"{Mathf.Sqrt(haul2):F0}m away — wants a Bio Cache there");
             }
         }
 

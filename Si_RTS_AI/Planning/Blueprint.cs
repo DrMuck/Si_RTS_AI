@@ -238,8 +238,14 @@ namespace Si_RTS_AI.Planning
             if (maxGrad <= 0f) return true;
             float rise = Mathf.Abs(a.y - b.y);
             if (rise <= ELEVATION_FREE_M) return true;      // noise and kerbs
-            float run = Mathf.Sqrt(SqXZ(a, b));
-            return rise <= maxGrad * Mathf.Max(run, 1f);
+
+            // NO SQUARE ROOT. The test is rise <= grad * run, and both sides are
+            // non-negative, so squaring both preserves it exactly:
+            // rise^2 <= grad^2 * run^2. This runs inside the terminals scan —
+            // every patch against every Bio Cache, ~15k times per replan — so the
+            // root is worth not taking. DrMuck, 2026-08-07: "maybe we can avoid
+            // sqrt? quadratic distance enough for comparison."
+            return rise * rise <= maxGrad * maxGrad * Mathf.Max(SqXZ(a, b), 1f);
         }
 
         /// <summary>Height difference below which nothing is judged — terrain
@@ -744,9 +750,10 @@ namespace Si_RTS_AI.Planning
         /// </summary>
         static float ClearLateral(Vector3 straight, float dx, float dz)
         {
-            float maxOff = Mathf.Sqrt(Mathf.Max(0f,
-                               Mathf.Pow(EcoSimulator.NODE_REACH_M - NODE_SLIDE_MARGIN_M, 2f)
-                             - Mathf.Pow(HopM, 2f)));
+            // One root, on a path taken once per blocked hop — the loop below is
+            // a handful of obstruction tests, all squared already.
+            float legal = EcoSimulator.NODE_REACH_M - NODE_SLIDE_MARGIN_M;
+            float maxOff = Mathf.Sqrt(Mathf.Max(0f, legal * legal - HopM * HopM));
             for (float off = DETOUR_STEP_M; off <= maxOff; off += DETOUR_STEP_M)
             {
                 for (int sign = -1; sign <= 1; sign += 2)
