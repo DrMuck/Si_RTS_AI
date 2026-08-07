@@ -118,6 +118,16 @@
   ],
   "timeScale": 1,
 
+  "_tapReachMode": [
+    "How close the chain must get to a patch before its Bio Cache is placeable.",
+    "measured (default) — what the game has actually allowed this round, less a",
+    "  node's slide (~147m). Correct, but costs about one extra node per site.",
+    "optimistic — the pre-v0.37.1 rule, reach + 40m (~249m). Cheaper chains, but",
+    "  strands a site whenever the last hop lands short of where it was planned.",
+    "Switchable so the two can be compared between rounds rather than argued."
+  ],
+  "tapReachMode": "measured",
+
   "_eco": "Economy knobs worth changing between rounds.",
   "blueprintDrivesPhase2": true,
   "replanIntervalS": 30,

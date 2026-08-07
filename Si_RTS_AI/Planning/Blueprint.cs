@@ -181,6 +181,19 @@ namespace Si_RTS_AI.Planning
         {
             get
             {
+                // `tapReachMode` in rtsai.json:
+                //   measured (default) — what the game has actually allowed,
+                //                        less a node's slide. Correct, but costs
+                //                        about one extra node per site.
+                //   optimistic        — the pre-v0.37.1 rule, reach + 40m. Cheaper
+                //                        chains; strands a site whenever the last
+                //                        hop lands short.
+                // Here so the two can be compared between rounds instead of
+                // argued about: the change landed in the same session as a dozen
+                // others and nothing has isolated its cost.
+                if (RtsaiConfig.Str("tapReachMode", "measured") == "optimistic")
+                    return EcoSimulator.BcPlaceReachM + 40f;
+
                 float measured = EcoPlanner.ObservedBcAnchorMaxM;
                 float reach = measured > 1f ? Mathf.Min(measured, EcoSimulator.BcPlaceReachM)
                                             : EcoSimulator.BcPlaceReachM;

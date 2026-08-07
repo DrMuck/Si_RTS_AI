@@ -2403,6 +2403,21 @@ namespace Si_RTS_AI.Planning
                         // plan would re-plan its own, and the two would build
                         // competing hops. That is precisely how the merge radius
                         // deadlocked a branch earlier today.
+                        // Out of reach? Keep the bearing, shorten the step.
+                        if (kind == ActionKind.PlaceNode
+                            && !IsChainReachable(it.pos, state, EcoSimulator.NODE_REACH_M)
+                            && ClampedHopToward(state, it.pos, out Vector3 nearer))
+                        {
+                            TryFireAction(new Candidate
+                            {
+                                kind = ActionKind.PlaceNode, target = nearer,
+                                cost = EcoSimulator.NODE_COST,
+                                patchIdx = -1, frontRef = it.pos,
+                            });
+                            if (it.site >= 0) ClaimBranch(it);
+                            continue;
+                        }
+
                         if (kind == ActionKind.PlaceNode && IsObstructed(it.pos))
                         {
                             Vector3 run = it.pos - it.from;
@@ -4531,6 +4546,57 @@ namespace Si_RTS_AI.Planning
             for (int i = 0; i < s.bcs.Count; i++)   if (near(s.bcs[i].pos))   return true;
             for (int i = 0; i < s.cysts.Count; i++) if (near(s.cysts[i].pos)) return true;
             return false;
+        }
+
+        /// <summary>
+        /// THE PLAN IS A DIRECTION, NOT AN ADDRESS.
+        ///
+        /// A planned hop can end up out of reach through no fault of the plan:
+        /// the anchor it was measured from slid when it was built, terrain moved
+        /// the landing, the ground rose. NarakaCity 2026-08-07 — the chain toward
+        /// (1065,-238) was planned from a Bio Cache at (1611,235); the Bio Cache
+        /// actually stands at (1660,240) and the Cyst at (1670,280), so the first
+        /// hop (1523,121) sits 184m from anything, past the 150m node reach. The
+        /// whole branch stopped, with 200k in the bank.
+        ///
+        /// Nothing rescued it, because NextNodeTowards deliberately returns false
+        /// when the goal is inside Bio Cache range — right for a Bio Cache
+        /// target, wrong for "extend the chain that way" — so 150-209m was a dead
+        /// zone where no node was ever fired.
+        ///
+        /// DrMuck: "the blueprint is an orientation. If it is 184m away (e.g. due
+        /// to terrain height variations), the next node just should be placed
+        /// closer." So: keep the bearing, shorten the step to what the anchor can
+        /// legally carry.
+        /// </summary>
+        static bool ClampedHopToward(EcoState s, Vector3 goal, out Vector3 pos)
+        {
+            pos = goal;
+            Vector3 from = Vector3.zero;
+            float best = float.MaxValue;
+            void consider(Vector3 q)
+            {
+                float dx = q.x - goal.x, dz = q.z - goal.z;
+                float d = dx * dx + dz * dz;
+                if (d < best) { best = d; from = q; }
+            }
+            if (s.nestPos != Vector3.zero) consider(s.nestPos);
+            for (int i = 0; i < s.bcs.Count; i++)   consider(s.bcs[i].pos);
+            for (int i = 0; i < s.nodes.Count; i++) consider(s.nodes[i].pos);
+            for (int i = 0; i < s.cysts.Count; i++) if (s.cysts[i].finished) consider(s.cysts[i].pos);
+            if (best == float.MaxValue) return false;
+
+            float gap = Mathf.Sqrt(best);
+            float step = Mathf.Max(1f, EcoSimulator.NODE_REACH_M - NODE_DRIFT_MARGIN_M);
+            if (gap <= step) return false;          // already reachable — fire it as planned
+
+            Vector3 dir = goal - from;
+            float len = Mathf.Sqrt(dir.x * dir.x + dir.z * dir.z);
+            if (len < 1f) return false;
+            pos = from + dir * (step / len);
+            // Same detour geometry as everywhere else.
+            pos = Blueprint.SteppedAsideFromObstruction(pos, dir.x / len, dir.z / len);
+            return true;
         }
 
         static bool NextNodeTowards(EcoState s, Vector3 goal, out Vector3 pos)
