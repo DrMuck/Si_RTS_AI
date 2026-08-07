@@ -815,6 +815,34 @@ namespace Si_RTS_AI.Faction
             _currentBackoffS = BACKOFF_MIN_S;
         }
 
+        /// <summary>
+        /// Would the game accept a placement here AT ALL — is there a finished
+        /// structure in range to anchor it?
+        ///
+        /// The same test TryBuildStructureByCd does before it fires, exposed so
+        /// the planner can ask BEFORE spending a request and a retry window on
+        /// ground the chain has not reached. NarakaCity 2026-08-07: five sites
+        /// the blueprint reported as needing no further nodes were refused over
+        /// and over — (895,2344), (1070,2752), (1825,-1324), (2268,2635),
+        /// (610,880) — because the plan counts a node the moment it is PLACED
+        /// while a Bio Cache needs one FINISHED. The shrimps had already walked
+        /// there, so they harvested at long range with nowhere to deposit.
+        /// </summary>
+        internal static bool CanAnchorFor(Team team, Planning.EcoPlanner.ActionKind kind, Vector3 pos)
+        {
+            try
+            {
+                EnsureConstructionDataFromTeam(team);
+                ConstructionData? cd =
+                    kind == Planning.EcoPlanner.ActionKind.PlaceBc   ? _bcCd :
+                    kind == Planning.EcoPlanner.ActionKind.PlaceCyst ? _cystCd :
+                    kind == Planning.EcoPlanner.ActionKind.PlaceNode ? _nodeCd : null;
+                if (cd == null) return true;          // unknown: do not block
+                return FindClosestStructureThatCanBuild(team, cd, pos) != null;
+            }
+            catch { return true; }
+        }
+
         internal static bool TryBuildStructureForPlanner(
             Team team,
             Planning.EcoPlanner.ActionKind kind,

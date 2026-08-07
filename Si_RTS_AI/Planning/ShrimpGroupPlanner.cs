@@ -502,6 +502,11 @@ namespace Si_RTS_AI.Planning
         /// could not see at an untapped patch.</summary>
         static int StandingAt(Vector3 p) => Count(_present, p);
 
+        /// <summary>Shrimps here or on their way here. The blueprint's Cyst pass
+        /// reads this so it does not buy a producer for ground that relocation
+        /// is already staffing.</summary>
+        internal static int ShrimpsAtOrHeadingTo(Vector3 p) => Count(_present, p) + Count(_walking, p);
+
         /// <summary>Orders issued during this pass, so a hundred shrimps decided
         /// one after another in the same frame still see each other.</summary>
         static void NoteInbound(Vector3 p, float now)

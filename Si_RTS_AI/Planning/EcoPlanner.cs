@@ -659,6 +659,21 @@ namespace Si_RTS_AI.Planning
         /// tens of metres from where it was asked for, so this matches by
         /// proximity rather than by position.
         /// </summary>
+        /// <summary>Is a Bio Cache standing close enough to this site to take
+        /// what a Cyst here would produce? Uses the same radius the plan uses to
+        /// call a Bio Cache "this site's", widened by the slide the game applies
+        /// to a placement.</summary>
+        static bool BcStandingNear(EcoState s, Vector3 pos)
+        {
+            const float M = 160f;
+            for (int i = 0; i < s.bcs.Count; i++)
+            {
+                float dx = s.bcs[i].pos.x - pos.x, dz = s.bcs[i].pos.z - pos.z;
+                if (dx * dx + dz * dz < M * M) return true;
+            }
+            return false;
+        }
+
         static bool BlueprintAlreadyStanding(Blueprint.Item it, EcoState s)
         {
             float m = it.kind == Blueprint.Kind.Node ? 45f
@@ -2189,6 +2204,49 @@ namespace Si_RTS_AI.Planning
                         var kind = it.kind == Blueprint.Kind.BioCache ? ActionKind.PlaceBc
                                  : it.kind == Blueprint.Kind.Cyst     ? ActionKind.PlaceCyst
                                                                       : ActionKind.PlaceNode;
+
+                        // REACH THE GROUND BEFORE BUYING ON IT.
+                        //
+                        // The plan counts a node as existing the moment it is
+                        // PLACED; the game will not anchor a Bio Cache or Cyst
+                        // off anything unfinished. So a site reads "+0n" while
+                        // every request for it is refused, the retry window
+                        // burns, and the shrimps that already walked there
+                        // harvest at long range with nowhere to deposit —
+                        // measured at five sites on NarakaCity 2026-08-07,
+                        // one of them stuck for six minutes with 98k in the bank
+                        // and 400 credits of nodes outstanding.
+                        //
+                        // Ask the game's own question first. If the answer is no,
+                        // spend the tick extending the chain toward the site
+                        // instead, and do not burn the retry window on a request
+                        // that cannot succeed.
+                        if (kind != ActionKind.PlaceNode
+                            && !Faction.AlienConstruction.CanAnchorFor(team, kind, it.pos))
+                        {
+                            if (NextNodeTowards(state, it.pos, out Vector3 hop))
+                            {
+                                TryFireAction(new Candidate
+                                {
+                                    kind = ActionKind.PlaceNode, target = hop,
+                                    cost = EcoSimulator.NODE_COST,
+                                    patchIdx = -1, frontRef = it.pos,
+                                });
+                                if (it.site >= 0) ClaimBranch(it);
+                            }
+                            continue;
+                        }
+
+                        // A PRODUCER WITHOUT A DEPOSIT POINT IS A LONG WALK.
+                        //
+                        // Rule 3.2b: every site leads with its Bio Cache. The
+                        // executor did not enforce it, so at (895,2344) the Cyst
+                        // landed 36s before the Bio Cache — its shrimps were born
+                        // onto a patch with nowhere to unload and hauled back to
+                        // the previous site instead.
+                        if (kind == ActionKind.PlaceCyst && it.site >= 0
+                            && !BcStandingNear(state, it.pos))
+                            continue;
                         int cost = it.kind == Blueprint.Kind.BioCache ? EcoSimulator.BC_COST
                                  : it.kind == Blueprint.Kind.Cyst     ? EcoSimulator.CYST_COST
                                                                       : EcoSimulator.NODE_COST;

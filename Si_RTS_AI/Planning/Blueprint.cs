@@ -635,6 +635,30 @@ namespace Si_RTS_AI.Planning
                 bool reachableOnFoot = nearestCyst <= walkReachM;
                 if (reachableOnFoot && staffed >= BlueprintConfig.StaffedEnough) continue;
 
+                // SHRIMPS ALREADY ON THEIR WAY ARE SUPPLY.
+                //
+                // StaffedFraction reads shrimps STANDING here; the forecast
+                // models migration from patches about to run dry. Neither sees
+                // the ones we have just ordered here off an over-capacity group,
+                // so a site that fifteen shrimps were walking to still scored as
+                // "nobody can walk here" and bought a 1,500 Cyst it did not need.
+                // DrMuck, 2026-08-07, on (1070,2752): "the lesser cyst there is
+                // probably not needed... would make more sense to place the
+                // lessers one or two biotics further away."
+                //
+                // The census already counts them, so ask it. A site migration is
+                // feeding wants a Bio Cache; the producer belongs further out,
+                // which is where this pass sends it next.
+                int incoming = 0;
+                try { incoming = ShrimpGroupPlanner.ShrimpsAtOrHeadingTo(at); } catch { }
+                if (incoming >= Mathf.Max(1, ShrimpGroupPlanner.TypicalGroupCapacity))
+                {
+                    MelonLogger.Msg($"[BLUEPRINT] no Cyst at ({at.x:F0},{at.z:F0}) — " +
+                                    $"{incoming} shrimps are here or walking here; " +
+                                    "the producer goes further out");
+                    continue;
+                }
+
                 // WOULD A PRODUCER GET THERE FIRST?
                 //
                 // The comparison prices itself. A Lesser Cyst delivers a full
