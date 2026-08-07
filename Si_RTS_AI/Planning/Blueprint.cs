@@ -398,10 +398,38 @@ namespace Si_RTS_AI.Planning
                 if (len > 1f)
                 {
                     float dx = (target.x - anchor.x) / len, dz = (target.z - anchor.z) / len;
+                    // A DETOUR RUNS PAST THE OBSTACLE AND REJOINS THE LINE.
+                    //
+                    // Shifting one hop sideways is not a detour: the next hop
+                    // returns to the straight line, and if the shift was large
+                    // the two are further apart than a node can reach — 112m
+                    // forward plus 120m sideways is 164m against a 150m reach, so
+                    // the "detour" silently severs the chain it was meant to
+                    // save. DrMuck: "a detour could mean like circling around the
+                    // obstacle and then reaching back again the planned blueprint
+                    // route."
+                    //
+                    // So the offset is HELD for a hop after the blockage — the
+                    // chain runs parallel past the obstacle and then comes back
+                    // to the planned line — and is capped at what keeps
+                    // consecutive hops inside reach.
+                    float lateral = 0f;
+                    int holdHops = 0;
                     for (int h = 1; h <= hops; h++)
                     {
-                        Vector3 np = new Vector3(anchor.x + dx * HopM * h, anchor.y, anchor.z + dz * HopM * h);
-                        np = SteppedAsideFromObstruction(np, dx, dz);
+                        Vector3 straight = new Vector3(anchor.x + dx * HopM * h, anchor.y,
+                                                       anchor.z + dz * HopM * h);
+                        Vector3 np = Offset(straight, dx, dz, lateral);
+                        if (EcoPlanner.IsObstructed(np))
+                        {
+                            lateral = ClearLateral(straight, dx, dz);
+                            np = Offset(straight, dx, dz, lateral);
+                            holdHops = DETOUR_HOLD_HOPS;     // run parallel, then rejoin
+                        }
+                        else if (holdHops > 0 && --holdHops == 0)
+                        {
+                            lateral = 0f;                     // back to the planned route
+                        }
                         if (NearAnyNetPoint(np, NodeMergeM)) continue;
                         Items.Add(new Item { kind = Kind.Node, pos = np, from = prev, branch = branch,
                                              site = sites, pathM = anchorPt.pathM + HopM * h, why = "reach" });
@@ -643,23 +671,44 @@ namespace Si_RTS_AI.Planning
         internal static Vector3 SteppedAsideFromObstruction(Vector3 np, float dx, float dz)
         {
             if (!EcoPlanner.IsObstructed(np)) return np;
-
-            // Perpendicular to the direction of travel.
-            float px = -dz, pz = dx;
-            for (int i = 1; i <= OBSTRUCTION_SIDESTEPS; i++)
-            {
-                float off = i * OBSTRUCTION_SIDESTEP_M;
-                for (int sign = -1; sign <= 1; sign += 2)
-                {
-                    var cand = new Vector3(np.x + px * off * sign, np.y, np.z + pz * off * sign);
-                    if (!EcoPlanner.IsObstructed(cand)) return cand;
-                }
-            }
-            return np;      // boxed in — leave it and let the executor's fan try
+            float off = ClearLateral(np, dx, dz);
+            return off == 0f ? np : Offset(np, dx, dz, off);
         }
 
-        const int   OBSTRUCTION_SIDESTEPS   = 3;
-        const float OBSTRUCTION_SIDESTEP_M  = 60f;
+        /// <summary>The straight point, moved sideways by <paramref name="off"/>
+        /// (signed) perpendicular to the run.</summary>
+        static Vector3 Offset(Vector3 p, float dx, float dz, float off)
+            => off == 0f ? p : new Vector3(p.x - dz * off, p.y, p.z + dx * off);
+
+        /// <summary>
+        /// Smallest sideways offset that clears the obstruction, or 0 if boxed in.
+        ///
+        /// Bounded by what keeps the chain intact: a hop moved sideways still has
+        /// to be within node reach of the hop before and after it, and those sit
+        /// on the line. sqrt(hop^2 + off^2) must stay under the reach, with a
+        /// margin for the game's own placement slide.
+        /// </summary>
+        static float ClearLateral(Vector3 straight, float dx, float dz)
+        {
+            float maxOff = Mathf.Sqrt(Mathf.Max(0f,
+                               Mathf.Pow(EcoSimulator.NODE_REACH_M - NODE_SLIDE_MARGIN_M, 2f)
+                             - Mathf.Pow(HopM, 2f)));
+            for (float off = DETOUR_STEP_M; off <= maxOff; off += DETOUR_STEP_M)
+            {
+                for (int sign = -1; sign <= 1; sign += 2)
+                    if (!EcoPlanner.IsObstructed(Offset(straight, dx, dz, off * sign)))
+                        return off * sign;
+            }
+            return 0f;      // no clear side within reach — the site needs re-routing
+        }
+
+        /// <summary>Sideways search granularity.</summary>
+        const float DETOUR_STEP_M = 30f;
+
+        /// <summary>How many hops the chain keeps its offset after passing an
+        /// obstruction before rejoining the planned line. One is enough to clear
+        /// a patch-sized obstacle; more would drift the whole branch.</summary>
+        const int DETOUR_HOLD_HOPS = 2;
 
         static bool NearAnyNetPoint(Vector3 p, float m)
         {
