@@ -2386,6 +2386,27 @@ namespace Si_RTS_AI.Planning
                                  : it.kind == Blueprint.Kind.Cyst     ? ActionKind.PlaceCyst
                                                                       : ActionKind.PlaceNode;
 
+                        // A PLANNED HOP ON KNOWN-BAD GROUND IS RE-AIMED, NOT FIRED.
+                        //
+                        // The plan is refreshed every 30s and obstructions are
+                        // learned continuously, so between refreshes it can still
+                        // hold a hop we have since proved unbuildable. Firing it
+                        // buys another slid node in the same place: (808,874) was
+                        // marked at 14:17:15 and asked again at 14:19:57, sliding
+                        // 80m to almost exactly where the first one landed.
+                        if (kind == ActionKind.PlaceNode && IsObstructed(it.pos))
+                        {
+                            if (NextNodeTowards(state, it.pos, out Vector3 around)
+                                && !IsObstructed(around))
+                                TryFireAction(new Candidate
+                                {
+                                    kind = ActionKind.PlaceNode, target = around,
+                                    cost = EcoSimulator.NODE_COST,
+                                    patchIdx = -1, frontRef = it.pos,
+                                });
+                            continue;
+                        }
+
                         // REACH THE GROUND BEFORE BUYING ON IT.
                         //
                         // The plan counts a node as existing the moment it is

@@ -401,6 +401,7 @@ namespace Si_RTS_AI.Planning
                     for (int h = 1; h <= hops; h++)
                     {
                         Vector3 np = new Vector3(anchor.x + dx * HopM * h, anchor.y, anchor.z + dz * HopM * h);
+                        np = SteppedAsideFromObstruction(np, dx, dz);
                         if (NearAnyNetPoint(np, NodeMergeM)) continue;
                         Items.Add(new Item { kind = Kind.Node, pos = np, from = prev, branch = branch,
                                              site = sites, pathM = anchorPt.pathM + HopM * h, why = "reach" });
@@ -622,6 +623,43 @@ namespace Si_RTS_AI.Planning
         /// counted as that site. The site exists to work the patch, so this is
         /// the slide plus a little.</summary>
         const float SITE_MATCH_M = 150f;
+
+        /// <summary>
+        /// The same hop, moved off ground the round has proved unbuildable.
+        ///
+        /// THE PLAN HAS TO ROUTE, NOT JUST THE EXECUTOR. Obstruction avoidance
+        /// went into the ad-hoc reach extension, which is the smaller half of
+        /// chain building — planned hops were still laid on a straight line and
+        /// fired blind. NarakaCity 2026-08-07: (808,874) was marked unbuildable
+        /// at 14:17:15 after an 86m slide, and the very same target was asked
+        /// again at 14:19:57 and slid 80m. DrMuck: "one reason again because some
+        /// obstruction (e.g. balterium field, enemy unit and so, leads to a
+        /// diversion)."
+        ///
+        /// Steps sideways, perpendicular to the run, in widening offsets. Keeps
+        /// the hop's distance from the anchor roughly intact so the chain still
+        /// reaches, and gives up on the straight point rather than the site.
+        /// </summary>
+        static Vector3 SteppedAsideFromObstruction(Vector3 np, float dx, float dz)
+        {
+            if (!EcoPlanner.IsObstructed(np)) return np;
+
+            // Perpendicular to the direction of travel.
+            float px = -dz, pz = dx;
+            for (int i = 1; i <= OBSTRUCTION_SIDESTEPS; i++)
+            {
+                float off = i * OBSTRUCTION_SIDESTEP_M;
+                for (int sign = -1; sign <= 1; sign += 2)
+                {
+                    var cand = new Vector3(np.x + px * off * sign, np.y, np.z + pz * off * sign);
+                    if (!EcoPlanner.IsObstructed(cand)) return cand;
+                }
+            }
+            return np;      // boxed in — leave it and let the executor's fan try
+        }
+
+        const int   OBSTRUCTION_SIDESTEPS   = 3;
+        const float OBSTRUCTION_SIDESTEP_M  = 60f;
 
         static bool NearAnyNetPoint(Vector3 p, float m)
         {
