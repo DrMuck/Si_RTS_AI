@@ -8,7 +8,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 
-[assembly: MelonInfo(typeof(Si_RTS_AI.Si_RTS_AI), "Si_RTS_AI", "0.35.1-repeat-slide", "DrMuck")]
+[assembly: MelonInfo(typeof(Si_RTS_AI.Si_RTS_AI), "Si_RTS_AI", "0.36.0-timescale-ready", "DrMuck")]
 [assembly: MelonGame("Bohemia Interactive", "Silica")]
 
 namespace Si_RTS_AI
@@ -106,7 +106,15 @@ namespace Si_RTS_AI
             // reads _serverFps from any thread; it's a plain float write so
             // torn reads produce visible garbage very rarely, and the chart
             // averages anyway.
-            float dt = UnityEngine.Time.deltaTime;
+            // UNSCALED — FPS AND STALLS ARE REAL-TIME QUESTIONS.
+            //
+            // Time.deltaTime is multiplied by timeScale, so at 2x a healthy box
+            // rendering 60 real frames a second would report 30 FPS and a real
+            // 50ms stall would look like 100ms. Both meters exist to answer "is
+            // the server keeping up in the real world", which is unscaled by
+            // definition. Whether game time keeps pace with the requested
+            // multiple is a separate question, measured in TimeScaleControl.
+            float dt = UnityEngine.Time.unscaledDeltaTime;
             if (dt > 0.0001f)
             {
                 float instFps = 1f / dt;
@@ -128,6 +136,7 @@ namespace Si_RTS_AI
             // snapshot burst across many frames so it never appears as a spike.
             Perception.MapLayers.LayerReplay.DrainPending();
 
+            Perception.TimeScaleControl.Tick();
             TestHarnessNs.TestHarness.Tick();
 
             // Time the periodic dispatcher itself — attribute cost to mod
@@ -409,6 +418,7 @@ namespace Si_RTS_AI
             Faction.HumanHarvesterController.ResetForNewRound();
             Perception.EcoRateSampler.ResetForNewRound();
             Perception.FpsSampler.ResetForNewRound();
+            Perception.TimeScaleControl.ResetForNewRound();
             Perception.MapLayers.GridWorld.ConfigureFromMap(sceneName);
             Perception.MapLayers.AlienEcoLayers.OnRoundReset();
             Perception.MapLayers.HumanEcoLayers.OnRoundReset();

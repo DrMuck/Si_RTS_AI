@@ -105,6 +105,19 @@
   "chainExtendPerTick": 2,
   "chainExtendDemandPerTick": 3,
 
+  "_timeScale": [
+    "Simulation speed. 1 = real time. 2 finishes a 25 game-minute round in about",
+    "12.5 wall-minutes, doubling soak throughput.",
+    "ASKING FOR 2x DOES NOT GIVE 2x. If the box cannot compute the frames, game",
+    "time falls behind and the round becomes a different game rather than a",
+    "faster one. [RTSA/TIME] reports the ACHIEVED rate each game-minute and warns",
+    "when it is short; serverFps stays a real-time number (unscaled) so it still",
+    "means what it always did.",
+    "Validate before trusting: one 2x round against the 1x baseline of 404k +/-",
+    "29k at 25 min. Matching curves = safe. Diverging = keep 1x for measurement."
+  ],
+  "timeScale": 1,
+
   "_eco": "Economy knobs worth changing between rounds.",
   "blueprintDrivesPhase2": true,
   "replanIntervalS": 30,
