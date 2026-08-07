@@ -848,6 +848,41 @@ namespace Si_RTS_AI.Planning
             catch { }
         }
 
+        // ---- Obstructions learned from placement slides --------------------
+
+        /// <summary>A slide past this says the target ground is unusable, not
+        /// that the search was fussy. Comfortably above the routine 20-60m
+        /// nudge that ordinary terrain causes.</summary>
+        const float OBSTRUCTION_SLIDE_M = 90f;
+
+        /// <summary>How close a hop may come to a known obstruction before it is
+        /// routed around. About half a node hop.</summary>
+        const float OBSTRUCTION_RADIUS_M = 70f;
+
+        static readonly List<Vector3> _obstructions = new List<Vector3>();
+
+        static void NoteObstruction(Vector3 p)
+        {
+            for (int i = 0; i < _obstructions.Count; i++)
+            {
+                float dx = _obstructions[i].x - p.x, dz = _obstructions[i].z - p.z;
+                if (dx * dx + dz * dz < OBSTRUCTION_RADIUS_M * OBSTRUCTION_RADIUS_M) return;
+            }
+            _obstructions.Add(p);
+            MelonLogger.Msg($"[PLACE] ground at ({p.x:F0},{p.z:F0}) marked unbuildable — " +
+                            $"chains will route around it ({_obstructions.Count} known)");
+        }
+
+        internal static bool IsObstructed(Vector3 p)
+        {
+            for (int i = 0; i < _obstructions.Count; i++)
+            {
+                float dx = _obstructions[i].x - p.x, dz = _obstructions[i].z - p.z;
+                if (dx * dx + dz * dz < OBSTRUCTION_RADIUS_M * OBSTRUCTION_RADIUS_M) return true;
+            }
+            return false;
+        }
+
         /// <summary>Called from the structure-spawn observer.</summary>
         internal static void NoteStructureSpawned(Team team, string name, Vector3 actual)
         {
@@ -876,6 +911,20 @@ namespace Si_RTS_AI.Planning
                 MelonLogger.Msg($"[PLACE] {name} slid {slide:F0}m past target " +
                                 $"(margin={PLACEMENT_MARGIN_M:F0}m) — target=({log[best].pos.x:F0},{log[best].pos.z:F0}) " +
                                 $"actual=({actual.x:F0},{actual.z:F0})");
+
+            // A BIG SLIDE MEANS THE GROUND WE ASKED FOR IS UNUSABLE.
+            //
+            // The search takes the nearest legal spot, so a placement that lands
+            // far from its target is the game telling us that target is blocked
+            // — terrain, a no-build zone, something standing there. Sixteen node
+            // slides in one round on NarakaCity 2026-08-07, several over 200m,
+            // and the north stalled behind them. DrMuck: "if there is an
+            // obstruction, it needs to node around that to reach the destiny."
+            //
+            // Remembered so the chain can route around instead of aiming at the
+            // same blocked point forever. Cheap and self-correcting: the record
+            // is per round and only positions we actually asked for.
+            if (slide > OBSTRUCTION_SLIDE_M) NoteObstruction(log[best].pos);
         }
 
         internal static string BuildPlacementSummaryFragment()
@@ -4414,8 +4463,43 @@ namespace Si_RTS_AI.Planning
             float len = Mathf.Sqrt(dir.x * dir.x + dir.z * dir.z);
             if (len < 1f) return false;
             pos = from + dir * (Mathf.Min(hop, len) / len);
-            return true;
+            if (!IsObstructed(pos)) return true;
+
+            // STEER AROUND WHAT WE HAVE LEARNED IS UNBUILDABLE.
+            //
+            // Straight-line hopping walks into the same blocked ground every
+            // tick and the chain stops there — which is what stalled the north
+            // on NarakaCity 2026-08-07. Fan out from the straight line in
+            // widening angles and take the first clear step that is still
+            // placeable; a detour of one hop costs 200 credits against a branch
+            // that otherwise never arrives.
+            float baseAng = Mathf.Atan2(dir.z, dir.x);
+            float step = Mathf.Min(hop, len);
+            for (int i = 1; i <= OBSTRUCTION_FAN_STEPS; i++)
+            {
+                float spread = i * OBSTRUCTION_FAN_DEG * Mathf.Deg2Rad;
+                for (int sign = -1; sign <= 1; sign += 2)
+                {
+                    float a = baseAng + spread * sign;
+                    var cand = new Vector3(from.x + Mathf.Cos(a) * step, from.y,
+                                           from.z + Mathf.Sin(a) * step);
+                    if (IsObstructed(cand)) continue;
+                    if (!IsChainReachable(cand, s, EcoSimulator.NODE_REACH_M)) continue;
+                    pos = cand;
+                    return true;
+                }
+            }
+            // Every way around is blocked or out of reach — say so rather than
+            // firing into the obstruction again.
+            return false;
         }
+
+        /// <summary>Angular steps tried either side of the straight line when
+        /// routing around an obstruction, and how wide each step is. Four steps
+        /// of 25 degrees reaches 100 degrees off-course, which is enough to get
+        /// around a lake edge or a cliff without doubling back.</summary>
+        const int   OBSTRUCTION_FAN_STEPS = 4;
+        const float OBSTRUCTION_FAN_DEG   = 25f;
 
         /// <summary>
         /// How much this patch opens a direction we barely hold, measured as a
@@ -4631,6 +4715,8 @@ namespace Si_RTS_AI.Planning
             _lastPlanAt.Clear();
             _fired.Clear();
             SlideSamples = 0; SlideSumM = 0f; SlideMaxM = 0f;
+            _obstructions.Clear();      // learned per round; the map may differ
+            _lastHaulJumpLogAt = 0f;
             _phaseByTeam.Clear();
             _currentPhase = PlanPhase.Phase1_BaseEco;
             _radialReserveLogged = false;
