@@ -200,6 +200,31 @@ namespace Si_RTS_AI.Planning
         const float CHAIN_ALLOWANCE_S = 25f;
 
         /// <summary>
+        /// The lead FOR A PARTICULAR PATCH — build time plus the chain that still
+        /// has to reach it.
+        ///
+        /// A flat allowance treats ground one hop out and ground four hops out as
+        /// equally ready, so shrimps commit to whichever is nearest on foot and
+        /// then stand on a patch the economy cannot equip. NarakaCity 2026-08-07,
+        /// five minutes in with 600 in the bank: shrimps walked to (1744,1478),
+        /// which the plan had at "+4n" — 800 credits of chain plus a 500 Bio
+        /// Cache — and waited. DrMuck: "expansion stalls at 5min ... it is
+        /// significantly delayed. some shrimps already moved to 1730.7, 1484.3."
+        ///
+        /// The blueprint already publishes how many nodes each site still needs,
+        /// so the wait is knowable rather than assumed: each hop is a build, and
+        /// they are laid a couple per tick at best. Ground the network nearly
+        /// reaches now outranks ground that is cheaper to walk to but four hops
+        /// from anything.
+        /// </summary>
+        static float ExpansionLeadFor(Vector3 patch)
+        {
+            int hops = 0;
+            try { hops = Blueprint.NodesNeededFor(patch); } catch { }
+            return ExpansionLeadS() + hops * EcoSimulator.NODE_BUILD_S;
+        }
+
+        /// <summary>
         /// Untapped ground judged on plain distance.
         ///
         /// It was briefly priced at 1.35x on the reasoning that there is no Bio
@@ -1201,7 +1226,9 @@ namespace Si_RTS_AI.Planning
                 // only the part of the lead that outlasts the walk, at a
                 // fraction — which keeps near patches genuinely near.
                 float freeWalkS = Mathf.Sqrt(freshSq) / SHRIMP_SPEED;
-                float waitS     = Mathf.Max(0f, ExpansionLeadS() - freeWalkS);
+                float waitS     = freeIdx >= 0
+                                ? Mathf.Max(0f, ExpansionLeadFor(freeP[freeIdx]) - freeWalkS)
+                                : 0f;
                 float freeScore = (freeWalkS + waitS * LEAD_WEIGHT) * VALUE_UNTAPPED;
 
                 // The detour cap, if one is set. Default 0 means no limit — a

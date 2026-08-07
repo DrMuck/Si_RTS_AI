@@ -76,6 +76,7 @@ namespace Si_RTS_AI.Planning
         {
             Items.Clear();
             _attempts.Clear();
+            _bridgeCommits.Clear();
             Revision = 0; TerminalCount = CoveredCount = SiteCount = NodeCount = CystCount = PlanCost = 0;
             _lastPlanAt = -999f;
             BlueprintStore.ResetForNewRound();
@@ -553,6 +554,38 @@ namespace Si_RTS_AI.Planning
             }
         }
 
+        /// <summary>
+        /// Nodes still planned between the built network and this patch — the
+        /// "+Nn" in the plan summary, for whoever needs to know how ready ground
+        /// is before committing to it.
+        ///
+        /// Read by the shrimp planner: a patch four hops out is four builds and
+        /// 800 credits away from being able to take a single load, however short
+        /// the walk looks.
+        /// </summary>
+        internal static int NodesNeededFor(Vector3 patch)
+        {
+            int site = -1;
+            float bestSq = SITE_MATCH_M * SITE_MATCH_M;
+            for (int i = 0; i < Items.Count; i++)
+            {
+                if (Items[i].kind != Kind.BioCache) continue;
+                float d = SqXZ(Items[i].pos, patch);
+                if (d < bestSq) { bestSq = d; site = Items[i].site; }
+            }
+            if (site < 0) return 0;      // not planned — nothing to say
+
+            int n = 0;
+            for (int i = 0; i < Items.Count; i++)
+                if (Items[i].kind == Kind.Node && Items[i].site == site) n++;
+            return n;
+        }
+
+        /// <summary>How close a patch must be to a planned Bio Cache to be
+        /// counted as that site. The site exists to work the patch, so this is
+        /// the slide plus a little.</summary>
+        const float SITE_MATCH_M = 150f;
+
         static bool NearAnyNetPoint(Vector3 p, float m)
         {
             for (int i = 0; i < _net.Count; i++)
@@ -885,6 +918,22 @@ namespace Si_RTS_AI.Planning
                                      >= MAX_LINKS_PER_BRANCH_PAIR)
                         continue;
 
+                    // ONE LOOP AT A TIME, IN ONE PLACE.
+                    //
+                    // The branch-pair cap counts links that are FINISHED, and a
+                    // bridge takes a minute to lay — so while one was still going
+                    // up, the next replan proposed another beside it, and the one
+                    // after that a third. NarakaCity 2026-08-07, minutes 7-8:
+                    // (2380,935)->(1965,1465), then (2310,1025)->(2190,1450), then
+                    // (2310,1025)->(2215,1345), all closing the same corridor,
+                    // 10 nodes inside 64 seconds. Branch ids are re-derived every
+                    // replan, so "the same pair" often did not look like one.
+                    //
+                    // Geometry does not drift: a candidate whose ends both sit
+                    // near a link we recently committed to is that link again.
+                    if (!shortcut && RecentlyBridgedNear(_net[kv.Key].pos, _net[j].pos))
+                        continue;
+
                     bool startIsNear = _net[kv.Key].pathM <= _net[j].pathM;
                     found.Add(new Bridge
                     {
@@ -921,6 +970,7 @@ namespace Si_RTS_AI.Planning
                 });
                 prevPt = np;
             }
+            NoteBridgeCommitted(win.a, win.b);
             MelonLogger.Msg($"[BLUEPRINT] bridge({mode.ToString().ToLowerInvariant()}): " +
                             $"{win.hops} node(s) from " +
                             $"({win.a.x:F0},{win.a.z:F0}) to ({win.b.x:F0},{win.b.z:F0}) — " +
@@ -1078,6 +1128,35 @@ namespace Si_RTS_AI.Planning
         /// <summary>Links one pair of branches may have before another adds
         /// nothing. Two ropes already mean either side survives losing one.</summary>
         const int MAX_LINKS_PER_BRANCH_PAIR = 2;
+
+        /// <summary>Both ends within this of an already-committed link means the
+        /// candidate closes the same gap. Roughly two hops.</summary>
+        const float BRIDGE_SAME_LINK_M = 250f;
+
+        /// <summary>How long a committed link suppresses its neighbours — long
+        /// enough for it to be laid and show up as real adjacency.</summary>
+        const float BRIDGE_COMMIT_S = 180f;
+
+        struct Committed { public Vector3 a, b; public float at; }
+        static readonly List<Committed> _bridgeCommits = new List<Committed>(8);
+
+        static bool RecentlyBridgedNear(Vector3 p, Vector3 q)
+        {
+            float now = Time.time;
+            float r2 = BRIDGE_SAME_LINK_M * BRIDGE_SAME_LINK_M;
+            for (int i = _bridgeCommits.Count - 1; i >= 0; i--)
+            {
+                if (now - _bridgeCommits[i].at > BRIDGE_COMMIT_S) { _bridgeCommits.RemoveAt(i); continue; }
+                var c = _bridgeCommits[i];
+                bool sameWay  = SqXZ(c.a, p) < r2 && SqXZ(c.b, q) < r2;
+                bool otherWay = SqXZ(c.a, q) < r2 && SqXZ(c.b, p) < r2;
+                if (sameWay || otherWay) return true;
+            }
+            return false;
+        }
+
+        static void NoteBridgeCommitted(Vector3 a, Vector3 b) =>
+            _bridgeCommits.Add(new Committed { a = a, b = b, at = Time.time });
 
         /// <summary>Edges in the BUILT network that already cross between these
         /// two branches. Counts structure adjacency rather than remembered
