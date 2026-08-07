@@ -76,6 +76,7 @@ namespace Si_RTS_AI.Planning
         {
             Battalions.Clear();
             _lastTickAt = _lastLogAt = 0f;
+            _releasedToScouts = 0;
         }
 
         internal static void Tick(Team team)
@@ -145,16 +146,29 @@ namespace Si_RTS_AI.Planning
 
         static void Prune()
         {
+            int lostToScouts = 0;
             for (int b = Battalions.Count - 1; b >= 0; b--)
             {
                 var bat = Battalions[b];
                 for (int i = bat.Units.Count - 1; i >= 0; i--)
                 {
                     var u = bat.Units[i];
-                    if (u == null || u.IsDestroyed) bat.Units.RemoveAt(i);
+                    if (u == null || u.IsDestroyed) { bat.Units.RemoveAt(i); continue; }
+                    // Conscripted away since we took it. Hand it over rather than
+                    // hold a unit we are not allowed to order and still count its
+                    // value toward the army.
+                    bool isScout = false;
+                    try { isScout = ScoutPlanner.IsScout(u); } catch { }
+                    if (isScout) { bat.Units.RemoveAt(i); lostToScouts++; }
                 }
             }
+            if (lostToScouts > 0) _releasedToScouts += lostToScouts;
         }
+
+        /// <summary>Units handed back to scouting this round. If this climbs all
+        /// round the two layers are fighting over the same Crabs and the tick
+        /// order is wrong, which is worth knowing rather than guessing.</summary>
+        static int _releasedToScouts;
 
         /// <summary>
         /// A battalion whose mission is no longer in the portfolio releases its
@@ -418,10 +432,31 @@ namespace Si_RTS_AI.Planning
             finally { PlannerOverride = false; }
         }
 
-        /// <summary>Is this unit in a battalion that is currently ordering it?</summary>
+        /// <summary>
+        /// Is this unit in a battalion that is currently ordering it?
+        ///
+        /// A SCOUT IS NEVER OURS, whatever the roster says. FreeCombatUnits asks
+        /// ScoutPlanner before taking anything, but scouts are recruited
+        /// CONTINUOUSLY and from the same pool — so a Crab the garrison absorbed
+        /// at minute four gets conscripted at minute nine and is then held by
+        /// both. The battalion never orders it anywhere, and the move-order
+        /// prefix below refuses every order ScoutPlanner gives it, because that
+        /// prefix only recognises the battalion manager's own override flag.
+        ///
+        /// The unit stops moving and times out at its waypoint, forever.
+        /// Measured on the 2026-08-08 soak: reached=3, timedOut=769, 17% of the
+        /// map explored at twenty-eight minutes, nothing discovered, therefore no
+        /// defence tasks and no push — the whole military layer starved of
+        /// information by an ownership collision.
+        ///
+        /// Checked here rather than only in Prune because this is what the
+        /// Harmony prefix calls, and it has to be right on the tick a unit
+        /// changes hands, not five seconds later.
+        /// </summary>
         internal static bool Owns(Unit u)
         {
             if (u == null || !MilitaryConfig.Enabled || !MilitaryConfig.Execute) return false;
+            try { if (ScoutPlanner.IsScout(u)) return false; } catch { }
             for (int b = 0; b < Battalions.Count; b++)
                 if (Battalions[b].Units.Contains(u)) return true;
             return false;
@@ -528,6 +563,7 @@ namespace Si_RTS_AI.Planning
                       .Append(b.Objective.z.ToString("F0")).Append(')');
                 sb.Append(" | ");
             }
+            if (_releasedToScouts > 0) sb.Append("releasedToScouts=").Append(_releasedToScouts).Append(' ');
             if (!MilitaryConfig.Execute) sb.Append("[shadow — no orders issued]");
             MelonLogger.Msg(sb.ToString());
         }

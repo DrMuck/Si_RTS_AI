@@ -321,6 +321,22 @@ namespace Si_RTS_AI
                             //
                             // All four are inert unless rtsai.json turns the
                             // layer on.
+                            // SCOUTING IS ASKED FIRST, and the order is the fix
+                            // rather than a preference. It used to run after the
+                            // military layer, so battalions absorbed the whole
+                            // free pool and ScoutPlanner then conscripted Crabs
+                            // back out of it — leaving units held by both, whose
+                            // scout orders the battalion move-prefix refused.
+                            // 2026-08-08: reached=3, timedOut=769, 17% explored
+                            // at twenty-eight minutes, nothing discovered, and so
+                            // no defence tasks and no push either.
+                            //
+                            // Reserve the scouts, then let the army have what is
+                            // left. Map discovery also has to run ahead of
+                            // everything that reads the explored layer, because
+                            // Bio Cache candidates are fog-gated.
+                            Planning.ScoutPlanner.Tick(team);
+
                             try { Planning.DefencePlanner.Tick(team); }
                             catch (Exception ex) { MelonLogger.Warning("[MIL] defence threw: " + ex.Message); }
                             try { Planning.MissionPlanner.Tick(team); }
@@ -330,10 +346,6 @@ namespace Si_RTS_AI
                             try { Faction.MilitaryProduction.Tick(team); }
                             catch (Exception ex) { MelonLogger.Warning("[MIL] production threw: " + ex.Message); }
 
-                            // Map discovery — starter Crabs sweep the star.
-                            // Runs ahead of everything that reads the explored
-                            // layer, because BC candidates are FoW-gated.
-                            Planning.ScoutPlanner.Tick(team);
                             // Cyst steps react within ~1s of their BC finishing.
                             Planning.OpenerPlanner.TickFast(team);
                         }
