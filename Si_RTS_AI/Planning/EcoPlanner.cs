@@ -693,7 +693,7 @@ namespace Si_RTS_AI.Planning
             // 544m. Half a node reach is still well inside the ~135m spacing, so
             // it cannot merge two genuinely distinct hops.
             float m = it.kind == Blueprint.Kind.Node
-                        ? Mathf.Max(45f, EcoSimulator.NODE_REACH_M * 0.5f)
+                        ? Blueprint.NodeMergeM          // ONE number, shared — see its doc
                     : it.kind == Blueprint.Kind.BioCache ? 60f
                     : CYST_ORDERED_RADIUS_M;
             float m2 = m * m;

@@ -167,9 +167,22 @@ namespace Si_RTS_AI.Planning
         /// the co-harvest radius used everywhere else in the planner.</summary>
         const float SERVED_M = 50f;
 
-        /// <summary>Do not plan a node that lands on top of something we own or
-        /// have already planned.</summary>
-        const float NODE_MERGE_M = 45f;
+        /// <summary>
+        /// Do not plan a node that lands on top of something we own or have
+        /// already planned.
+        ///
+        /// ONE NUMBER, BOTH SIDES. The executor's "is this plan item already
+        /// standing?" test and this must agree, or a site deadlocks: v0.34.0
+        /// widened the executor to half a node reach so a slid node would be
+        /// recognised, while this stayed at 45m. A node that landed 52m from its
+        /// planned hop was then STANDING to the executor, which stopped firing
+        /// it, and MISSING to the planner, which kept planning it — NarakaCity
+        /// 2026-08-07, the site at (1092,2005) held at "+1n" across three
+        /// revisions with no request issued at all, and the branch simply
+        /// stopped. Half a node reach is still well inside the ~112m hop
+        /// spacing, so it cannot swallow a genuine hop.
+        /// </summary>
+        internal static float NodeMergeM => Mathf.Max(45f, EcoSimulator.NODE_REACH_M * 0.5f);
 
         /// <summary>How far from a patch a Bio Cache can still be the thing
         /// working it. Wide enough to contain the game's placement slide, which
@@ -350,7 +363,7 @@ namespace Si_RTS_AI.Planning
                     for (int h = 1; h <= hops; h++)
                     {
                         Vector3 np = new Vector3(anchor.x + dx * HopM * h, anchor.y, anchor.z + dz * HopM * h);
-                        if (NearAnyNetPoint(np, NODE_MERGE_M)) continue;
+                        if (NearAnyNetPoint(np, NodeMergeM)) continue;
                         Items.Add(new Item { kind = Kind.Node, pos = np, from = prev, branch = branch,
                                              site = sites, pathM = anchorPt.pathM + HopM * h, why = "reach" });
                         _net.Add(new NetPoint { pos = np, branch = branch, pathM = anchorPt.pathM + HopM * h });
@@ -900,7 +913,7 @@ namespace Si_RTS_AI.Planning
             for (int h = 1; h <= win.hops; h++)
             {
                 var np = new Vector3(win.a.x + ux * HopM * h, win.a.y, win.a.z + uz * HopM * h);
-                if (NearAnyNetPoint(np, NODE_MERGE_M)) continue;
+                if (NearAnyNetPoint(np, NodeMergeM)) continue;
                 Items.Add(new Item
                 {
                     kind = Kind.Node, pos = np, from = prevPt,
