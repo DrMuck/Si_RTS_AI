@@ -828,6 +828,17 @@ namespace Si_RTS_AI.Planning
                         for (int at = parent[j]; at >= 0 && at != kv.Key; at = parent[at])
                             if (_isCut != null && at < _isCut.Length && _isCut[at]) cuts++;
 
+                    // TWO BRANCHES DO NOT NEED A THIRD ROPE.
+                    //
+                    // Once two branches are joined twice, either one can carry
+                    // the other's traffic through a loss; a third link buys road
+                    // and nothing else. Nothing counted the links already there,
+                    // so the same well-populated pair kept scoring well and kept
+                    // being proposed.
+                    if (!shortcut && CrossLinks(adj, _net[kv.Key].branch, _net[j].branch)
+                                     >= MAX_LINKS_PER_BRANCH_PAIR)
+                        continue;
+
                     bool startIsNear = _net[kv.Key].pathM <= _net[j].pathM;
                     found.Add(new Bridge
                     {
@@ -994,18 +1005,55 @@ namespace Si_RTS_AI.Planning
         {
             float walkSaved = Mathf.Max(0f, b.savedM) * b.beyond
                             / Mathf.Max(1f, EcoSimulator.SHRIMP_SPEED);
-            // Every cut vertex bypassed is a branch that stops depending on one
-            // structure surviving. Weighted against what it protects, because
-            // removing a single point of failure in front of forty structures
-            // is worth more than in front of four.
-            float insurance = b.protects * EcoSimulator.BC_BUILD_S
-                            * (1f + b.cuts * CUT_VERTEX_WEIGHT);
+            // REDUNDANCY THAT ALREADY EXISTS IS NOT WORTH BUYING TWICE.
+            //
+            // This paid protects × BC_BUILD_S even when cuts was ZERO — that is,
+            // when the road between the two ends contained no single point of
+            // failure at all, so the link insured something already insured.
+            // DrMuck, 2026-08-07: "the overbridging was probably rather not
+            // respecting that there were already 2-3 redundancies." Exactly
+            // right: with no cut vertex to remove, a link is a shortcut and
+            // nothing more, and it must win on the road it saves or not at all.
+            //
+            // Every cut vertex bypassed IS a branch that stops depending on one
+            // structure surviving, weighted against what it protects, because
+            // removing a single point of failure in front of forty structures is
+            // worth more than in front of four.
+            float insurance = b.cuts > 0
+                            ? b.protects * EcoSimulator.BC_BUILD_S * b.cuts * CUT_VERTEX_WEIGHT
+                            : 0f;
             return (walkSaved + insurance) / Mathf.Max(1, b.hops * EcoSimulator.NODE_COST);
         }
 
         /// <summary>Structures a branch must carry before joining it is worth
         /// anything. Below this the loop protects a stub.</summary>
         const int BRIDGE_MIN_PROTECT = 3;
+
+        /// <summary>Links one pair of branches may have before another adds
+        /// nothing. Two ropes already mean either side survives losing one.</summary>
+        const int MAX_LINKS_PER_BRANCH_PAIR = 2;
+
+        /// <summary>Edges in the BUILT network that already cross between these
+        /// two branches. Counts structure adjacency rather than remembered
+        /// bridges, so links the executor built for other reasons — or that the
+        /// plan never knew about — count too.</summary>
+        static int CrossLinks(List<int>[] adj, int branchA, int branchB)
+        {
+            if (branchA == branchB || adj == null) return 0;
+            int n = 0;
+            for (int u = 0; u < _rootCount && u < adj.Length; u++)
+            {
+                if (_net[u].branch != branchA) continue;
+                var list = adj[u];
+                if (list == null) continue;
+                for (int k = 0; k < list.Count; k++)
+                {
+                    int v = list[k];
+                    if (v >= 0 && v < _rootCount && _net[v].branch == branchB) n++;
+                }
+            }
+            return n;
+        }
 
         /// <summary>Nodes a bridge may cost. Not a map-distance ceiling — the
         /// thing that made the old loop finder reject the bridge that mattered —
