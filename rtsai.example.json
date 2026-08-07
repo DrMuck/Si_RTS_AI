@@ -92,13 +92,18 @@
   "suppressCombat": true,
 
   "_chainExtendPerTick": [
-    "Unreachable sites whose node chain may be extended in one planner tick,",
-    "plus one reserved slot for ground shrimps are already walking to.",
+    "Unreachable sites whose node chain may be extended in one planner tick.",
+    "chainExtendDemandPerTick is a SEPARATE, larger budget for ground shrimps",
+    "  are already walking to — being late there is paid in long-distance",
+    "  hauling, so it is never rationed against speculative reaches.",
+    "Neither budget touches the blueprint's own planned node chains, so outward",
+    "  branch expansion is unaffected by both.",
     "Uncapped (v0.31.0) it started a line toward every unreachable site at once:",
     "node construction rose 109 -> 144 per round while Bio Caches stayed at 26,",
     "and the stubs read as over-bridging on the map. 0 disables reach-noding."
   ],
   "chainExtendPerTick": 2,
+  "chainExtendDemandPerTick": 3,
 
   "_eco": "Economy knobs worth changing between rounds.",
   "blueprintDrivesPhase2": true,

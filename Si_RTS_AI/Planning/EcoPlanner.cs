@@ -2157,7 +2157,17 @@ namespace Si_RTS_AI.Planning
                     // this tick. `chainExtendPerTick` in rtsai.json; 0 restores
                     // the pre-v0.31 behaviour of never noding for reach here.
                     int extendsLeft = Mathf.Max(0, RtsaiConfig.Int("chainExtendPerTick", 2));
-                    int demandExtendsLeft = extendsLeft > 0 ? 1 : 0;
+                    // GROUND SHRIMPS ARE ALREADY WALKING TO IS NOT SPECULATIVE.
+                    //
+                    // Its own budget, larger than the speculative one and not
+                    // drawn from it, because the cost of being late there is
+                    // already being paid in long-distance hauling — DrMuck,
+                    // 2026-08-07: "expanding to biotics where shrimps are
+                    // relocating should have a very high priority to avoid long
+                    // distance harvesting." The cap exists to stop the planner
+                    // scratching at eight speculative reaches at once; it was
+                    // never meant to ration the ones with shrimps en route.
+                    int demandExtendsLeft = Mathf.Max(0, RtsaiConfig.Int("chainExtendDemandPerTick", 3));
 
                     var plan = Blueprint.Items;
                     for (int i = 0; i < plan.Count; i++)
