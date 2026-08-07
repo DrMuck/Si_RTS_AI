@@ -56,12 +56,59 @@ namespace Si_RTS_AI.Perception
         struct Hvt { public string Name; public Vector3 Pos; public int Cost; public string Team; }
         static readonly List<Hvt> _hvt = new List<Hvt>(32);
 
+        /// <summary>Total threat currently on the map, as one number. The enemy
+        /// army estimate the push trigger compares against — poor, and the only
+        /// one available from what we can see.</summary>
+        internal static float Total { get; private set; }
+
+        // ---- What we have SEEN of theirs, and still believe is there ---------
+        //
+        // Stamp() already finds enemy structures through the fog and then threw
+        // them away every report. Keeping them is what turns scouting into
+        // enemy-structure discovery, which MILITARY_TACTICS §8 names as the one
+        // missing capability gating three of the four tactics — and it costs a
+        // dictionary, because the sighting was already being made.
+        //
+        // Memory has to be able to be WRONG and then corrected, or it is just a
+        // stale list: an entry whose ground we can currently see, and which was
+        // not stamped this pass, is gone and is dropped. Anything we cannot see
+        // is remembered at its last sighting, which is the honest state.
+
+        internal struct Known
+        {
+            public string  Name;
+            public string  Team;
+            public Vector3 Pos;
+            public int     Cost;
+            public float   LastSeenAt;
+        }
+
+        static readonly Dictionary<string, Known> _known = new Dictionary<string, Known>(64);
+
+        internal static int KnownCount => _known.Count;
+
+        /// <summary>Every enemy structure we have seen and not since watched
+        /// disappear. Copied out, because callers rank and filter it.</summary>
+        internal static void ForEachKnown(Action<Known> fn)
+        {
+            if (fn == null) return;
+            foreach (var kv in _known)
+            {
+                try { fn(kv.Value); } catch { }
+            }
+        }
+
+        static string KeyOf(string team, string name, Vector3 p) =>
+            team + "|" + name + "|" + Mathf.RoundToInt(p.x / 20f) + "," + Mathf.RoundToInt(p.z / 20f);
+
         internal static void ResetForNewRound()
         {
             _threat = new float[0];
             _lastTickAt = _lastReportAt = 0f;
             _self = null;
+            Total = 0f;
             _hvt.Clear();
+            _known.Clear();
         }
 
         static void EnsureSized()
@@ -70,16 +117,25 @@ namespace Si_RTS_AI.Perception
             if (_threat.Length != n) _threat = new float[n];
         }
 
-        /// <summary>Called for EVERY team each tick. Ours sets the viewpoint;
-        /// everyone else's units are stamped as threat.</summary>
+        /// <summary>
+        /// Called for EVERY team each tick. Ours sets the viewpoint; everyone
+        /// else's units are stamped as threat.
+        ///
+        /// NO THROTTLE HERE, and that is a fix rather than an omission. This used
+        /// to skip when `Time.time - _lastTickAt &lt; TICK_S`, sharing the stamp
+        /// with the DECAY clock that Tick sets — so whether the threat field was
+        /// ever built at all depended on where the alien team sat in
+        /// MP_Strategy.TeamSetups. Alien last: every enemy is stamped, then decay
+        /// runs. Alien FIRST: decay stamps the clock, and every enemy team that
+        /// tick reads "already ticked" and is silently skipped, forever, on every
+        /// tick. The caller is the 1Hz periodic tick, which is the cadence this
+        /// wanted in the first place.
+        /// </summary>
         internal static void Observe(Team team)
         {
             if (team == null) return;
             string tn = team.name ?? "";
             if (tn.Contains("Alien")) { _self = team; return; }
-
-            float now = Time.time;
-            if (now - _lastTickAt < TICK_S) return;      // stamping is the expensive half
 
             EnsureSized();
             try { Stamp(team); }
@@ -99,7 +155,12 @@ namespace Si_RTS_AI.Perception
             // Exponential decay, framed as a half-life so the constant means
             // something in seconds rather than being a tuned multiplier.
             float keep = Mathf.Pow(0.5f, dt / HALF_LIFE_S);
-            for (int i = 0; i < _threat.Length; i++) _threat[i] *= keep;
+            float total = 0f;
+            for (int i = 0; i < _threat.Length; i++) { _threat[i] *= keep; total += _threat[i]; }
+            Total = total;
+
+            try { ForgetWhatWeCanSeeIsGone(now); }
+            catch (Exception ex) { MelonLogger.Warning("[THREAT] forget threw: " + ex.Message); }
 
             if (now - _lastReportAt < REPORT_S) return;
             _lastReportAt = now;
@@ -143,14 +204,46 @@ namespace Si_RTS_AI.Perception
                 int cx = GridWorld.CellX(p.x), cz = GridWorld.CellZ(p.z);
                 if (cx < 0 || cz < 0 || cx >= GridWorld.Width || cz >= GridWorld.Height) continue;
                 if (visible != null && !visible.IsSet(cx, cz)) continue;
-                _hvt.Add(new Hvt
+                string sname = st.ObjectInfo.DisplayName ?? "?";
+                int    scost = 0;
+                try { scost = st.ObjectInfo.Cost; } catch { }
+                string steam = enemy.name ?? "?";
+                _hvt.Add(new Hvt { Name = sname, Pos = p, Cost = scost, Team = steam });
+                _known[KeyOf(steam, sname, p)] = new Known
                 {
-                    Name = st.ObjectInfo.DisplayName ?? "?",
-                    Pos = p,
-                    Cost = st.ObjectInfo.Cost,
-                    Team = enemy.name ?? "?",
-                });
+                    Name = sname, Team = steam, Pos = p, Cost = scost, LastSeenAt = Time.time,
+                };
             }
+        }
+
+        /// <summary>
+        /// A remembered structure standing on ground we are looking at RIGHT NOW,
+        /// which nothing stamped this pass, has been destroyed. Drop it.
+        ///
+        /// Without this the memory only ever grows and a razed Refinery stays a
+        /// push objective forever — which is worse than not remembering at all,
+        /// because the army would keep walking to it.
+        /// </summary>
+        static void ForgetWhatWeCanSeeIsGone(float now)
+        {
+            if (_known.Count == 0 || _self == null) return;
+            LayerB visible = null;
+            try { visible = FoWLayers.GetActive(_self); } catch { }
+            if (visible == null) return;
+
+            List<string> gone = null;
+            foreach (var kv in _known)
+            {
+                // Stamping runs on the same cadence as this, so anything seen
+                // within a couple of ticks is current.
+                if (now - kv.Value.LastSeenAt < TICK_S * 3f) continue;
+                int cx = GridWorld.CellX(kv.Value.Pos.x), cz = GridWorld.CellZ(kv.Value.Pos.z);
+                if (cx < 0 || cz < 0 || cx >= GridWorld.Width || cz >= GridWorld.Height) continue;
+                if (!visible.IsSet(cx, cz)) continue;         // out of sight, still believed
+                (gone ??= new List<string>()).Add(kv.Key);
+            }
+            if (gone == null) return;
+            for (int i = 0; i < gone.Count; i++) _known.Remove(gone[i]);
         }
 
         static void AddDisk(Vector3 world, float radiusM, float weight)
@@ -202,7 +295,8 @@ namespace Si_RTS_AI.Perception
             }
 
             var sb = new System.Text.StringBuilder();
-            sb.Append("[THREAT] total=").Append((int)total).Append(" peak=").Append((int)peak);
+            sb.Append("[THREAT] total=").Append((int)total).Append(" peak=").Append((int)peak)
+              .Append(" known=").Append(_known.Count);
             if (peakIdx >= 0 && peak > 0.5f)
             {
                 var c = GridWorld.CellCenter(peakIdx % GridWorld.Width, peakIdx / GridWorld.Width);

@@ -25,18 +25,21 @@ namespace Si_RTS_AI.Planning
     ///   ordering re-decides continuously by construction — the exact failure the
     ///   eco planner spent 2026-08-03/04 unlearning.
     ///
-    /// A battalion is a named set of units with one assignment, a strength, and a
-    /// state. Strategy hands it a task; it decides whether it is ready, and holds
-    /// what it has been given.
+    /// INTENT MOVED OUT, 2026-08-07. A battalion used to carry a Role of
+    /// "garrison" or "response" and raise itself per threatened asset, which made
+    /// the force and the reason for it the same object: units could not be
+    /// re-tasked without being re-typed, and nothing could weigh one reason
+    /// against another. Now MissionPlanner holds the intent and this holds units.
+    /// A battalion is a force pool bound to a mission id, and when the mission
+    /// goes the pool is released rather than disbanded.
     ///
     /// STRENGTH IS MEASURED IN CASH, not unit count. Fifteen Crabs and fifteen
     /// Behemoths are not the same army, and combat.jsonl records losses in value —
     /// so a critical-mass rule expressed in value can be calibrated against real
     /// exchanges later, and one expressed in bodies never can.
     ///
-    /// SHADOW BY DEFAULT. It forms battalions, judges readiness and logs what it
-    /// would do. It issues no orders until DefenceExecute is on, so the grouping
-    /// can be watched for a round before anything acts on it.
+    /// SHADOW UNLESS TOLD OTHERWISE. It forms battalions, judges readiness and
+    /// logs what it would do; it issues no orders until military.execute is on.
     /// </summary>
     internal static class BattalionManager
     {
@@ -45,19 +48,20 @@ namespace Si_RTS_AI.Planning
         internal class Battalion
         {
             public string  Name;
-            public string  Role;            // "garrison" | "response"
+            public int     MissionId;
+            public MissionPlanner.Kind Kind;
             public State   Phase;
             public Vector3 Rally;
             public Vector3 Objective;
             public readonly List<Unit> Units = new List<Unit>();
             public int   Value;             // cash value of the units in it
-            public int   RequiredValue;     // what the task is judged to need
+            public int   RequiredValue;     // what the mission is judged to need
             public float AssignedAt;
             public float LastOrderAt;
             public float CommittedAt;
         }
 
-        internal static readonly List<Battalion> Battalions = new List<Battalion>(4);
+        internal static readonly List<Battalion> Battalions = new List<Battalion>(6);
 
         const float TICK_S = 5f;
 
@@ -65,12 +69,6 @@ namespace Si_RTS_AI.Planning
         /// re-tasked. The commitment cost the spec asks for, expressed as time —
         /// a group that changes its mind every five seconds arrives nowhere.</summary>
         const float ASSIGNMENT_DWELL_S = 30f;
-
-        /// <summary>Strength a response needs against the threat it is sent at.
-        /// Above 1 because the defender should not be sent to trade evenly.
-        /// Calibratable from combat.jsonl exchange ratios; a placeholder until
-        /// there are any.</summary>
-        const float STRENGTH_MARGIN = 1.5f;
 
         static float _lastTickAt, _lastLogAt;
 
@@ -82,22 +80,30 @@ namespace Si_RTS_AI.Planning
 
         internal static void Tick(Team team)
         {
-            if (!DefencePlanner.Enabled || team == null) return;
+            if (!MilitaryConfig.Enabled || team == null) return;
             float now = Time.time;
             if (now - _lastTickAt < TICK_S) return;
             _lastTickAt = now;
 
             try
             {
+                RetireOrphans(now);
                 Prune();
                 var free = FreeCombatUnits(team);
-                MaintainGarrison(team, free, now);
-                MaintainResponses(free, now);
+                Fill(team, free, now);
                 Judge();
-                if (DefencePlanner.Execute) IssueOrders(team, now);
+                if (MilitaryConfig.Execute && CanCommand(team)) IssueOrders(team, now);
                 MaybeLog(now);
             }
             catch (Exception ex) { MelonLogger.Warning("[BATTALION] tick threw: " + ex.Message); }
+        }
+
+        /// <summary>A human commanding the alien team is commanding it. We keep
+        /// planning and logging, and we touch nothing.</summary>
+        static bool CanCommand(Team team)
+        {
+            try { return AIManager.IsCommanderEnabled(team); }
+            catch { return true; }      // API threw — behave as before
         }
 
         // ---- Rosters ---------------------------------------------------------
@@ -147,84 +153,127 @@ namespace Si_RTS_AI.Planning
                     var u = bat.Units[i];
                     if (u == null || u.IsDestroyed) bat.Units.RemoveAt(i);
                 }
-                if (bat.Units.Count == 0 && bat.Role != "garrison") Battalions.RemoveAt(b);
             }
         }
 
-        // ---- Composition -----------------------------------------------------
-
         /// <summary>
-        /// The garrison exists whether or not there is a threat, and is filled to
-        /// DefencePlanner's floor before anything else is formed. It is not a
-        /// battalion that competes for units; it is the reason the others have
-        /// fewer.
+        /// A battalion whose mission is no longer in the portfolio releases its
+        /// units back to the pool. It is not disbanded on the tick the mission
+        /// leaves — the dwell applies here too, so a defence task that flickers
+        /// in and out of the ranking does not repeatedly tear a force apart.
         /// </summary>
-        static void MaintainGarrison(Team team, List<Unit> free, float now)
+        static void RetireOrphans(float now)
         {
-            var g = Battalions.Find(b => b.Role == "garrison");
-            if (g == null)
-            {
-                g = new Battalion { Name = "garrison", Role = "garrison",
-                                    Phase = State.Ready, AssignedAt = now };
-                Battalions.Add(g);
-            }
-            g.Rally = g.Objective = HomeOf(team);
+            var live = new HashSet<int>();
+            for (int i = 0; i < MissionPlanner.Missions.Count; i++)
+                live.Add(MissionPlanner.Missions[i].Id);
 
-            int want = DefencePlanner.GarrisonFloor;
-            while (g.Units.Count < want && free.Count > 0)
+            for (int b = Battalions.Count - 1; b >= 0; b--)
             {
-                var u = Nearest(free, g.Rally);
-                free.Remove(u);
-                g.Units.Add(u);
+                var bat = Battalions[b];
+                if (live.Contains(bat.MissionId)) continue;
+                // AssignedAt is refreshed every time Fill re-adopts this force,
+                // so this reads "nothing has wanted it for a while" rather than
+                // "the list was rebuilt", which is the whole difference between
+                // hysteresis and an army that dissolves every refresh.
+                if (now - bat.AssignedAt < ASSIGNMENT_DWELL_S) continue;
+                if (bat.Units.Count > 0)
+                    MelonLogger.Msg($"[BATTALION] {bat.Name} stood down — " +
+                                    $"nothing has asked for it in {ASSIGNMENT_DWELL_S:F0}s, " +
+                                    $"{bat.Units.Count} units released");
+                bat.Units.Clear();
+                Battalions.RemoveAt(b);
             }
-            g.Value = ValueOf(g.Units);
-            g.RequiredValue = 0;
         }
 
+        // ---- Filling ---------------------------------------------------------
+
         /// <summary>
-        /// One battalion per threatened asset DefencePlanner ranked, in its
-        /// order, taking whatever units are left. A response already assigned
-        /// keeps its objective for ASSIGNMENT_DWELL_S even if the ranking moves —
-        /// that is the hysteresis, and without it the army oscillates between two
-        /// equally threatened sites and defends neither.
+        /// Missions are filled IN ORDER, and the order is the portfolio's. The
+        /// garrison comes first and takes what it needs before anything else
+        /// exists — that is what makes it a floor rather than a competitor, and
+        /// it is why the Queen cannot be outbid when the front is hungry.
+        ///
+        /// WHATEVER IS LEFT OVER goes to the push if there is one, and home if
+        /// there is not. That is "hold cheaply while out-scaling, commit once,
+        /// commit everything" expressed as an allocation rule rather than as a
+        /// separate decision somewhere else — a surplus that reinforced whichever
+        /// mission happened to be last in the list would send the reserve to the
+        /// WEAKEST defence task, which is the opposite of a reserve.
         /// </summary>
-        static void MaintainResponses(List<Unit> free, float now)
+        static void Fill(Team team, List<Unit> free, float now)
         {
-            var tasks = DefencePlanner.Tasks;
-            int made = 0;
-            for (int t = 0; t < tasks.Count && made < 3; t++)
+            var missions = MissionPlanner.Missions;
+            Battalion garrison = null, push = null;
+
+            for (int m = 0; m < missions.Count; m++)
             {
-                if (tasks[t].Kind == "home") continue;      // the garrison has it
-                made++;
+                var mission = missions[m];
+                var bat = Adopt(mission, now);
 
-                var bat = Battalions.Find(b => b.Role == "response" &&
-                                               (b.Objective - tasks[t].Pos).sqrMagnitude < 300f * 300f);
-                if (bat == null)
-                {
-                    // Anything already out and not yet dwelling can be re-aimed.
-                    bat = Battalions.Find(b => b.Role == "response" &&
-                                               now - b.AssignedAt > ASSIGNMENT_DWELL_S &&
-                                               b.Phase != State.Committed);
-                    if (bat == null)
-                    {
-                        bat = new Battalion { Name = "resp" + (Battalions.Count + 1),
-                                              Role = "response", Phase = State.Forming };
-                        Battalions.Add(bat);
-                    }
-                    bat.Objective = tasks[t].Pos;
-                    bat.Rally     = tasks[t].Pos;
-                    bat.AssignedAt = now;
-                }
-
-                bat.RequiredValue = Mathf.CeilToInt(tasks[t].Threat * STRENGTH_MARGIN);
+                bat.RequiredValue = mission.RequiredValue;
                 while (ValueOf(bat.Units) < bat.RequiredValue && free.Count > 0)
-                {
-                    var u = Nearest(free, bat.Objective);
-                    free.Remove(u);
-                    bat.Units.Add(u);
-                }
+                    Take(free, bat, bat.Objective);
                 bat.Value = ValueOf(bat.Units);
+
+                if (mission.Kind == MissionPlanner.Kind.Garrison) garrison = bat;
+                if (mission.Kind == MissionPlanner.Kind.Push)     push     = bat;
             }
+
+            var reserve = push ?? garrison;
+            if (reserve != null)
+            {
+                while (free.Count > 0) Take(free, reserve, reserve.Objective);
+                reserve.Value = ValueOf(reserve.Units);
+            }
+        }
+
+        /// <summary>
+        /// The portfolio is rebuilt from scratch every refresh and mission ids do
+        /// not survive it, so matching on id alone would dissolve and re-raise
+        /// the whole army every five seconds. A battalion of the same KIND
+        /// standing on the same ground is the same force under a new id.
+        ///
+        /// Push is matched on kind alone, because there is only ever one push and
+        /// its objective moves when a better target is discovered — matching it
+        /// on position would abandon the committed force at the old objective
+        /// every time the ranking changed.
+        /// </summary>
+        static Battalion Adopt(MissionPlanner.Mission mission, float now)
+        {
+            var bat = Battalions.Find(b => b.MissionId == mission.Id);
+            if (bat == null)
+                bat = mission.Kind == MissionPlanner.Kind.Push
+                    ? Battalions.Find(b => b.Kind == MissionPlanner.Kind.Push)
+                    : Battalions.Find(b => b.Kind == mission.Kind &&
+                                           (b.Objective - mission.Objective).sqrMagnitude < 200f * 200f);
+            if (bat == null)
+            {
+                bat = new Battalion
+                {
+                    Name  = mission.Kind.ToString().ToLowerInvariant() + "-" + mission.Id,
+                    Kind  = mission.Kind,
+                    Phase = State.Forming,
+                };
+                Battalions.Add(bat);
+            }
+            bat.MissionId = mission.Id;
+            bat.Kind      = mission.Kind;
+            bat.Objective = mission.Objective;
+            // AssignedAt is the "still wanted" stamp RetireOrphans reads. It has
+            // to be refreshed on every re-adoption or every battalion looks
+            // abandoned thirty seconds into the round.
+            bat.AssignedAt = now;
+            if (bat.Phase != State.Returning) bat.Rally = mission.Objective;
+            return bat;
+        }
+
+        static void Take(List<Unit> free, Battalion bat, Vector3 to)
+        {
+            var u = Nearest(free, to);
+            free.Remove(u);
+            bat.Units.Add(u);
+            bat.Value = ValueOf(bat.Units);
         }
 
         /// <summary>
@@ -239,8 +288,8 @@ namespace Si_RTS_AI.Planning
             for (int b = 0; b < Battalions.Count; b++)
             {
                 var bat = Battalions[b];
-                if (bat.Role == "garrison") { bat.Phase = State.Ready; continue; }
-                if (bat.Phase == State.Committed) continue;
+                if (bat.Kind == MissionPlanner.Kind.Garrison) { bat.Phase = State.Ready; continue; }
+                if (bat.Phase == State.Committed || bat.Phase == State.Returning) continue;
                 bat.Phase = bat.Value >= bat.RequiredValue && bat.Units.Count > 0
                           ? State.Ready : State.Forming;
             }
@@ -269,13 +318,14 @@ namespace Si_RTS_AI.Planning
             {
                 var bat = Battalions[b];
 
-                if (bat.Role == "garrison")
+                if (bat.Kind == MissionPlanner.Kind.Garrison)
                 {
                     // The garrison is not sent anywhere, it is KEPT. Only units
                     // that have drifted off the leash are recalled, so a standing
                     // guard is not re-ordered into a huddle every five seconds.
                     if (now - bat.LastOrderAt < REISSUE_S) continue;
                     bat.LastOrderAt = now;
+                    if (bat.Rally == Vector3.zero) continue;
                     for (int i = 0; i < bat.Units.Count; i++)
                     {
                         var u = bat.Units[i];
@@ -300,25 +350,19 @@ namespace Si_RTS_AI.Planning
                                     $"({bat.Objective.x:F0},{bat.Objective.z:F0})");
                 }
 
-                if (bat.Phase == State.Committed)
+                if (bat.Phase == State.Committed && ShouldRelease(bat, now))
                 {
-                    // Released by the condition that raised it, not by a timer:
-                    // the same threat reading that created the defence task.
-                    float threat = 0f;
-                    try { threat = Perception.ThreatMap.ThreatNear(bat.Objective, 300f); } catch { }
-                    if (threat <= 0f && now - bat.CommittedAt > ASSIGNMENT_DWELL_S)
-                    {
-                        bat.Phase = State.Returning;
-                        bat.Rally = HomeOf(team);
-                        MelonLogger.Msg($"[BATTALION] {bat.Name} released — no threat left at " +
-                                        $"({bat.Objective.x:F0},{bat.Objective.z:F0})");
-                    }
+                    bat.Phase = State.Returning;
+                    bat.Rally = HomeOf(team);
+                    MelonLogger.Msg($"[BATTALION] {bat.Name} released at " +
+                                    $"({bat.Objective.x:F0},{bat.Objective.z:F0})");
                 }
 
                 if (now - bat.LastOrderAt < REISSUE_S) continue;
                 bat.LastOrderAt = now;
 
                 Vector3 dest = bat.Phase == State.Returning ? bat.Rally : bat.Objective;
+                if (dest == Vector3.zero) continue;
                 int arrived = 0;
                 for (int i = 0; i < bat.Units.Count; i++)
                 {
@@ -327,6 +371,9 @@ namespace Si_RTS_AI.Planning
                     Vector3 p;
                     try { p = u.transform.position; } catch { continue; }
                     float dx = p.x - dest.x, dz = p.z - dest.z;
+                    // Arrived units are left alone rather than re-ordered onto
+                    // the same spot — a unit standing on its objective is a unit
+                    // free to shoot at whatever is in front of it.
                     if (dx * dx + dz * dz < ARRIVED_M * ARRIVED_M) { arrived++; continue; }
                     IssueMove(u, dest);
                 }
@@ -339,6 +386,25 @@ namespace Si_RTS_AI.Planning
                     bat.Phase = State.Forming;
                 }
             }
+        }
+
+        /// <summary>
+        /// Released by the condition that raised it, never by a timer.
+        ///
+        /// A defence ends when the threat that created it is gone. A push ends
+        /// when the posture that created it does — MissionPlanner owns that
+        /// judgement and it is not second-guessed here, which is the whole point
+        /// of moving intent out.
+        /// </summary>
+        static bool ShouldRelease(Battalion bat, float now)
+        {
+            if (now - bat.CommittedAt < ASSIGNMENT_DWELL_S) return false;
+            if (bat.Kind == MissionPlanner.Kind.Push)
+                return MissionPlanner.Current != MissionPlanner.Posture.Push;
+
+            float threat = 0f;
+            try { threat = Perception.ThreatMap.ThreatNear(bat.Objective, 300f); } catch { }
+            return threat <= 0f;
         }
 
         static void IssueMove(Unit u, Vector3 pos)
@@ -355,7 +421,7 @@ namespace Si_RTS_AI.Planning
         /// <summary>Is this unit in a battalion that is currently ordering it?</summary>
         internal static bool Owns(Unit u)
         {
-            if (u == null || !DefencePlanner.Execute) return false;
+            if (u == null || !MilitaryConfig.Enabled || !MilitaryConfig.Execute) return false;
             for (int b = 0; b < Battalions.Count; b++)
                 if (Battalions[b].Units.Contains(u)) return true;
             return false;
@@ -365,7 +431,7 @@ namespace Si_RTS_AI.Planning
         /// Vanilla re-tasks units continuously, so a battalion that only issued
         /// orders would watch them wander off between reissues. Same guard the
         /// scouts use, and it stacks: Harmony skips the original if EITHER prefix
-        /// returns false. Inert while DefenceExecute is off, because Owns is.
+        /// returns false. Inert while military.execute is off, because Owns is.
         /// </summary>
         [HarmonyPatch(typeof(Unit), nameof(Unit.OnMoveOrder))]
         static class Patch_Unit_OnMoveOrder_Battalion
@@ -434,6 +500,15 @@ namespace Si_RTS_AI.Planning
             return Vector3.zero;
         }
 
+        /// <summary>Units under our command right now — for the status command
+        /// and the round summary.</summary>
+        internal static int UnitsCommanded()
+        {
+            int n = 0;
+            for (int b = 0; b < Battalions.Count; b++) n += Battalions[b].Units.Count;
+            return n;
+        }
+
         static void MaybeLog(float now)
         {
             if (now - _lastLogAt < 30f) return;
@@ -444,16 +519,16 @@ namespace Si_RTS_AI.Planning
             for (int i = 0; i < Battalions.Count; i++)
             {
                 var b = Battalions[i];
-                sb.Append(b.Name).Append('(').Append(b.Role).Append(") ")
+                sb.Append(b.Name).Append(' ')
                   .Append(b.Phase).Append(' ').Append(b.Units.Count).Append("u val ")
                   .Append(b.Value);
                 if (b.RequiredValue > 0) sb.Append('/').Append(b.RequiredValue);
-                if (b.Role == "response")
+                if (b.Kind != MissionPlanner.Kind.Garrison)
                     sb.Append(" -> (").Append(b.Objective.x.ToString("F0")).Append(',')
                       .Append(b.Objective.z.ToString("F0")).Append(')');
                 sb.Append(" | ");
             }
-            if (!DefencePlanner.Execute) sb.Append("[shadow — no orders issued]");
+            if (!MilitaryConfig.Execute) sb.Append("[shadow — no orders issued]");
             MelonLogger.Msg(sb.ToString());
         }
     }

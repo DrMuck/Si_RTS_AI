@@ -1,0 +1,90 @@
+{
+  "_readme": [
+    "PLAYABLE CONFIG — copy over <server>/UserData/rtsai.json to play AGAINST the",
+    "alien AI, then restart the server (or let the current round end; the file is",
+    "re-read at every map load).",
+    "",
+    "This is rtsai.example.json with the four soak scaffolds turned off and the",
+    "military layer turned on at bring-up step 2 — defence executes, offence does",
+    "not. See rtsai.example.json for what every key means; the comments here only",
+    "cover what DIFFERS from a soak.",
+    "",
+    "IN GAME: /rtsai mil prints posture, portfolio and every battalion."
+  ],
+
+  "_playable": [
+    "testMode false is the one switch that separates a soak from a game: no",
+    "  forced round end, no map cycling, no combat suppression, humans are not",
+    "  bankrupted. suppressCombat only applies while testMode is true, so its",
+    "  value below is inert and kept only to be explicit.",
+    "storageBufferCaches 0 — the free Bio Cache pile is a measurement scaffold",
+    "  and has no business in a played game.",
+    "configCycle off — the A/B rig owns workerCapPerBioCache and producerPerSites",
+    "  while it cycles, and there is no experiment here to protect."
+  ],
+  "testMode": false,
+  "suppressCombat": false,
+  "storageBufferCaches": 0,
+  "storageBufferAtMinute": 10,
+  "storageBufferOffsetM": 150,
+  "configCycle": "off",
+  "autoResourceDrain": false,
+
+  "_military": [
+    "BRING-UP STEP 2: execute true, offence false.",
+    "The AI garrisons its Nest and sends grouped responses to Bio Caches that are",
+    "both EARNING and THREATENED. It will not attack you.",
+    "",
+    "Step 1 if you want to watch it think first: set execute false. Nothing moves,",
+    "and [DEFENCE] / [MISSION] / [BATTALION] still print the whole portfolio.",
+    "Step 3 once defence looks sane: set offence true. The army then pushes when",
+    "its own value stops growing while cash is available — expect this to be the",
+    "wrong call at first, it is the least measured thing in the mod.",
+    "",
+    "WHAT TO WATCH, in this order:",
+    "  1. the garrison stays home and does not chase,",
+    "  2. responses ARRIVE TOGETHER — a trickle means requiredValue is too low,",
+    "  3. units are not tugged between vanilla and us (visible as stutter),",
+    "  4. combat.jsonl finally gets rows with \"sides\":2. Those are the first",
+    "     real exchange ratios this project has ever had, and they are what",
+    "     cashPerThreat and strengthMargin should be set from.",
+    "",
+    "TOO PASSIVE? raise cashPerThreat — it prices every defender. TOO EAGER, or",
+    "stripping the base to answer a raid? lower it, or raise homeShare."
+  ],
+  "military": {
+    "enabled": true,
+    "execute": true,
+    "produce": true,
+    "offence": false,
+
+    "cashPerThreat": 8.0,
+    "strengthMargin": 1.5,
+
+    "homeShare": 0.25,
+    "maxDefendMissions": 3,
+
+    "ecoReserve": 15000,
+    "lesserCystShare": 0.25,
+
+    "pushGrowthFloor": 20.0,
+    "pushMargin": 1.5,
+    "pushRetreatFraction": 0.4
+  },
+
+  "_eco": "Unchanged from the soak configuration — this is the tuned economy.",
+  "pileUpMaxPerPatch": 10,
+  "pileUpMaxDetourM": 0,
+  "bridgeMode": "loop",
+  "chainExtendPerTick": 2,
+  "chainExtendDemandPerTick": 3,
+  "timeScale": 1,
+  "tapReachMode": "measured",
+  "blueprintDrivesPhase2": true,
+  "replanIntervalS": 30,
+  "workersByTenMinutes": 100,
+  "cystStrategyAuto": true,
+  "maxCystsPerPlan": 4,
+  "workerCapPerBioCache": 10,
+  "producerPerSites": 3
+}

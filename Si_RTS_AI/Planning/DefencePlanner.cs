@@ -27,15 +27,15 @@ namespace Si_RTS_AI.Planning
     /// subtracted before anything else is allocated, and it does not fall
     /// because the front is hungry.
     ///
-    /// SHADOW BY DEFAULT. It publishes decisions and logs them; MilitaryManager
-    /// executes only when DefenceExecute is switched on. Every behavioural rule
-    /// in this project that skipped that step had to be reverted.
+    /// WHAT IT DOES NOT DO, SINCE 2026-08-07: decide anything about units. It
+    /// ranks ground and sizes the home floor. MissionPlanner turns that into
+    /// missions and BattalionManager turns missions into orders. One owner per
+    /// decision — the whole of that day was spent unpicking cases where a
+    /// planner and an executor each kept their own copy of one decision and the
+    /// copies drifted.
     /// </summary>
     internal static class DefencePlanner
     {
-        internal static bool Enabled;         // compute + log
-        internal static bool Execute;         // actually order units
-
         /// <summary>A thing worth defending, and why.</summary>
         internal struct Task
         {
@@ -48,8 +48,11 @@ namespace Si_RTS_AI.Planning
 
         internal static readonly List<Task> Tasks = new List<Task>(8);
 
-        /// <summary>Units held at home no matter what the front asks for.</summary>
-        internal static int GarrisonFloor;
+        /// <summary>Cash worth standing at home, sized from the worst incursion
+        /// actually seen. In cash rather than bodies because a battalion's
+        /// strength is in cash — fifteen Crabs and fifteen Behemoths are not the
+        /// same garrison, and a count cannot say so.</summary>
+        internal static int GarrisonValue;
 
         /// <summary>Enemy value seen near the Nest, the thing the floor is sized
         /// against. A garrison exists to beat what actually shows up, not a
@@ -60,29 +63,19 @@ namespace Si_RTS_AI.Planning
         const float ASSET_THREAT_RADIUS = 300f;
         const float HOME_RADIUS_M       = 600f;
 
-        /// <summary>Smallest garrison worth having. One unit cannot stop a raid;
-        /// this is the floor under the floor, and everything above it is sized
-        /// from what has actually come at us.</summary>
-        const int   MIN_GARRISON = 4;
-
-        /// <summary>Threat-to-units conversion for the garrison. Deliberately
-        /// crude — until combat.jsonl says what an exchange actually costs, any
-        /// precision here would be invented. Revisit with that data.</summary>
-        const float THREAT_PER_DEFENDER = 25f;
-
         static float _lastTickAt, _lastLogAt;
 
         internal static void ResetForNewRound()
         {
             Tasks.Clear();
-            GarrisonFloor = MIN_GARRISON;
+            GarrisonValue = 0;
             PeakHomeThreat = 0f;
             _lastTickAt = _lastLogAt = 0f;
         }
 
         internal static void Tick(Team team)
         {
-            if (!Enabled || team == null) return;
+            if (!MilitaryConfig.Enabled || team == null) return;
             float now = Time.time;
             if (now - _lastTickAt < TICK_S) return;
             _lastTickAt = now;
@@ -101,6 +94,10 @@ namespace Si_RTS_AI.Planning
         /// The home floor tracks the worst incursion seen, and does not decay
         /// back down within a round: having been raided once is evidence about
         /// this opponent, and forgetting it is how the second raid succeeds too.
+        ///
+        /// The other half of the floor lives in MissionPlanner, as a share of
+        /// army value — this half answers "what has actually come at us", that
+        /// half answers "and never less than this much of what we own".
         /// </summary>
         static void UpdateGarrison(Vector3 nest)
         {
@@ -108,9 +105,16 @@ namespace Si_RTS_AI.Planning
             float t = 0f;
             try { t = Perception.ThreatMap.ThreatNear(nest, HOME_RADIUS_M); } catch { }
             if (t > PeakHomeThreat) PeakHomeThreat = t;
-            GarrisonFloor = Mathf.Max(MIN_GARRISON,
-                                      Mathf.CeilToInt(PeakHomeThreat / THREAT_PER_DEFENDER));
+            GarrisonValue = Mathf.CeilToInt(PeakHomeThreat * MilitaryConfig.CashPerThreat *
+                                            MilitaryConfig.StrengthMargin);
         }
+
+        /// <summary>What a force facing this much threat should be worth, in
+        /// cash. The single conversion between the game's danger units and the
+        /// currency every other decision is made in — one place, so a measured
+        /// exchange ratio has one number to correct.</summary>
+        internal static int ValueFor(float threat) =>
+            Mathf.CeilToInt(threat * MilitaryConfig.CashPerThreat * MilitaryConfig.StrengthMargin);
 
         static void RankAssets(Vector3 nest)
         {
@@ -149,8 +153,8 @@ namespace Si_RTS_AI.Planning
             _lastLogAt = now;
             if (Tasks.Count == 0 && PeakHomeThreat <= 0f) return;
 
-            var sb = new System.Text.StringBuilder("[DEFENCE] garrison=");
-            sb.Append(GarrisonFloor).Append(" (peak home threat ")
+            var sb = new System.Text.StringBuilder("[DEFENCE] garrisonValue=");
+            sb.Append(GarrisonValue).Append(" (peak home threat ")
               .Append(PeakHomeThreat.ToString("F0")).Append(") threatened=")
               .Append(Tasks.Count);
             for (int i = 0; i < Tasks.Count && i < 4; i++)
@@ -161,7 +165,7 @@ namespace Si_RTS_AI.Planning
                   .Append(") earned ").Append(t.RecentIncome)
                   .Append(" threat ").Append(t.Threat.ToString("F0"));
             }
-            if (!Execute) sb.Append("  [shadow — no orders issued]");
+            if (!MilitaryConfig.Execute) sb.Append("  [shadow — no orders issued]");
             MelonLogger.Msg(sb.ToString());
         }
 

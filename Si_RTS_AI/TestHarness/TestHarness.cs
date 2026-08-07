@@ -63,10 +63,6 @@ namespace Si_RTS_AI.TestHarnessNs
         static MelonPreferences_Entry<bool>? _rtsaiAlien;
         static MelonPreferences_Entry<bool>? _rtsaiSol;
         static MelonPreferences_Entry<bool>? _rtsaiCentauri;
-        // Basic Military Manager — user 2026-07-09. Opt-in for now.
-        static MelonPreferences_Entry<bool>?  _militaryEnabled;
-        static MelonPreferences_Entry<int>?   _militaryCriticalMass;
-        static MelonPreferences_Entry<float>? _militaryCrabFraction;
         static MelonPreferences_Entry<bool>?  _scoutEnabled;
         static MelonPreferences_Entry<int>?   _scoutMaxUnits;
         static MelonPreferences_Entry<bool>?  _openerExecute;
@@ -74,8 +70,6 @@ namespace Si_RTS_AI.TestHarnessNs
         static MelonPreferences_Entry<string>? _mapRotation;
         static MelonPreferences_Entry<string>? _configCycle;
         static MelonPreferences_Entry<bool>?   _shrimpStates;
-        static MelonPreferences_Entry<bool>?   _defenceEnabled;
-        static MelonPreferences_Entry<bool>?   _defenceExecute;
         static MelonPreferences_Entry<int>?    _roundsPerMap;
         static int _roundsOnThisMap;
         static string _currentMapName = "";
@@ -143,13 +137,13 @@ namespace Si_RTS_AI.TestHarnessNs
                 _rtsaiAlien           = _cat.CreateEntry("RTSAI_Alien",     true,  "Master switch — enable Si_RTS_AI's decisions for Alien team. When false, stock game AI runs for Alien.");
                 _rtsaiSol             = _cat.CreateEntry("RTSAI_Sol",       false, "Master switch — enable Si_RTS_AI's decisions for Human Sol team. When false, stock game AI runs for Sol.");
                 _rtsaiCentauri        = _cat.CreateEntry("RTSAI_Centauri",  false, "Master switch — enable Si_RTS_AI's decisions for Human Centauri team. When false, stock game AI runs for Centauri.");
-                _defenceEnabled       = _cat.CreateEntry("DefenceEnabled", true,
-                    "DefencePlanner: rank threatened assets by what they have EARNED in the last two minutes times the threat on them, and size a home garrison floor from the worst incursion seen. Computing and logging only — see DefenceExecute for orders.");
-                _defenceExecute       = _cat.CreateEntry("DefenceExecute", false,
-                    "Let DefencePlanner actually order units. Off by default: every behavioural rule in this project that skipped a shadow round had to be reverted. Turn on once the [DEFENCE] lines look sane and combat.jsonl says what an exchange costs.");
-                _militaryEnabled      = _cat.CreateEntry("MilitaryEnabled",           false, "Basic MilitaryManager: perception (threats + HVT targets), production (Crab at fraction of Cysts), and army coordination (attack only at critical mass). Opt-in; requires SuppressCombat=false for actual attack orders.");
-                _militaryCriticalMass = _cat.CreateEntry("MilitaryCriticalMassSize",  15,    "Minimum combat unit count before MilitaryManager orders an attack. Below this, army stays grouped at rally point.");
-                _militaryCrabFraction = _cat.CreateEntry("MilitaryCystCrabFraction",  0.25f, "Fraction of eligible Cysts dedicated to Crab production (rest keep making Shrimps). 0.25 = every 4th Cyst.");
+                // The military layer is configured ENTIRELY from rtsai.json —
+                // see Planning/MilitaryConfig. It has a dozen unmeasured numbers
+                // and MelonPreferences rewrites its file from memory on shutdown,
+                // so an edit made between rounds of a played evening would be
+                // silently reverted. That is exactly the failure rtsai.json exists
+                // to prevent, and the military knobs are the ones most likely to
+                // move between one game and the next.
                 _scoutEnabled         = _cat.CreateEntry("ScoutEnabled",                  true,  "ScoutPlanner: conscript up to 2 starter Crabs as dedicated scouts and sweep a star of waypoints outward from the Nest, snapping each waypoint to the nearest undiscovered biotics patch. Reveals ground for FoW-gated BC placement. When false, Crabs stay under vanilla AI control.");
                 _scoutMaxUnits        = _cat.CreateEntry("ScoutMaxUnits",                 20,    "How many tier-0 units (Crab / Squid) ScoutPlanner fields. Each owns one arm of a uniform star from the Nest — 20 arms = one every 18 degrees. Existing units are conscripted first; the rest are built as cheap Crabs on a slow trickle.");
                 _openerExecute        = _cat.CreateEntry("OpenerExecute",                 true,  "Phase 1 OpenerPlanner drives the opening build order instead of the beam. False = shadow mode (logs its chosen opening, builds nothing). Abandons itself if a step stalls 45s.");
@@ -232,10 +226,6 @@ namespace Si_RTS_AI.TestHarnessNs
             global::Si_RTS_AI.Faction.FactionControl.AlienEnabled    = _rtsaiAlien?.Value    ?? true;
             global::Si_RTS_AI.Faction.FactionControl.SolEnabled      = _rtsaiSol?.Value      ?? false;
             global::Si_RTS_AI.Faction.FactionControl.CentauriEnabled = _rtsaiCentauri?.Value ?? false;
-            // MilitaryManager knobs.
-            global::Si_RTS_AI.Faction.MilitaryManager.Enabled                   = _militaryEnabled?.Value      ?? false;
-            global::Si_RTS_AI.Faction.MilitaryManager.CriticalMassSize          = _militaryCriticalMass?.Value ?? 15;
-            global::Si_RTS_AI.Faction.MilitaryManager.CystCrabProductionFraction = _militaryCrabFraction?.Value ?? 0.25f;
             global::Si_RTS_AI.Planning.ScoutPlanner.Enabled    = _scoutEnabled?.Value  ?? true;
             global::Si_RTS_AI.Planning.ScoutPlanner.MaxScouts  = _scoutMaxUnits?.Value ?? 20;
             global::Si_RTS_AI.Planning.OpenerPlanner.ShadowOnly = !(_openerExecute?.Value ?? true);
@@ -387,8 +377,6 @@ namespace Si_RTS_AI.TestHarnessNs
                 _roundsOnThisMap = 0;
             }
             Perception.ShrimpStateSampler.Enabled = _shrimpStates?.Value == true;
-            Planning.DefencePlanner.Enabled = _defenceEnabled?.Value != false;
-            Planning.DefencePlanner.Execute = _defenceExecute?.Value == true;
             ApplyNextArm();
 
             if (!_cachedEnable) return;

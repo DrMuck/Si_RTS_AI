@@ -374,6 +374,14 @@ namespace Si_RTS_AI.Faction
                 var s = structs[i];
                 if (s == null || s.ObjectInfo == null || s.IsDestroyed) continue;
                 if (s.ConstructionOptions == null || !s.ConstructionOptions.Contains(_shrimpCd)) continue;
+                // ONE OWNER PER PRODUCER. A Cyst the military layer has claimed
+                // makes combat units and nothing else. Without this the claim is
+                // decorative: we keep every Cyst at queue depth two, so the
+                // military's stride would find no free slot and its configured
+                // share would silently produce nothing at all.
+                // Empty set — and so no effect — unless the layer is on AND the
+                // economy has stopped being able to convert the cash.
+                if (MilitaryProduction.IsClaimed(s)) continue;
                 cystsSeen++;
 
                 // Nearest BC to this Cyst (unbounded distance — every Cyst

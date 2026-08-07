@@ -15,6 +15,18 @@ namespace Si_RTS_AI.Perception
     ///
     /// Live ConstructionData, like every other cost in this project: a balance
     /// mod changes these and a constant in our source could not know.
+    ///
+    /// TWO SOURCES, AND THE SECOND ONE MATTERS MORE THAN IT LOOKS. Asking what
+    /// WE can build only prices units we can build. Read against the 661 rows
+    /// combat.jsonl had collected by 2026-08-07, that left every enemy unit and
+    /// every alien unit above our current tech at value 0 — Militia, Rifleman,
+    /// Hunter, Shocker, both Quads, both Raiders — which is to say the exchange
+    /// ratio the whole military layer is supposed to calibrate against was
+    /// silently reading zero on one side of most engagements.
+    ///
+    /// So the fallback is the unit's own ObjectInfo.Cost, taken off a live unit
+    /// of that name wherever it stands. It is the same field ThreatMap already
+    /// prices enemy structures with, and it needs no permission to build.
     /// </summary>
     internal static class UnitValues
     {
@@ -53,8 +65,37 @@ namespace Si_RTS_AI.Perception
             }
             catch { }
 
+            if (found == 0) found = FromLiveUnit(unitName);
+
+            // A zero that survived both lookups is cached anyway — retrying it
+            // every engagement would walk every roster on the map for a unit
+            // the game genuinely prices at nothing.
             _cost[unitName] = found;
             return found;
+        }
+
+        /// <summary>Cost off any live unit carrying that name, whoever owns it.
+        /// This is how enemy units get priced at all.</summary>
+        static int FromLiveUnit(string unitName)
+        {
+            try
+            {
+                foreach (var kv in Silica.AI.AIManager.Commanders)
+                {
+                    var units = kv.Key?.Units;
+                    if (units == null) continue;
+                    for (int i = 0; i < units.Count; i++)
+                    {
+                        var u = units[i];
+                        if (u?.ObjectInfo == null) continue;
+                        if (!string.Equals(u.ObjectInfo.DisplayName, unitName,
+                                           StringComparison.OrdinalIgnoreCase)) continue;
+                        try { return u.ObjectInfo.Cost; } catch { return 0; }
+                    }
+                }
+            }
+            catch { }
+            return 0;
         }
     }
 }

@@ -283,11 +283,31 @@ namespace Si_RTS_AI
                     {
                         Planning.MoneyBroker.Tick(team);
                         tPlan    = TimedMs(() => Planning.EcoPlanner.MaybePlan(team));
-                        // Basic military manager tick — Alien only. Guarded internally
-                        // by MilitaryManager.Enabled (opt-in preference).
                         if ((team.name ?? "").Contains("Alien"))
                         {
-                            Faction.MilitaryManager.Tick(team);
+                            // MILITARY, IN THE ORDER IT DECIDES. Ground worth
+                            // defending, then what is worth doing about it, then
+                            // which units do it, then what to build next. Each
+                            // owns exactly one of those and reads the one above.
+                            //
+                            // It hangs here rather than off EcoPlanner.MaybePlan,
+                            // where the defence pieces used to sit: that path
+                            // returns early on its own cadence gate and on a
+                            // pending async plan, so an army's reaction time was
+                            // the beam's replan interval. This tick is 1Hz and
+                            // unconditional.
+                            //
+                            // All four are inert unless rtsai.json turns the
+                            // layer on.
+                            try { Planning.DefencePlanner.Tick(team); }
+                            catch (Exception ex) { MelonLogger.Warning("[MIL] defence threw: " + ex.Message); }
+                            try { Planning.MissionPlanner.Tick(team); }
+                            catch (Exception ex) { MelonLogger.Warning("[MIL] missions threw: " + ex.Message); }
+                            try { Planning.BattalionManager.Tick(team); }
+                            catch (Exception ex) { MelonLogger.Warning("[MIL] battalions threw: " + ex.Message); }
+                            try { Faction.MilitaryProduction.Tick(team); }
+                            catch (Exception ex) { MelonLogger.Warning("[MIL] production threw: " + ex.Message); }
+
                             // Map discovery — starter Crabs sweep the star.
                             // Runs ahead of everything that reads the explored
                             // layer, because BC candidates are FoW-gated.
@@ -367,6 +387,10 @@ namespace Si_RTS_AI
                 if (!string.IsNullOrEmpty(sc))
                     AppendToRound(sc);
 
+                string mp = Faction.MilitaryProduction.BuildRoundSummaryFragment();
+                if (!string.IsNullOrEmpty(mp))
+                    AppendToRound(mp);
+
                 string hh = Faction.HumanConstruction.BuildRoundSummaryFragment();
                 if (!string.IsNullOrEmpty(hh))
                     AppendToRound(hh);
@@ -427,7 +451,9 @@ namespace Si_RTS_AI
             Perception.BcIncome.ResetForNewRound();
             Perception.UnitCaps.ResetForNewRound();
             Perception.CombatLog.ResetForNewRound();
+            Planning.MilitaryConfig.Reload();
             Planning.DefencePlanner.ResetForNewRound();
+            Planning.MissionPlanner.ResetForNewRound();
             Planning.BattalionManager.ResetForNewRound();
             Perception.UnitValues.ResetForNewRound();
             Perception.ShrimpStateSampler.ResetForNewRound();
@@ -437,7 +463,7 @@ namespace Si_RTS_AI
             Planning.MoneyBroker.ResetForNewRound();
             Planning.TechPlanner.ResetForNewRound();
             Faction.SuppressHumanAI.ResetForNewRound();
-            Faction.MilitaryManager.ResetForNewRound();
+            Faction.MilitaryProduction.ResetForNewRound();
             Perception.MapLayers.LayerReplay.OnNewRound(sceneName);
             _sceneReady = true;
 

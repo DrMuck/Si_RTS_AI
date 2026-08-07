@@ -1,0 +1,419 @@
+using MelonLoader;
+using Silica;
+using System;
+using System.Collections.Generic;
+using UnityEngine;
+
+namespace Si_RTS_AI.Faction
+{
+    /// <summary>
+    /// AN ARMY HAS TO BE BUILT BEFORE IT CAN BE COMMANDED.
+    ///
+    /// This is the production half of the old MilitaryManager, which also picked
+    /// targets and coordinated an army and so held its own copy of decisions
+    /// DefencePlanner and BattalionManager were making differently. That overlap
+    /// is why MilitaryEnabled stayed false for a month. The target-picking and
+    /// army-coordination halves are gone — MissionPlanner owns intent, the
+    /// battalion manager owns units, and this owns spending.
+    ///
+    /// TWO THINGS IT DECIDES, and both are one rule each:
+    ///
+    ///   WHEN there is money for an army. Not a budget share, which would be a
+    ///   tuned constant standing in for a decision. The economy gets everything
+    ///   while it is behind its worker trajectory AND still converting cash into
+    ///   workers that earn; once it is on track, or once yield is falling and the
+    ///   answer is ground rather than workers, holding cash back buys nothing.
+    ///   Measured on 2026-08-07: rounds sit on 100-200k unspent from minute
+    ///   twelve while expansion is limited by placement and not by cash.
+    ///
+    ///   WHAT to build. The most expensive thing each producer offers, which is
+    ///   the game's own statement about tier. No unit list in our source: a
+    ///   balance mod rewrites these and a hardcoded name could not know.
+    ///
+    /// The corollary from MILITARY_TACTICS §3 is the reason this exists at all
+    /// and not later: cash cannot be converted to army on demand. The steamroll
+    /// army has to be produced DURING the hold, not after the decision to push.
+    /// </summary>
+    internal static class MilitaryProduction
+    {
+        const float TICK_S = 3f;
+        const float LOG_S  = 30f;
+
+        static float _lastTickAt, _lastLogAt;
+
+        /// <summary>Queue depth per producer. Shallow on purpose — a deep queue
+        /// is cash committed to units the situation has not asked for yet, and
+        /// the producer refills within a tick of finishing anyway.</summary>
+        const int QUEUE_DEPTH = 1;
+
+        // Workers, excluded from "combat unit" by name because they are the only
+        // two the alien tree offers that are not one.
+        static readonly HashSet<string> WorkerUnitNames =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Shrimp", "Queen" };
+
+        // Producer structures we queue units at.
+        static readonly HashSet<string> ProducerStructureNames =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "Lesser Spawning Cyst",
+                "Greater Spawning Cyst",
+                "Colossus Cyst",
+                "Grand Spawner",
+            };
+
+        /// <summary>Higher-tier producers nobody else builds — EcoPlanner handles
+        /// Bio Cache / Cyst / Node, TechPlanner handles Cortex. In tier order.</summary>
+        static readonly string[] HigherTierProducerNames =
+        {
+            "Greater Spawning Cyst",
+            "Colossus Cyst",
+            "Grand Spawner",
+        };
+
+        const float STRUCTURE_PLACEMENT_CADENCE_S = 15f;
+
+        internal static int QueuedThisRound;
+        internal static int SpentThisRound;
+
+        /// <summary>
+        /// Lesser Cysts this layer has taken off the economy.
+        ///
+        /// A Lesser Cyst is the ONLY producer both sides want, and the shrimp
+        /// producer keeps every one of them at queue depth two — so a military
+        /// share expressed only on our side would have quietly done nothing at
+        /// all, every tick, forever, while looking configured. One owner per
+        /// producer: the economy skips what is claimed here.
+        ///
+        /// Empty whenever the layer is off or the economy is still converting,
+        /// which is the normal state for the first ten minutes of a round.
+        /// </summary>
+        static readonly HashSet<Structure> _claimed = new HashSet<Structure>();
+
+        internal static bool IsClaimed(Structure s) =>
+            s != null && _claimed.Count > 0 && _claimed.Contains(s);
+
+        static bool _catalogLogged;
+        static readonly HashSet<string> _failuresLogged = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        static readonly Dictionary<string, ConstructionData> _producerStructureCds
+            = new Dictionary<string, ConstructionData>(StringComparer.OrdinalIgnoreCase);
+        static float _lastStructurePlacementAt;
+
+        internal static void ResetForNewRound()
+        {
+            _lastTickAt = _lastLogAt = _lastStructurePlacementAt = 0f;
+            QueuedThisRound = SpentThisRound = 0;
+            _catalogLogged = false;
+            _claimed.Clear();
+            _failuresLogged.Clear();
+            _producerStructureCds.Clear();
+        }
+
+        internal static void Tick(Team team)
+        {
+            if (!Planning.MilitaryConfig.Enabled || !Planning.MilitaryConfig.Produce || team == null)
+            {
+                // Hand every Cyst back the moment we stop wanting them, or the
+                // economy keeps skipping producers nobody is using.
+                _claimed.Clear();
+                return;
+            }
+            if (!TestHarnessNs.TestHarness.IsRoundActive) return;
+
+            float now = Time.time;
+            if (now - _lastTickAt < TICK_S) return;
+            _lastTickAt = now;
+
+            try
+            {
+                _claimed.Clear();
+                int budget = Planning.MissionPlanner.SpendableCash(team);
+                if (budget > 0)
+                {
+                    PlaceProducerStructures(team, now, ref budget);
+                    QueueUnits(team, ref budget);
+                }
+                MaybeLog(now, team, budget);
+            }
+            catch (Exception ex) { MelonLogger.Warning("[MIL/PROD] tick threw: " + ex.Message); }
+        }
+
+        // ================================================================
+        // Units
+        // ================================================================
+
+        static void QueueUnits(Team team, ref int budget)
+        {
+            var structs = team.Structures;
+            if (structs == null) return;
+
+            var producersByType = new Dictionary<string, List<Structure>>(StringComparer.OrdinalIgnoreCase);
+            for (int i = 0; i < structs.Count; i++)
+            {
+                var st = structs[i];
+                if (st?.ObjectInfo == null || st.IsDestroyed) continue;
+                string typeName = st.ObjectInfo.DisplayName ?? "";
+                if (!ProducerStructureNames.Contains(typeName)) continue;
+                bool functional = false;
+                try { functional = st.IsFunctional; } catch { }
+                if (!functional) continue;
+                if (!producersByType.TryGetValue(typeName, out var list))
+                {
+                    list = new List<Structure>();
+                    producersByType[typeName] = list;
+                }
+                list.Add(st);
+            }
+            if (producersByType.Count == 0) return;
+
+            LogCatalogOnce(producersByType);
+
+            foreach (var kv in producersByType)
+            {
+                var producers = kv.Value;
+                IEnumerable<Structure> targetSet;
+
+                if (string.Equals(kv.Key, "Lesser Spawning Cyst", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Lesser Cysts are the economy's producers too, and combat
+                    // units there cost SHRIMP THROUGHPUT, not just cash. So the
+                    // share is gated on the same signal as the money: while the
+                    // economy is behind and still converting, this is zero and
+                    // every Lesser Cyst keeps making workers.
+                    float share = EcoStillConverting() ? 0f : Planning.MilitaryConfig.LesserCystShare;
+                    if (share <= 0f) continue;
+                    int n = Mathf.Max(1, Mathf.RoundToInt(producers.Count * share));
+                    int step = Mathf.Max(1, producers.Count / n);
+                    // A deterministic stride so the SAME Cysts stay dedicated —
+                    // a rotating set would leave half-built units everywhere.
+                    var picked = new List<Structure>();
+                    for (int i = 0; i < producers.Count; i += step) picked.Add(producers[i]);
+                    for (int i = 0; i < picked.Count; i++) _claimed.Add(picked[i]);
+                    targetSet = picked;
+                }
+                else
+                {
+                    targetSet = producers;   // higher tiers offer no worker anyway
+                }
+
+                foreach (var s in targetSet)
+                {
+                    if (budget <= 0) return;
+                    int queueDepth = 0;
+                    try { queueDepth = s.ProductionQueue?.Count ?? 0; } catch { }
+                    if (queueDepth >= QUEUE_DEPTH) continue;
+
+                    var opts = new List<ConstructionData>();
+                    if (s.ConstructionOptions != null)
+                        foreach (var opt in s.ConstructionOptions)
+                        {
+                            if (opt?.ObjectInfo == null) continue;
+                            if (WorkerUnitNames.Contains(opt.ObjectInfo.DisplayName ?? "")) continue;
+                            opts.Add(opt);
+                        }
+                    if (opts.Count == 0)
+                    {
+                        LogFailureOnce(kv.Key + ":empty",
+                                       $"[MIL/PROD] {kv.Key} offers no combat unit");
+                        continue;
+                    }
+
+                    // Highest cost = highest tier, the game's own ranking. If
+                    // Construct refuses (tech locked, cash short) fall to the
+                    // next one down rather than skipping the producer.
+                    opts.Sort((a, b) => SafeCost(b).CompareTo(SafeCost(a)));
+                    var reasons = new System.Text.StringBuilder();
+                    bool queued = false;
+                    foreach (var opt in opts)
+                    {
+                        int cost = SafeCost(opt);
+                        if (cost > budget) { reasons.Append(opt.ObjectInfo?.DisplayName).Append("=overBudget "); continue; }
+                        ProductionActionResult res;
+                        try { res = s.Construct(opt); }
+                        catch (Exception ex)
+                        {
+                            reasons.Append(opt.ObjectInfo?.DisplayName).Append("=EX(").Append(ex.Message).Append(") ");
+                            continue;
+                        }
+                        if (res == ProductionActionResult.Success)
+                        {
+                            budget -= cost;
+                            SpentThisRound += cost;
+                            QueuedThisRound++;
+                            queued = true;
+                            break;
+                        }
+                        reasons.Append(opt.ObjectInfo?.DisplayName).Append('=').Append(res).Append(' ');
+                    }
+                    if (!queued)
+                        LogFailureOnce(kv.Key, $"[MIL/PROD] {kv.Key} queued nothing: {reasons}");
+                }
+            }
+        }
+
+        // ================================================================
+        // Higher-tier producer structures
+        // ================================================================
+
+        static void PlaceProducerStructures(Team team, float now, ref int budget)
+        {
+            if (now - _lastStructurePlacementAt < STRUCTURE_PLACEMENT_CADENCE_S) return;
+
+            try
+            {
+                var structs = team.Structures;
+                if (structs != null)
+                    for (int i = 0; i < structs.Count; i++)
+                    {
+                        var st = structs[i];
+                        if (st?.ConstructionOptions == null) continue;
+                        foreach (var opt in st.ConstructionOptions)
+                        {
+                            if (opt?.ObjectInfo == null) continue;
+                            string n = opt.ObjectInfo.DisplayName ?? "";
+                            if (_producerStructureCds.ContainsKey(n)) continue;
+                            for (int hi = 0; hi < HigherTierProducerNames.Length; hi++)
+                                if (HigherTierProducerNames[hi] == n) { _producerStructureCds[n] = opt; break; }
+                        }
+                    }
+            }
+            catch { }
+            if (_producerStructureCds.Count == 0) return;
+
+            Vector3 nestPos = FindNestPos(team);
+            if (nestPos == Vector3.zero) return;
+
+            var have = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                var built = team.Structures;
+                if (built != null)
+                    for (int i = 0; i < built.Count; i++)
+                    {
+                        var st = built[i];
+                        if (st?.ObjectInfo == null || st.IsDestroyed) continue;
+                        string n = st.ObjectInfo.DisplayName ?? "";
+                        if (_producerStructureCds.ContainsKey(n))
+                            have[n] = have.TryGetValue(n, out int v) ? v + 1 : 1;
+                    }
+                var sites = ConstructionSite.ConstructionSites;
+                if (sites != null)
+                    for (int i = 0; i < sites.Count; i++)
+                    {
+                        var cs = sites[i];
+                        if (cs == null || cs.IsDestroyed || cs.ObjectInfo == null) continue;
+                        if (cs.Team != team) continue;
+                        string n = cs.ObjectInfo.DisplayName ?? "";
+                        if (_producerStructureCds.ContainsKey(n))
+                            have[n] = have.TryGetValue(n, out int v) ? v + 1 : 1;
+                    }
+            }
+            catch { }
+
+            // One of each, cheapest tier first, one placement per cadence window.
+            foreach (var name in HigherTierProducerNames)
+            {
+                if (!_producerStructureCds.TryGetValue(name, out var cd)) continue;
+                if (have.TryGetValue(name, out int c) && c > 0) continue;
+                int cost = SafeCost(cd);
+                if (cost > budget) return;
+                bool fired = false;
+                try { fired = AlienConstruction.TryBuildStructureByCd(team, cd, nestPos); }
+                catch (Exception ex) { MelonLogger.Warning("[MIL/PROD] TryBuildStructureByCd threw: " + ex.Message); }
+                _lastStructurePlacementAt = now;   // rate-limit whether it fired or not
+                if (fired)
+                {
+                    budget -= cost;
+                    SpentThisRound += cost;
+                    MelonLogger.Msg($"[MIL/PROD] placed {name} near Nest ({nestPos.x:F0},{nestPos.z:F0})");
+                }
+                return;
+            }
+        }
+
+        // ================================================================
+        // Helpers
+        // ================================================================
+
+        /// <summary>
+        /// Is another shrimp still the best use of the next cash? Behind the
+        /// worker trajectory AND yield not falling is the measured condition
+        /// under which it is. Before the ramp starts there is no trajectory to be
+        /// behind, so the opening belongs to the economy unconditionally — which
+        /// is the difference between an eco-first bot and one that spends its
+        /// starting cash on Crabs.
+        /// </summary>
+        internal static bool EcoStillConverting()
+        {
+            if (Planning.WorkerPlan.Target <= 0) return true;
+            return Planning.WorkerPlan.BehindSchedule && !Planning.WorkerPlan.YieldFalling;
+        }
+
+        static int SafeCost(ConstructionData cd)
+        {
+            try { return cd.ResourceCost; } catch { return 0; }
+        }
+
+        static Vector3 FindNestPos(Team team)
+        {
+            try
+            {
+                var structs = team.Structures;
+                if (structs != null)
+                    for (int i = 0; i < structs.Count; i++)
+                    {
+                        var st = structs[i];
+                        if (st?.ObjectInfo == null || st.IsDestroyed) continue;
+                        if (st.ObjectInfo.DisplayName == "Nest") return st.transform.position;
+                    }
+            }
+            catch { }
+            return Vector3.zero;
+        }
+
+        static void LogCatalogOnce(Dictionary<string, List<Structure>> producersByType)
+        {
+            if (_catalogLogged) return;
+            _catalogLogged = true;
+            var sb = new System.Text.StringBuilder("[MIL/PROD] producers: ");
+            foreach (var kv in producersByType)
+                sb.Append(kv.Key).Append('×').Append(kv.Value.Count).Append(' ');
+            foreach (var kv in producersByType)
+            {
+                var sample = kv.Value[0];
+                if (sample.ConstructionOptions == null) continue;
+                sb.Append("| ").Append(kv.Key).Append(" offers ");
+                foreach (var opt in sample.ConstructionOptions)
+                {
+                    if (opt?.ObjectInfo == null) continue;
+                    sb.Append(opt.ObjectInfo.DisplayName).Append('(').Append(SafeCost(opt)).Append(") ");
+                }
+            }
+            MelonLogger.Msg(sb.ToString());
+        }
+
+        static void LogFailureOnce(string key, string message)
+        {
+            if (!_failuresLogged.Add(key)) return;
+            MelonLogger.Msg(message);
+        }
+
+        static void MaybeLog(float now, Team team, int budgetLeft)
+        {
+            if (now - _lastLogAt < LOG_S) return;
+            _lastLogAt = now;
+            if (QueuedThisRound == 0 && budgetLeft == 0) return;
+            int cash = 0;
+            try { cash = team.TotalResources; } catch { }
+            MelonLogger.Msg($"[MIL/PROD] queued={QueuedThisRound} spent={SpentThisRound} " +
+                            $"cash={cash} budget={budgetLeft} " +
+                            $"ecoFirst={(EcoStillConverting() ? "yes (workers behind and still earning)" : "no")}");
+        }
+
+        internal static string BuildRoundSummaryFragment()
+        {
+            if (QueuedThisRound == 0) return "";
+            return "--- Military production ---\n" +
+                   $"  units queued: {QueuedThisRound}, cash spent: {SpentThisRound}\n";
+        }
+    }
+}

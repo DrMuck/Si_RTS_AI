@@ -1,97 +1,164 @@
 # Military — what is actually built
 
-Companion to `MILITARY_DESIGN.md` (which is the plan). This file is the state of
-the code, so a later session does not have to reconstruct it from commits.
+Companion to `MILITARY_DESIGN.md` (the plan) and `MILITARY_TACTICS.md` (the
+mission model and the four tactics). This file is the state of the CODE, so a
+later session does not have to reconstruct it from commits.
 
-**Nothing here is deployed or switched on.** All of it is shadow or observation.
-Written 2026-08-05 while the eco producer-density soak was running.
+**Merged and deployable as of 2026-08-07. Off by default** — `military.enabled`
+in `rtsai.json` is false, and a DLL swap must never start an army.
 
 ---
 
+## The scaffolds are reconciled
+
+`MilitaryManager` is **deleted**. It held its own copy of decisions
+`DefencePlanner` and `BattalionManager` were making differently, and that overlap
+is the whole reason `MilitaryEnabled` stayed false for a month. Its production
+half became `MilitaryProduction`; its target-picking and army-coordination halves
+were stubs and are gone.
+
+One owner per decision, which was the merge plan's first instruction:
+
+| Decision | Owner |
+|---|---|
+| What ground is worth defending, and what home costs | `DefencePlanner` |
+| What is worth DOING, priced in cash | `MissionPlanner` |
+| Which units do it, and the orders | `BattalionManager` |
+| What to build and what it may cost | `MilitaryProduction` |
+
 ## Files, in the order they run
 
-| File | Version | Does |
+Ticked at **1 Hz from `Si_RTS_AI.PeriodicTelemetryTick`**, per alien team, each
+with its own internal cadence. They used to hang off `EcoPlanner.MaybePlan`,
+which returns early on its own replan gate and on a pending async plan — so an
+army's reaction time was the beam's replan interval. That is fixed.
+
+| File | Does |
+|---|---|
+| `Planning/MilitaryConfig.cs` | Every knob, read from `rtsai.json` at map load. |
+| `Perception/UnitCaps.cs` | Cap type and weight per unit, read live. |
+| `Perception/UnitValues.cs` | Cash cost per unit name, from ConstructionData **or a live unit**. |
+| `Perception/ThreatMap.cs` | Threat field, `Total`, and **remembered enemy structures**. |
+| `Perception/CombatLog.cs` | One row per engagement, now tagged with mission kind and side count. |
+| `Planning/DefencePlanner.cs` | Ranks threatened assets by recent income × threat; sizes the home floor in cash. |
+| `Planning/MissionPlanner.cs` | Posture, the portfolio, the push trigger, target selection. |
+| `Planning/BattalionManager.cs` | Force pool bound to missions; readiness, dwell, orders, release. |
+| `Faction/MilitaryProduction.cs` | Queues combat units, places higher-tier producers, owns the money claim. |
+
+## Switches — all in `rtsai.json`, none in MelonPreferences
+
+`MilitaryEnabled`, `MilitaryCriticalMassSize`, `MilitaryCystCrabFraction`,
+`DefenceEnabled` and `DefenceExecute` are **removed as preferences**.
+MelonPreferences rewrites its file from memory on shutdown, so an edit made
+during a played evening is silently reverted — and the military knobs are exactly
+the ones that want to move between one game and the next.
+
+| Key | Default | Effect |
 |---|---|---|
-| `Perception/UnitCaps.cs` | v0.21.2 | Reads `UnitCapType` / `UnitCapValue` per unit from live ConstructionData once per round. Exposes `WorkersConsumeCap`, `WeightOf(name)`, `CapTypeOf(name)`. Also probes `Team` for cap-ish members and logs them. |
-| `Perception/UnitValues.cs` | v0.22.1 | One cash-cost lookup per unit name, shared by the combat log and the battalion manager. |
-| `Perception/CombatLog.cs` | v0.21.3 | Detects engagements by roster diffing and writes `UserData/RTSA/combat.jsonl`. |
-| `Perception/BcIncome.cs` | v0.21.1 / v0.22.0 | Per-Bio-Cache income attribution, plus `RecentDeposited(pos)` over a 120s window and `ForEach`. |
-| `Planning/DefencePlanner.cs` | v0.22.0 | Ranks threatened assets by *recent income × threat*; sizes the home garrison floor. |
-| `Planning/BattalionManager.cs` | v0.22.1 / v0.23.0 | Forms battalions, judges readiness in cash value, issues and restates move orders. |
+| `military.enabled` | **false** | Master. False = the layer computes nothing. |
+| `military.execute` | true | Issue orders. False = plan and log, touch no unit. |
+| `military.produce` | true | Queue combat units, place higher-tier producers. |
+| `military.offence` | true | Allow push missions. |
+| `military.cashPerThreat` | 8.0 | **PLACEHOLDER.** Cash a defender is worth per point of threat. |
+| `military.strengthMargin` | 1.5 | **PLACEHOLDER.** How much more than the threat to send. |
+| `military.homeShare` | 0.25 | Least of the army held at home, as a fraction of army VALUE. |
+| `military.maxDefendMissions` | 3 | Simultaneous defences. |
+| `military.ecoReserve` | 15000 | Cash the economy keeps while it can still convert it. |
+| `military.lesserCystShare` | 0.25 | Lesser Cysts making combat units instead of shrimps. |
+| `military.pushGrowthFloor` | 20.0 | Army growth, cash/s, below which holding is a loss. |
+| `military.pushMargin` | 1.5 | Ours over their estimate before committing. |
+| `military.pushRetreatFraction` | 0.4 | Fraction of committed peak at which the push is called off. |
 
-Tick order per team, from `AlienConstruction.HandleTick`:
-`BcIncome.Sample` → `UnitCaps.Resolve` → `DefencePlanner.Tick` → `BattalionManager.Tick`.
-`CombatLog.Tick` runs per frame from `Si_RTS_AI.OnUpdate`, independent of teams.
-
-## Switches
-
-| Preference | Default | Effect |
-|---|---|---|
-| `DefenceEnabled` | **true** | DefencePlanner and BattalionManager compute and log. No orders. |
-| `DefenceExecute` | **false** | Battalions actually order units. This is the only switch that changes behaviour. |
-| `MilitaryEnabled` | false | The older `MilitaryManager` scaffold (production + HVT picking). Unrelated to the above and not yet reconciled with it. |
-
-**For a clean eco experiment, set `DefenceEnabled=false`** — the compute is cheap but
-the log lines are noise in a run that is about economy.
+`rtsai.playtest.json` is a ready-to-drop file for playing against the AI: soak
+scaffolds off, military on at bring-up step 2.
 
 ## What the log looks like
 
 ```
-[UNITCAP]   resolved from game: Shrimp=Secondary/0 Crab=Secondary/1 ... | workersConsumeCap=False
-[UNITCAP]   team cap-ish members: ...
-[BC/INCOME] attributed=412300 teamCumulative=486120 ratio=0.85 bcs=22 earning=17 untapped=5
-[DEFENCE]   garrison=6 (peak home threat 142) threatened=3 | site (1652,905) earned 4200 threat 88  [shadow]
-[BATTALION] garrison(garrison) Ready 6u val 960 | resp2(response) Forming 3u val 480/1200 -> (1652,905)  [shadow]
+[MIL/CONFIG] enabled=True execute=True produce=True offence=False | cashPerThreat=8.0 ...
+[THREAT]    total=412 peak=88 known=11 at=(1652,905) distToNest=1430m | HVT Refinery(...) cost=3200
+[DEFENCE]   garrisonValue=1440 (peak home threat 120) threatened=2 | site (1652,905) earned 4200 threat 88
+[MISSION]   hold army=3840 growth=31.2/s theirs~1056 known=11 | Garrison#1 need 1440 [home ...] Defend#4 need 1056 @(1652,905) [earned 4200 under threat 88]
+[BATTALION] garrison-1 Ready 9u val 1480/1440 | defend-4 Forming 4u val 640/1056 -> (1652,905)
+[MIL/PROD]  queued=23 spent=4180 cash=87340 budget=87340 ecoFirst=no
 [COMBAT]    engagement at (1620,-430) over 18s — Team_Alien lost 6 (960 value) Team_Human_Sol lost 2 (700 value)
 ```
+
+`/rtsai mil` prints the same state on demand, which matters because those lines
+are 20-30 seconds apart and a player wants to know NOW why nothing came north.
 
 ## The rules that are encoded
 
 - **Defend what earns, not what cost.** Asset score is `RecentDeposited × ThreatNear`.
   A Bio Cache on a drained patch scores zero however much it cost.
-- **The Queen is a constraint, not a priority.** Home garrison is a floor subtracted
-  before anything else is allocated, sized from the worst incursion seen near the
-  Nest, and it does not decay within a round.
-- **Never trickle in** = only `Ready` battalions are given a destination. Readiness is
-  `value >= requiredValue`, in cash.
-- **Hysteresis** = a 30s assignment dwell before a battalion may be re-tasked.
-- **Released by the condition that raised it** — a committed battalion returns when
-  threat at its objective is gone, not on a timer.
-- **The garrison is kept, not sent** — only units past a 250m leash are recalled.
-- **Orders are restated every 5s**, with a stacking Harmony prefix on `OnMoveOrder`
-  so vanilla cannot re-task a committed unit. Inert while `DefenceExecute` is off.
+- **The Queen is a constraint, not a priority.** The garrison is a floor
+  subtracted before anything else is allocated: the larger of what the worst
+  incursion actually cost and `homeShare` of army value. It is never a ranked
+  entry, so it cannot be outbid.
+- **Defence outranks offence**, as a priority and not a score. Scoring across
+  mission kinds needs exchange ratios per kind and there are none; a priority
+  cannot produce the failure a miscalibrated score can, which is marching off
+  while the economy is eaten.
+- **Never trickle in** = only `Ready` battalions get a destination, and readiness
+  is `value >= requiredValue` in cash.
+- **The surplus is a reserve.** Units past every mission's requirement go to the
+  push if there is one and home if there is not.
+- **Released by the condition that raised it** — a defence ends when threat at its
+  objective is gone; a push ends when the posture does. Never a timer.
+- **Push when the army stops growing while cash is available.** One signal for all
+  three ceilings. Paired with the cash test so "flat because broke" cannot look
+  like "flat because capped". Enemy inactivity is NOT a trigger.
+- **Being unable to see them is not the same as them being weak** — the push
+  refuses to commit while the enemy estimate is zero.
+- **The economy is paid first, measured rather than budgeted.** `ecoReserve`
+  applies only while `WorkerPlan` is behind trajectory AND yield is not falling;
+  before the ramp starts the economy owns everything unconditionally.
+- **One owner per producer.** A Lesser Cyst claimed by the military is skipped by
+  `AlienShrimpProducer`. Without that the share was decorative — the shrimp
+  producer holds every Cyst at queue depth two, so the military's stride would
+  have found no free slot, every tick, forever, while looking configured.
+- **Hysteresis** at three levels: 30s assignment dwell, 30s before an unwanted
+  battalion stands down, 60s posture dwell.
 
-## Placeholders — all three calibrate off the same data
+## Three defects found and fixed on the way in
 
-| Constant | Where | Waiting on |
-|---|---|---|
-| `THREAT_PER_DEFENDER = 25` | DefencePlanner | Exchange ratios from `combat.jsonl` |
-| `STRENGTH_MARGIN = 1.5` | BattalionManager | Same |
-| `MilitaryCriticalMassSize = 15` | MilitaryManager (old) | Same; superseded by value-based readiness |
+1. **`UnitValues` priced most units at zero.** It only asked what WE can build, so
+   every enemy unit and everything above our tech read 0. Across the 661 rows
+   `combat.jsonl` had by 2026-08-07 that is Militia, Rifleman, Hunter, Shocker,
+   both Quads and both Raiders — the exchange ratio the layer calibrates against
+   was reading zero on one side. Falls back to the unit's own `ObjectInfo.Cost`.
+2. **`ThreatMap` might never have stamped anything.** `Observe` shared its
+   throttle with the DECAY clock `Tick` sets, so whether the threat field got
+   built depended on where the alien team sat in `MP_Strategy.TeamSetups` —
+   alien first would have skipped every enemy team on every tick, silently and
+   forever. The caller is already 1 Hz; the throttle is gone.
+3. **The defence layer had never produced one line of output.** `DefenceEnabled`
+   was false in the live cfg (correctly, for clean eco soaks), so the merge
+   plan's bring-up step 1 — "confirm `[DEFENCE]` picks assets a human would
+   defend" — has still never actually been done. It is step 1 of the playtest.
 
-They are labelled as placeholders in the source. Inventing precision before the
-data exists is how the beam's scoring rules happened.
+## Not built, deliberately
 
-## Not built
+- **Raids.** Target ranking is easy; knowing the targets is not. Enemy-structure
+  memory now exists but has never been checked against a real base, and a raid
+  aimed at a stale memory is a donation. After one played game.
+- **Formations.** Cannot be judged before exchange ratios exist. Sub-group
+  concentration first, geometry only if the data says shape pays.
+- **Economic-push posture.** Needs per-branch screens coupled to `Blueprint`.
+- **The Fabian expiry** (abort the hold when enemy patch share pulls ahead).
+  Needs enemy *expansion* discovery, which is more than seeing a structure once.
+- **Anchor nest, military production siting, learned counter-matrix.**
 
-- Offence of any kind — no attack orders, no target selection beyond the old
-  `MilitaryManager` HVT list.
-- Strategy planner and missions. `combat.jsonl` writes `missionType:"unknown"`
-  deliberately rather than inventing one.
-- Threat capability classes, staleness decay, FPS-player tracking.
-- Military production siting / FOBs, anchor nest.
-- Formations.
-- Reconciliation between `MilitaryManager` (old scaffold) and the new defence and
-  battalion layers. **They currently overlap** — both can decide something about
-  combat units — and `MilitaryEnabled` should stay false until that is resolved.
+## Still open, and honest about it
 
-## Suggested bring-up order
-
-1. Deploy with `DefenceExecute=false`. Confirm `[UNITCAP]` reads sensible weights,
-   `[DEFENCE]` picks assets a human would defend, `[BATTALION]` groups sanely.
-2. Turn on `DefenceExecute`. Watch that the garrison stays home, responses arrive
-   together, and units are not tugged between vanilla and us.
-3. Only then read `combat.jsonl` for exchange ratios and replace the three
-   placeholders with measured numbers.
-4. Offence after that, because "deny enemy expansion" needs both a strategy layer
-   and scouting that looks for enemy structures rather than biotics.
+- `[UNITCAP] resolved from game:` printed an EMPTY list on 2026-08-07 while
+  Si_UnitBalance logged "Applied unit cap overrides to 13 units". Every
+  `UnitCapValue` we read was 0, so `workersConsumeCap=False` is **unconfirmed
+  rather than measured**. It does not block anything — cash is the contention
+  either way — but do not quote that boolean as a finding.
+- The per-team unit cap LIMIT is still unknown. `UnitCaps.ProbeTeamTotals` logs
+  candidates once per round; nobody has read the answer off a round yet.
+- `cashPerThreat` and `strengthMargin` are unmeasured, and everything the layer
+  does is scaled by them. One played game with two-sided `combat.jsonl` rows
+  moves them more than a night of AI-vs-AI, which structurally cannot produce a
+  fight at all.

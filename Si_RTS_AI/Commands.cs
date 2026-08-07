@@ -61,8 +61,13 @@ namespace Si_RTS_AI
                     HandleEnable(caller, parts);
                     return;
 
+                case "mil":
+                case "military":
+                    DumpMilitary(caller);
+                    return;
+
                 default:
-                    Reply(caller, "[RTSA] usage: /rtsai [status | override [team] on|off | enable <alien|sol|centauri> on|off]");
+                    Reply(caller, "[RTSA] usage: /rtsai [status | mil | override [team] on|off | enable <alien|sol|centauri> on|off]");
                     return;
             }
         }
@@ -151,6 +156,52 @@ namespace Si_RTS_AI
                               $"oursNotBuildable={t.OursNotBuildable} overridesApplied={t.OverridesApplied}");
             }
             Reply(caller, sb.ToString());
+        }
+
+        /// <summary>
+        /// What the army thinks it is doing, from inside the game. The military
+        /// layer's log lines are 20 and 30 seconds apart, which is right for a
+        /// soak and useless when somebody is playing against it and wants to know
+        /// why nothing came to defend the north.
+        /// </summary>
+        static void DumpMilitary(Player? caller)
+        {
+            var cfg = new StringBuilder();
+            cfg.AppendLine("[RTSA] military:");
+            if (!Planning.MilitaryConfig.Enabled)
+            {
+                cfg.AppendLine("  OFF — set \"military\": { \"enabled\": true } in UserData/rtsai.json " +
+                               "(takes effect at the next map load).");
+                Reply(caller, cfg.ToString());
+                return;
+            }
+
+            float growth = Planning.MissionPlanner.ArmyGrowthPerS;
+            string growthText = growth == float.MaxValue ? "warmup" : growth.ToString("F1") + "/s";
+
+            cfg.AppendLine($"  execute={Planning.MilitaryConfig.Execute} " +
+                           $"produce={Planning.MilitaryConfig.Produce} " +
+                           $"offence={Planning.MilitaryConfig.Offence}");
+            cfg.AppendLine($"  posture={Planning.MissionPlanner.Current} " +
+                           $"army={Planning.MissionPlanner.ArmyValue} " +
+                           $"growth={growthText} " +
+                           $"theirs~{Planning.MissionPlanner.EnemyEstimate} " +
+                           $"knownStructures={Perception.ThreatMap.KnownCount}");
+            cfg.AppendLine($"  units commanded: {Planning.BattalionManager.UnitsCommanded()}, " +
+                           $"produced this round: {Faction.MilitaryProduction.QueuedThisRound}");
+
+            var missions = Planning.MissionPlanner.Missions;
+            if (missions.Count == 0) cfg.AppendLine("  no missions");
+            foreach (var m in missions)
+                cfg.AppendLine($"  mission {m.Kind}#{m.Id} need {m.RequiredValue} " +
+                               $"@({m.Objective.x:F0},{m.Objective.z:F0}) — {m.Note}");
+
+            foreach (var b in Planning.BattalionManager.Battalions)
+                cfg.AppendLine($"  battalion {b.Name} {b.Phase} {b.Units.Count}u " +
+                               $"value {b.Value}/{b.RequiredValue} " +
+                               $"-> ({b.Objective.x:F0},{b.Objective.z:F0})");
+
+            Reply(caller, cfg.ToString());
         }
 
         // ---- helpers ----

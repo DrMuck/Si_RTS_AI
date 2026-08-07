@@ -123,27 +123,49 @@ namespace Si_RTS_AI.Planning
             }
         }
 
+        /// <summary>
+        /// Resolves a key, which may be dotted: "military.enabled" reads
+        /// { "military": { "enabled": true } }. Flat keys are unaffected, so
+        /// every existing caller keeps working.
+        ///
+        /// Sections exist because the military layer adds a dozen knobs and a
+        /// dozen more top-level keys would make the file unreadable — the one
+        /// thing this file has to stay is readable at 2am between rounds.
+        /// </summary>
+        static JToken Node(string key)
+        {
+            if (_root == null || string.IsNullOrEmpty(key)) return null;
+            if (key.IndexOf('.') < 0) return _root[key];
+            JToken t = _root;
+            foreach (var part in key.Split('.'))
+            {
+                if (t == null) return null;
+                t = t[part];
+            }
+            return t;
+        }
+
         internal static int Int(string key, int fallback)
         {
-            var t = _root?[key];
+            var t = Node(key);
             try { return t != null ? t.Value<int>() : fallback; } catch { return fallback; }
         }
 
         internal static float Float(string key, float fallback)
         {
-            var t = _root?[key];
+            var t = Node(key);
             try { return t != null ? t.Value<float>() : fallback; } catch { return fallback; }
         }
 
         internal static bool Bool(string key, bool fallback)
         {
-            var t = _root?[key];
+            var t = Node(key);
             try { return t != null ? t.Value<bool>() : fallback; } catch { return fallback; }
         }
 
         internal static string Str(string key, string fallback)
         {
-            var t = _root?[key];
+            var t = Node(key);
             try { return t != null ? t.Value<string>() : fallback; } catch { return fallback; }
         }
     }

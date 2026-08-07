@@ -2801,10 +2801,11 @@ namespace Si_RTS_AI.Planning
             catch (System.Exception ex) { MelonLogger.Warning("[PLAN] BcIncome threw: " + ex.Message); }
             try { Perception.UnitCaps.Resolve(team); }
             catch (System.Exception ex) { MelonLogger.Warning("[PLAN] UnitCaps threw: " + ex.Message); }
-            try { DefencePlanner.Tick(team); }
-            catch (System.Exception ex) { MelonLogger.Warning("[PLAN] DefencePlanner threw: " + ex.Message); }
-            try { BattalionManager.Tick(team); }
-            catch (System.Exception ex) { MelonLogger.Warning("[PLAN] BattalionManager threw: " + ex.Message); }
+            // The defence and battalion ticks used to hang here too. They now run
+            // from the 1Hz periodic tick with the rest of the military layer —
+            // this path is gated on the beam's cadence and on no async plan being
+            // in flight, which is a fine place to sample income and a poor one to
+            // decide whether the base is being raided.
 
             // Storage scaffold — off unless rtsai.json asks for it. Same attach
             // point and for the same reason as the four above.

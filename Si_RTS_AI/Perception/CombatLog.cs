@@ -197,9 +197,21 @@ namespace Si_RTS_AI.Perception
                 }
                 sb.Append('}');
 
-                // No mission types yet — the strategy planner does not exist, so
-                // the field is present and honest rather than invented.
-                sb.Append(",\"missionType\":\"unknown\"");
+                // THE JOIN KEY. Which mission owned the ground this happened on
+                // — the only way to read exchange ratios per mission kind, and
+                // therefore the only way to find out whether holding really does
+                // trade better than fighting.
+                string kind = "none";
+                try { kind = Planning.MissionPlanner.KindAt(e.Centre, ENGAGEMENT_RADIUS_M * 2f); } catch { }
+                sb.Append(",\"missionType\":\"").Append(Esc(kind)).Append('"');
+
+                // ONE-SIDED ROWS ARE NOT EXCHANGES. 661 of 661 rows written by
+                // 2026-08-07 had losses on exactly one team: soak rounds purge
+                // the human starter units, and roster diffing cannot tell a purge
+                // or a despawn from a death. Marking it is the difference between
+                // a file with no exchange ratios in it and a file that looks like
+                // it has 661 of them.
+                sb.Append(",\"sides\":").Append(e.LostByTeam.Count);
                 sb.Append('}');
 
                 string dir = Path.Combine("UserData", "RTSA");
