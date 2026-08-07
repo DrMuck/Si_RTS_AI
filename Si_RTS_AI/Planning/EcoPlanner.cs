@@ -1058,6 +1058,12 @@ namespace Si_RTS_AI.Planning
 
         const int PIONEER_MAX = 3;
 
+        /// <summary>Hops of a REPAIR line that may be laid in one plan cycle.
+        /// Higher than the expansion equivalent because a break is losing
+        /// structures every second it stands, and because the repair only
+        /// pays off at all once the line reconnects.</summary>
+        const int REPAIR_HOPS_PER_CYCLE = 4;
+
         /// <summary>Hops of one node line that may be laid in a single plan
         /// cycle. A line only earns anything once it ARRIVES, so dribbling out
         /// one node per 8s cycle pays the full cost of the chain while
@@ -1729,10 +1735,29 @@ namespace Si_RTS_AI.Planning
                 }
                 else maxNodeFires = 1;
 
-                bool TryFireAction(Candidate c)
+                // A RESCUE IS NOT AN EXPANSION, AND MUST NOT QUEUE BEHIND ONE.
+                //
+                // Every gate below exists to stop expansion outrunning the
+                // economy: do not node right after a Bio Cache, do not open more
+                // fronts than the surplus funds, do not spend the money the next
+                // Cyst or the shrimp queue needs. All correct, and all wrong for a
+                // node that reconnects a branch which is ALREADY BUILT and is
+                // decaying while we deliberate.
+                //
+                // Measured on NarakaCity 2026-08-07: repair was proposed 22 times
+                // and fired ZERO times. Orphaned structures went 1 -> 36 -> 51 -> 54
+                // over the round while the same 150m gap was re-proposed every
+                // thirty seconds, and the alien lost 57 Nodes, 9 Bio Caches, 3
+                // Cysts and finally the Nest. The front cap set to 2 for this game
+                // made it strictly worse, because repair was competing for those
+                // two slots with expansion.
+                //
+                // So repair passes only the one test that cannot be argued with:
+                // can we afford the node at all.
+                bool TryFireAction(Candidate c, bool rescue = false)
                 {
                     if (c.kind == ActionKind.Noop) return true;
-                    if (!openerFiring)
+                    if (!openerFiring && !rescue)
                     {
                         // A Bio Cache anchors further than a Node, so a Node
                         // fired right after it is usually redundant — but only
@@ -1763,7 +1788,9 @@ namespace Si_RTS_AI.Planning
                     // This is what pinned Naraka at 0 cash for five minutes:
                     // every 100 that trickled in went straight into another
                     // Node, so the 500 for the BC never accumulated.
-                    if (c.kind == ActionKind.PlaceNode || c.kind == ActionKind.PlaceBc)
+                    // A RESCUE IS EXEMPT: the shrimp queue can wait one node,
+                    // and the Bio Caches past the break cannot wait at all.
+                    if (!rescue && (c.kind == ActionKind.PlaceNode || c.kind == ActionKind.PlaceBc))
                     {
                         int floor = 0;
                         if (cystHungry || frontierCystWanted) floor = EcoSimulator.CYST_COST;
@@ -2074,21 +2101,43 @@ namespace Si_RTS_AI.Planning
                 // Everything past a break decays, Bio Caches and Cysts included,
                 // so this cannot queue behind expansion. One Node per tick
                 // toward the break, re-derived each time from live positions.
-                if (!openerDrove
-                    && NodeManager.TryGetRepair(out Vector3 repFrom, out Vector3 repTo)
-                    && NextNodeTowards(state, repTo, out Vector3 repHop))
+                if (!openerDrove && NodeManager.TryGetRepair(out Vector3 repFrom, out Vector3 repTo))
                 {
-                    int beforeRep = fired;
-                    TryFireAction(new Candidate
+                    // LAY THE WHOLE GAP, NOT ONE HOP A CYCLE. A line only
+                    // reconnects when it ARRIVES: a half-built rescue is a node
+                    // bought and nothing reconnected, and at a 30s replan
+                    // interval a three-hop break takes a minute and a half while
+                    // everything past it decays. Same argument as
+                    // CHAIN_HOPS_PER_CYCLE, with more urgency behind it.
+                    int laid = 0;
+                    for (int hop = 0; hop < REPAIR_HOPS_PER_CYCLE; hop++)
                     {
-                        kind = ActionKind.PlaceNode,
-                        target = repHop,
-                        cost = EcoSimulator.NODE_COST,
-                        patchIdx = -1,
-                    });
-                    if (fired > beforeRep)
+                        if (!NextNodeTowards(state, repTo, out Vector3 repHop)) break;
+                        int beforeRep = fired;
+                        TryFireAction(new Candidate
+                        {
+                            kind = ActionKind.PlaceNode,
+                            target = repHop,
+                            cost = EcoSimulator.NODE_COST,
+                            patchIdx = -1,
+                        }, rescue: true);
+                        if (fired == beforeRep) break;      // could not, stop asking
+                        laid++;
                         MelonLogger.Msg($"[PLAN/EXEC] REPAIR node at ({repHop.x:F0},{repHop.z:F0}) " +
                                         $"reconnecting ({repTo.x:F0},{repTo.z:F0})");
+                    }
+
+                    // SAY WHY IT DID NOT HAPPEN. Repair was proposed 22 times on
+                    // NarakaCity 2026-08-07 and fired zero times, and the log
+                    // recorded only the proposals — so the failure looked like
+                    // "repair is slow" for a whole round when it was "repair is
+                    // never allowed". A rescue that cannot proceed is worth a
+                    // line every time.
+                    if (laid == 0)
+                        MelonLogger.Msg($"[PLAN/EXEC] REPAIR BLOCKED toward " +
+                                        $"({repTo.x:F0},{repTo.z:F0}) — cash={cashLeft} " +
+                                        $"nodeCost={EcoSimulator.NODE_COST} " +
+                                        $"(no reachable hop, or unaffordable)");
                 }
 
                 // CLOSE A LOOP, BUT ONLY OUT OF SURPLUS.

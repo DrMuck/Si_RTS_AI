@@ -125,6 +125,33 @@ namespace Si_RTS_AI.Planning
             _lastLogAt = 0f;
         }
 
+        /// <summary>
+        /// CAN THE ECONOMY STILL TURN THE NEXT CASH INTO INCOME?
+        ///
+        /// The one question anything competing with the economy for money has to
+        /// ask, and it lives here because it is a statement about the worker
+        /// trajectory and nothing else.
+        ///
+        /// It is a single method because it was briefly two. On 2026-08-07 the
+        /// military money claim and the military production gate each had their
+        /// own copy; one included the "the ramp has not started yet" clause and
+        /// one did not, so at t=79s — starter shrimps in hand, target still zero,
+        /// therefore "on track" — the claim read the economy as finished with its
+        /// money and spent 9,000 on Greater Spawning Cysts DURING THE OPENER,
+        /// against a plan whose whole budget was 9,000. The economy never
+        /// recovered: 18 Bio Caches and 122k income against a soak baseline of
+        /// 26 and 400k.
+        ///
+        /// Two clauses, both measured:
+        ///   - Before the ramp begins there is no trajectory to be on track with,
+        ///     so the opening belongs to the economy unconditionally.
+        ///   - After it, another shrimp earns only while we are BEHIND the curve
+        ///     and yield is not falling. Yield falling means the shortfall is
+        ///     ground rather than producers, and more workers buy crowding.
+        /// </summary>
+        internal static bool CanStillConvertCash =>
+            Target <= 0 || (BehindSchedule && !YieldFalling);
+
         /// <summary>Measured duty cycle, fed by the shrimp producer.</summary>
         internal static void NoteDuty(float achievedPerMin, float ceilingPerMin)
         {

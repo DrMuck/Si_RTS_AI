@@ -98,12 +98,36 @@ namespace Si_RTS_AI.Faction
             = new Dictionary<string, ConstructionData>(StringComparer.OrdinalIgnoreCase);
         static float _lastStructurePlacementAt;
 
+        /// <summary>
+        /// Producer structures we have ASKED for and not yet seen appear.
+        ///
+        /// The existing count reads built structures plus ConstructionSites, and
+        /// a placement request becomes neither of those immediately — so on
+        /// NarakaCity 2026-08-07 the same Greater Spawning Cyst was ordered at
+        /// t+108s, t+125s and t+140s, three times, for 9,000 cash. The opener's
+        /// entire planned budget was 9,000. One Greater Cyst was ever built; the
+        /// economy never recovered and finished the round on 18 Bio Caches
+        /// against a soak baseline of 26.
+        ///
+        /// So remember what we asked for, and stop asking. The entry expires so a
+        /// request the game silently dropped cannot block the slot forever.
+        /// </summary>
+        static readonly Dictionary<string, float> _requestedAt =
+            new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>How long a placement request is believed before we conclude
+        /// it never happened. Comfortably longer than the time for a request to
+        /// turn into a ConstructionSite, short enough that a lost order costs one
+        /// window rather than the round.</summary>
+        const float REQUEST_TTL_S = 60f;
+
         internal static void ResetForNewRound()
         {
             _lastTickAt = _lastLogAt = _lastStructurePlacementAt = 0f;
             QueuedThisRound = SpentThisRound = 0;
             _catalogLogged = false;
             _claimed.Clear();
+            _requestedAt.Clear();
             _failuresLogged.Clear();
             _producerStructureCds.Clear();
         }
@@ -314,6 +338,9 @@ namespace Si_RTS_AI.Faction
             {
                 if (!_producerStructureCds.TryGetValue(name, out var cd)) continue;
                 if (have.TryGetValue(name, out int c) && c > 0) continue;
+                // Already asked for, and the request has not aged out.
+                if (_requestedAt.TryGetValue(name, out float askedAt) &&
+                    now - askedAt < REQUEST_TTL_S) continue;
                 int cost = SafeCost(cd);
                 if (cost > budget) return;
                 bool fired = false;
@@ -324,6 +351,7 @@ namespace Si_RTS_AI.Faction
                 {
                     budget -= cost;
                     SpentThisRound += cost;
+                    _requestedAt[name] = now;
                     MelonLogger.Msg($"[MIL/PROD] placed {name} near Nest ({nestPos.x:F0},{nestPos.z:F0})");
                 }
                 return;
@@ -334,19 +362,9 @@ namespace Si_RTS_AI.Faction
         // Helpers
         // ================================================================
 
-        /// <summary>
-        /// Is another shrimp still the best use of the next cash? Behind the
-        /// worker trajectory AND yield not falling is the measured condition
-        /// under which it is. Before the ramp starts there is no trajectory to be
-        /// behind, so the opening belongs to the economy unconditionally — which
-        /// is the difference between an eco-first bot and one that spends its
-        /// starting cash on Crabs.
-        /// </summary>
-        internal static bool EcoStillConverting()
-        {
-            if (Planning.WorkerPlan.Target <= 0) return true;
-            return Planning.WorkerPlan.BehindSchedule && !Planning.WorkerPlan.YieldFalling;
-        }
+        /// <summary>Is another shrimp still the best use of the next cash?
+        /// Defined once, in WorkerPlan, and read rather than re-derived.</summary>
+        internal static bool EcoStillConverting() => Planning.WorkerPlan.CanStillConvertCash;
 
         static int SafeCost(ConstructionData cd)
         {

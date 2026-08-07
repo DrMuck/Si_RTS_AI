@@ -53,6 +53,52 @@ namespace Si_RTS_AI.Perception
         static float _lastTickAt, _lastReportAt;
         static Team _self;
 
+        // ---- HOW MUCH FORCE, as opposed to how much danger ------------------
+        //
+        // THE THREAT FIELD IS AN ACCUMULATOR AND CANNOT SIZE A FORCE. Stamp adds
+        // a unit's attack rating over a disk the size of its weapon range, once
+        // per second, and decay only removes ~1.5% of it in that time — so a
+        // single tank standing still drives its cell toward sixty times its own
+        // rating, spread over hundreds of cells. That is a fine SHAPE for "where
+        // is it dangerous", which is all the ranking ever used it for.
+        //
+        // It is useless as an amount. Sized against it on 2026-08-07 the home
+        // garrison asked for 1,466,026 cash of defenders against a real enemy of
+        // perhaps twenty vehicles, so it swallowed every unit the alien built and
+        // the defence missions each got zero for the entire round. The army sat
+        // at the Nest in a blob while nine Bio Caches were destroyed.
+        //
+        // So force is measured separately and in CASH: the summed cost of enemy
+        // units we can actually see, REPLACED each pass rather than accumulated,
+        // and decayed only where we have lost sight. Same currency as a
+        // battalion's strength, so a requirement needs no conversion constant at
+        // all — the one that existed was invented and was wrong by four orders of
+        // magnitude.
+        static float[] _value = new float[0];      // believed enemy cash per cell
+        static float[] _valueScratch = new float[0]; // what this pass actually saw
+
+        /// <summary>Enemy cash we can see, or saw recently, within a radius.
+        /// The number a defending force should be compared against.</summary>
+        internal static int ValueNear(Vector3 world, float radiusM)
+        {
+            EnsureSized();
+            int cx = GridWorld.CellX(world.x), cz = GridWorld.CellZ(world.z);
+            int r = Mathf.Max(1, Mathf.CeilToInt(radiusM / GridWorld.CellSize));
+            float sum = 0f;
+            for (int dz = -r; dz <= r; dz++)
+                for (int dx = -r; dx <= r; dx++)
+                {
+                    int x = cx + dx, z = cz + dz;
+                    if (x < 0 || z < 0 || x >= GridWorld.Width || z >= GridWorld.Height) continue;
+                    if (dx * dx + dz * dz > r * r) continue;
+                    sum += _value[z * GridWorld.Width + x];
+                }
+            return Mathf.RoundToInt(sum);
+        }
+
+        /// <summary>Total enemy cash believed on the map.</summary>
+        internal static int TotalValue { get; private set; }
+
         struct Hvt { public string Name; public Vector3 Pos; public int Cost; public string Team; }
         static readonly List<Hvt> _hvt = new List<Hvt>(32);
 
@@ -104,9 +150,12 @@ namespace Si_RTS_AI.Perception
         internal static void ResetForNewRound()
         {
             _threat = new float[0];
+            _value = new float[0];
+            _valueScratch = new float[0];
             _lastTickAt = _lastReportAt = 0f;
             _self = null;
             Total = 0f;
+            TotalValue = 0;
             _hvt.Clear();
             _known.Clear();
         }
@@ -114,7 +163,9 @@ namespace Si_RTS_AI.Perception
         static void EnsureSized()
         {
             int n = GridWorld.CellCount;
-            if (_threat.Length != n) _threat = new float[n];
+            if (_threat.Length != n)       _threat = new float[n];
+            if (_value.Length != n)        _value = new float[n];
+            if (_valueScratch.Length != n) _valueScratch = new float[n];
         }
 
         /// <summary>
@@ -159,6 +210,9 @@ namespace Si_RTS_AI.Perception
             for (int i = 0; i < _threat.Length; i++) { _threat[i] *= keep; total += _threat[i]; }
             Total = total;
 
+            try { CommitValue(keep); }
+            catch (Exception ex) { MelonLogger.Warning("[THREAT] value commit threw: " + ex.Message); }
+
             try { ForgetWhatWeCanSeeIsGone(now); }
             catch (Exception ex) { MelonLogger.Warning("[THREAT] forget threw: " + ex.Message); }
 
@@ -189,6 +243,13 @@ namespace Si_RTS_AI.Perception
                     try { reachM = u.TargetingDistance; } catch { }
                     if (reachM < GridWorld.CellSize) reachM = GridWorld.CellSize;
                     AddDisk(p, reachM, weight);
+
+                    // Value goes in ONE cell — where the unit actually stands.
+                    // Danger reaches, a tank does not. Spreading cost over a
+                    // weapon-range disk is how the threat field stopped meaning
+                    // anything countable.
+                    _valueScratch[cz * GridWorld.Width + cx] +=
+                        UnitValues.CostOf(u.ObjectInfo.DisplayName ?? "");
                 }
 
             // High-value targets are structures, and the game already prices
@@ -214,6 +275,37 @@ namespace Si_RTS_AI.Perception
                     Name = sname, Team = steam, Pos = p, Cost = scost, LastSeenAt = Time.time,
                 };
             }
+        }
+
+        /// <summary>
+        /// REPLACE WHAT WE CAN SEE, DECAY WHAT WE CANNOT.
+        ///
+        /// A cell inside our fog is simply told what is standing on it this
+        /// second, including nothing at all — that is what keeps the field an
+        /// amount rather than a running total. A cell we cannot see keeps its
+        /// last reading and fades, which is the honest state of a force that
+        /// walked out of sight: probably still there, less certainly so as time
+        /// passes.
+        ///
+        /// Without a fog layer we cannot tell "saw nothing there" from "did not
+        /// look", so everything decays and only sightings refresh it.
+        /// </summary>
+        static void CommitValue(float keep)
+        {
+            LayerB visible = null;
+            try { if (_self != null) visible = FoWLayers.GetActive(_self); } catch { }
+
+            float total = 0f;
+            int w = GridWorld.Width;
+            for (int i = 0; i < _value.Length; i++)
+            {
+                bool seen = visible == null ? false : visible.IsSet(i % w, i / w);
+                _value[i] = seen ? _valueScratch[i] : _value[i] * keep;
+                if (visible == null && _valueScratch[i] > 0f) _value[i] = _valueScratch[i];
+                total += _value[i];
+                _valueScratch[i] = 0f;
+            }
+            TotalValue = Mathf.RoundToInt(total);
         }
 
         /// <summary>
@@ -295,7 +387,8 @@ namespace Si_RTS_AI.Perception
             }
 
             var sb = new System.Text.StringBuilder();
-            sb.Append("[THREAT] total=").Append((int)total).Append(" peak=").Append((int)peak)
+            sb.Append("[THREAT] danger=").Append((int)total).Append(" peak=").Append((int)peak)
+              .Append(" enemyValue=").Append(TotalValue)
               .Append(" known=").Append(_known.Count);
             if (peakIdx >= 0 && peak > 0.5f)
             {

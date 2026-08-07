@@ -42,15 +42,20 @@ namespace Si_RTS_AI.Planning
 
         // ---- Pricing (placeholders — see the class comment) -------------------
 
-        /// <summary>Cash a defender is worth spending per point of threat.
-        /// ThreatMap sums UIAttackRating over a radius, so this converts the
-        /// game's danger units into the currency every other decision uses.
-        /// PLACEHOLDER: unmeasured until combat.jsonl has two-sided rows.</summary>
-        internal static float CashPerThreat;
-
-        /// <summary>How much more than the threat a force should be before it is
-        /// sent at it. Above 1 because trading evenly on defence is a loss — we
-        /// paid for the ground twice. PLACEHOLDER, same reason.</summary>
+        /// <summary>How much more than the ENEMY'S OWN CASH a force should be
+        /// worth before it is sent at it. Above 1 because trading evenly on
+        /// defence is a loss — we paid for that ground twice.
+        ///
+        /// This is now the only pricing number in the layer. There used to be a
+        /// second, cashPerThreat, converting the threat field into cash; the
+        /// threat field is an accumulator and the conversion was wrong by four
+        /// orders of magnitude, so both sides of the comparison are now prices the
+        /// game itself set and nothing has to be converted at all.
+        ///
+        /// Still a placeholder in the sense that 1.5 is a guess — but a guess
+        /// about how much of an edge a defender needs, which is a question one
+        /// played round can answer, rather than about the scale of a unit nobody
+        /// can see.</summary>
         internal static float StrengthMargin;
 
         // ---- Allocation ------------------------------------------------------
@@ -60,6 +65,14 @@ namespace Si_RTS_AI.Planning
         /// early and a real force later, without a constant that is wrong at one
         /// end of the round or the other.</summary>
         internal static float HomeShare;
+
+        /// <summary>MOST of the army the garrison may hold, however much enemy
+        /// turns up at home. The garrison is filled before anything else, so
+        /// without a ceiling it is not a floor — it is a claim on everything, and
+        /// on 2026-08-07 it took every unit for a whole round while nine Bio
+        /// Caches were destroyed by forces no battalion was ever given units to
+        /// meet.</summary>
+        internal static float HomeCapShare;
 
         /// <summary>Defend missions funded at once. A cap, not a score — beyond
         /// a few simultaneous responses the army is being divided into pieces
@@ -108,10 +121,10 @@ namespace Si_RTS_AI.Planning
             Produce  = RtsaiConfig.Bool ("military.produce",  true);
             Offence  = RtsaiConfig.Bool ("military.offence",  true);
 
-            CashPerThreat   = RtsaiConfig.Float("military.cashPerThreat",  8f);
             StrengthMargin  = RtsaiConfig.Float("military.strengthMargin", 1.5f);
 
             HomeShare         = RtsaiConfig.Float("military.homeShare",         0.25f);
+            HomeCapShare      = RtsaiConfig.Float("military.homeCapShare",      0.5f);
             MaxDefendMissions = RtsaiConfig.Int  ("military.maxDefendMissions", 3);
 
             EcoReserve      = RtsaiConfig.Int  ("military.ecoReserve",      15000);
@@ -128,8 +141,8 @@ namespace Si_RTS_AI.Planning
             {
                 _announced = true;
                 MelonLogger.Msg($"[MIL/CONFIG] enabled={Enabled} execute={Execute} produce={Produce} " +
-                                $"offence={Offence} | cashPerThreat={CashPerThreat:F1} " +
-                                $"margin={StrengthMargin:F2} homeShare={HomeShare:F2} " +
+                                $"offence={Offence} | margin={StrengthMargin:F2} " +
+                                $"home={HomeShare:F2}..{HomeCapShare:F2} of army " +
                                 $"ecoReserve={EcoReserve} lesserCystShare={LesserCystShare:F2} " +
                                 $"push(growth<{PushGrowthFloor:F0}/s, margin {PushMargin:F2}, " +
                                 $"retreat {PushRetreatFraction:F2})");

@@ -102,19 +102,33 @@ namespace Si_RTS_AI.Planning
         static void UpdateGarrison(Vector3 nest)
         {
             if (nest == Vector3.zero) return;
-            float t = 0f;
-            try { t = Perception.ThreatMap.ThreatNear(nest, HOME_RADIUS_M); } catch { }
-            if (t > PeakHomeThreat) PeakHomeThreat = t;
-            GarrisonValue = Mathf.CeilToInt(PeakHomeThreat * MilitaryConfig.CashPerThreat *
-                                            MilitaryConfig.StrengthMargin);
+            try { PeakHomeThreat = Mathf.Max(PeakHomeThreat,
+                                             Perception.ThreatMap.ThreatNear(nest, HOME_RADIUS_M)); } catch { }
+            GarrisonValue = ValueFor(nest, HOME_RADIUS_M);
         }
 
-        /// <summary>What a force facing this much threat should be worth, in
-        /// cash. The single conversion between the game's danger units and the
-        /// currency every other decision is made in — one place, so a measured
-        /// exchange ratio has one number to correct.</summary>
-        internal static int ValueFor(float threat) =>
-            Mathf.CeilToInt(threat * MilitaryConfig.CashPerThreat * MilitaryConfig.StrengthMargin);
+        /// <summary>
+        /// What a force sent here should be worth, in cash.
+        ///
+        /// It is the enemy's OWN cash within the radius times a margin, so there
+        /// is no conversion constant between the game's units and ours and
+        /// nothing to calibrate — both sides of the comparison are prices the
+        /// game itself set. The previous version multiplied a threat reading by
+        /// an invented cashPerThreat and asked for 1.4 million cash of garrison,
+        /// which the whole army could not have paid at any point in the round.
+        ///
+        /// PEAK IS GONE FROM THE SIZING and stays only in the log. It was there so
+        /// a raid that ended did not immediately empty the garrison, and it made
+        /// one bad minute pin the requirement at its maximum for the rest of the
+        /// round. The reserve already sits at home whenever there is no push, so
+        /// the memory bought nothing and cost everything.
+        /// </summary>
+        internal static int ValueFor(Vector3 pos, float radiusM)
+        {
+            int enemy = 0;
+            try { enemy = Perception.ThreatMap.ValueNear(pos, radiusM); } catch { }
+            return Mathf.CeilToInt(enemy * MilitaryConfig.StrengthMargin);
+        }
 
         static void RankAssets(Vector3 nest)
         {

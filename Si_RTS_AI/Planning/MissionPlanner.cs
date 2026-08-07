@@ -90,6 +90,11 @@ namespace Si_RTS_AI.Planning
         /// defended it is. Same radius defence uses on its own assets.</summary>
         const float TARGET_THREAT_RADIUS = 300f;
 
+        /// <summary>Radius the enemy force at a threatened asset is counted over.
+        /// Matches DefencePlanner's own asset radius, so the thing that raised
+        /// the task and the thing that sizes the answer look at the same ground.</summary>
+        const float ASSET_DEFENCE_RADIUS = 300f;
+
         /// <summary>How long after coming home the army will not leave again.
         /// Posture-level hysteresis: without it a push that retreats on a bad
         /// minute re-commits on the next tick into the force that beat it.</summary>
@@ -172,9 +177,9 @@ namespace Si_RTS_AI.Planning
 
         static void MeasureEnemy()
         {
-            float t = 0f;
-            try { t = Perception.ThreatMap.Total; } catch { }
-            EnemyEstimate = Mathf.CeilToInt(t * MilitaryConfig.CashPerThreat);
+            // Their cash, not their danger. See ThreatMap's note on why the
+            // threat field cannot be an amount.
+            try { EnemyEstimate = Perception.ThreatMap.TotalValue; } catch { EnemyEstimate = 0; }
         }
 
         // ---- Posture ----------------------------------------------------------
@@ -282,8 +287,10 @@ namespace Si_RTS_AI.Planning
         {
             int cash = 0;
             try { cash = team.TotalResources; } catch { }
-            bool ecoStillConverting = WorkerPlan.BehindSchedule && !WorkerPlan.YieldFalling;
-            int reserve = ecoStillConverting ? MilitaryConfig.EcoReserve : 0;
+            // ONE definition, in WorkerPlan. This had its own copy for a day and
+            // the copies disagreed exactly where it mattered — see the comment on
+            // WorkerPlan.CanStillConvertCash.
+            int reserve = WorkerPlan.CanStillConvertCash ? MilitaryConfig.EcoReserve : 0;
             try { reserve += MoneyBroker.GetReservedCash(team); } catch { }
             return Mathf.Max(0, cash - reserve);
         }
@@ -354,13 +361,33 @@ namespace Si_RTS_AI.Planning
             // 1) Garrison. A project, not a mission — it never completes, and it
             //    is subtracted before anything else is allocated.
             Vector3 nest = HomeOf(team);
-            int homeFloor = Mathf.Max(DefencePlanner.GarrisonValue,
-                                      Mathf.CeilToInt(ArmyValue * MilitaryConfig.HomeShare));
+
+            // A FLOOR THAT CANNOT BECOME A CEILING ON EVERYTHING ELSE.
+            //
+            // The garrison is filled first, so whatever it asks for is taken
+            // before any defence exists. On 2026-08-07 it asked for more than the
+            // army was ever worth, took all of it, and every defend battalion sat
+            // at zero units for the whole round while the base was dismantled
+            // around them — the army in a blob at the Nest.
+            //
+            // So it is bounded by a share of what we actually have. If the enemy
+            // at home genuinely outvalues the entire army, sending everything
+            // home does not save the Nest; it only guarantees the expansions die
+            // too. The floor is homeShare, the ceiling homeCapShare, and between
+            // them it is what the enemy has actually brought.
+            int wanted = Mathf.Max(DefencePlanner.GarrisonValue,
+                                   Mathf.CeilToInt(ArmyValue * MilitaryConfig.HomeShare));
+            int homeCap = Mathf.Max(Mathf.CeilToInt(ArmyValue * MilitaryConfig.HomeCapShare),
+                                    Mathf.CeilToInt(ArmyValue * MilitaryConfig.HomeShare));
+            int homeFloor = Mathf.Min(wanted, homeCap);
+
             Missions.Add(new Mission
             {
                 Id = IdFor(Kind.Garrison, nest), Kind = Kind.Garrison, Objective = nest,
                 RequiredValue = homeFloor, Score = float.MaxValue,
-                Note = $"home (peak threat {DefencePlanner.PeakHomeThreat:F0})",
+                Note = wanted > homeFloor
+                     ? $"home, wanted {wanted} capped to {homeFloor} of army {ArmyValue}"
+                     : $"home (enemy near nest {DefencePlanner.GarrisonValue})",
                 CreatedAt = now,
             });
 
@@ -375,7 +402,7 @@ namespace Si_RTS_AI.Planning
                 Missions.Add(new Mission
                 {
                     Id = IdFor(Kind.Defend, tasks[i].Pos), Kind = Kind.Defend, Objective = tasks[i].Pos,
-                    RequiredValue = DefencePlanner.ValueFor(tasks[i].Threat),
+                    RequiredValue = DefencePlanner.ValueFor(tasks[i].Pos, ASSET_DEFENCE_RADIUS),
                     Score = tasks[i].Score,
                     Note = $"earned {tasks[i].RecentIncome} under threat {tasks[i].Threat:F0}",
                     CreatedAt = now,
