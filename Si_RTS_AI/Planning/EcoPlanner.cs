@@ -859,7 +859,24 @@ namespace Si_RTS_AI.Planning
         /// routed around. About half a node hop.</summary>
         const float OBSTRUCTION_RADIUS_M = 70f;
 
+        /// <summary>A slide past this counts toward the repeat rule. Above the
+        /// routine sub-40m nudge, below the single-event threshold.</summary>
+        const float OBSTRUCTION_REPEAT_SLIDE_M = 40f;
+
         static readonly List<Vector3> _obstructions = new List<Vector3>();
+        static readonly List<Vector3> _slidTargets  = new List<Vector3>();
+
+        /// <summary>True once this target has slid moderately more than once.</summary>
+        static bool NoteSlideRepeat(Vector3 p)
+        {
+            for (int i = 0; i < _slidTargets.Count; i++)
+            {
+                float dx = _slidTargets[i].x - p.x, dz = _slidTargets[i].z - p.z;
+                if (dx * dx + dz * dz < OBSTRUCTION_RADIUS_M * OBSTRUCTION_RADIUS_M) return true;
+            }
+            _slidTargets.Add(p);
+            return false;
+        }
 
         static void NoteObstruction(Vector3 p)
         {
@@ -924,7 +941,25 @@ namespace Si_RTS_AI.Planning
             // Remembered so the chain can route around instead of aiming at the
             // same blocked point forever. Cheap and self-correcting: the record
             // is per round and only positions we actually asked for.
-            if (slide > OBSTRUCTION_SLIDE_M) NoteObstruction(log[best].pos);
+            // ONE BIG SLIDE, OR THE SAME MODERATE SLIDE TWICE.
+            //
+            // A single 90m+ jump is obvious. The case that actually stalled a
+            // branch is quieter: (1235,1815) slid 45-63m every time it was
+            // asked, five times in one round and again in the next, always to
+            // the same spot — moderate enough to stay under the threshold and
+            // repeated enough to be certain. Twice at the same target is proof;
+            // once is bad luck.
+            //
+            // NODES ONLY. A Bio Cache slides toward its anchor by design (rule 1)
+            // and a Cyst follows its Bio Cache, so their slides say nothing about
+            // the ground — marking those would have chains steering away from the
+            // very patches they are trying to reach.
+            if (want == ActionKind.PlaceNode)
+            {
+                if (slide > OBSTRUCTION_SLIDE_M) NoteObstruction(log[best].pos);
+                else if (slide > OBSTRUCTION_REPEAT_SLIDE_M
+                         && NoteSlideRepeat(log[best].pos)) NoteObstruction(log[best].pos);
+            }
         }
 
         internal static string BuildPlacementSummaryFragment()
@@ -4751,6 +4786,7 @@ namespace Si_RTS_AI.Planning
             _fired.Clear();
             SlideSamples = 0; SlideSumM = 0f; SlideMaxM = 0f;
             _obstructions.Clear();      // learned per round; the map may differ
+            _slidTargets.Clear();
             _lastHaulJumpLogAt = 0f;
             _phaseByTeam.Clear();
             _currentPhase = PlanPhase.Phase1_BaseEco;
