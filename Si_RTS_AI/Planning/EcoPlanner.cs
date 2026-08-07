@@ -2153,6 +2153,12 @@ namespace Si_RTS_AI.Planning
                         if (!branchSite.ContainsKey(x.branch)) branchSite[x.branch] = x.site;
                     }
 
+                    // How many unreachable sites may have their chain extended
+                    // this tick. `chainExtendPerTick` in rtsai.json; 0 restores
+                    // the pre-v0.31 behaviour of never noding for reach here.
+                    int extendsLeft = Mathf.Max(0, RtsaiConfig.Int("chainExtendPerTick", 2));
+                    int demandExtendsLeft = extendsLeft > 0 ? 1 : 0;
+
                     var plan = Blueprint.Items;
                     for (int i = 0; i < plan.Count; i++)
                     {
@@ -2259,15 +2265,41 @@ namespace Si_RTS_AI.Planning
                         if (kind != ActionKind.PlaceNode
                             && !Faction.AlienConstruction.CanAnchorFor(team, kind, it.pos))
                         {
+                            // FINISH ONE REACH BEFORE STARTING EIGHT.
+                            //
+                            // This fired inside the per-item loop with no budget,
+                            // so EVERY unreachable site in a ~90-item plan started
+                            // its own line in the same tick. Measured on
+                            // NarakaCity 2026-08-07: node construction went
+                            // 109 -> 121 -> 144 per round across v0.29.2 /
+                            // v0.30.0 / v0.31.0 while Bio Caches stayed at 26 —
+                            // a third more nodes bought no extra ground, and the
+                            // stubs read as over-bridging on the map because each
+                            // one also gives the loop finder another unreachable
+                            // pair to price at maximum.
+                            //
+                            // A chain is only worth anything when it ARRIVES, so
+                            // spend the budget deepening a few rather than
+                            // scratching at all of them.
+                            // Ground the shrimps are already walking to gets its
+                            // own slot, so it is never crowded out by whatever
+                            // happens to sit earlier in the plan.
+                            bool useDemandSlot = demanded && demandExtendsLeft > 0;
+                            if (!useDemandSlot && extendsLeft <= 0) continue;
                             if (NextNodeTowards(state, it.pos, out Vector3 hop))
                             {
+                                int beforeExtend = fired;
                                 TryFireAction(new Candidate
                                 {
                                     kind = ActionKind.PlaceNode, target = hop,
                                     cost = EcoSimulator.NODE_COST,
                                     patchIdx = -1, frontRef = it.pos,
                                 });
-                                if (it.site >= 0) ClaimBranch(it);
+                                if (fired > beforeExtend)
+                                {
+                                    if (useDemandSlot) demandExtendsLeft--; else extendsLeft--;
+                                    if (it.site >= 0) ClaimBranch(it);
+                                }
                             }
                             continue;
                         }

@@ -91,6 +91,15 @@
   "testMode": true,
   "suppressCombat": true,
 
+  "_chainExtendPerTick": [
+    "Unreachable sites whose node chain may be extended in one planner tick,",
+    "plus one reserved slot for ground shrimps are already walking to.",
+    "Uncapped (v0.31.0) it started a line toward every unreachable site at once:",
+    "node construction rose 109 -> 144 per round while Bio Caches stayed at 26,",
+    "and the stubs read as over-bridging on the map. 0 disables reach-noding."
+  ],
+  "chainExtendPerTick": 2,
+
   "_eco": "Economy knobs worth changing between rounds.",
   "blueprintDrivesPhase2": true,
   "replanIntervalS": 30,
