@@ -2394,16 +2394,31 @@ namespace Si_RTS_AI.Planning
                         // buys another slid node in the same place: (808,874) was
                         // marked at 14:17:15 and asked again at 14:19:57, sliding
                         // 80m to almost exactly where the first one landed.
+                        //
+                        // THE SAME DETOUR ON BOTH SIDES. The re-aim uses the
+                        // BLUEPRINT'S sidestep, from the same hop direction, so
+                        // executor and planner land on the identical point. Two
+                        // independent detour geometries — a perpendicular step
+                        // here, an angular fan there — would drift apart, the
+                        // plan would re-plan its own, and the two would build
+                        // competing hops. That is precisely how the merge radius
+                        // deadlocked a branch earlier today.
                         if (kind == ActionKind.PlaceNode && IsObstructed(it.pos))
                         {
-                            if (NextNodeTowards(state, it.pos, out Vector3 around)
-                                && !IsObstructed(around))
-                                TryFireAction(new Candidate
-                                {
-                                    kind = ActionKind.PlaceNode, target = around,
-                                    cost = EcoSimulator.NODE_COST,
-                                    patchIdx = -1, frontRef = it.pos,
-                                });
+                            Vector3 run = it.pos - it.from;
+                            float rl = Mathf.Sqrt(run.x * run.x + run.z * run.z);
+                            if (rl > 1f)
+                            {
+                                var around = Blueprint.SteppedAsideFromObstruction(
+                                    it.pos, run.x / rl, run.z / rl);
+                                if (!IsObstructed(around))
+                                    TryFireAction(new Candidate
+                                    {
+                                        kind = ActionKind.PlaceNode, target = around,
+                                        cost = EcoSimulator.NODE_COST,
+                                        patchIdx = -1, frontRef = it.pos,
+                                    });
+                            }
                             continue;
                         }
 

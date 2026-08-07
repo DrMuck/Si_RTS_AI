@@ -640,7 +640,7 @@ namespace Si_RTS_AI.Planning
         /// the hop's distance from the anchor roughly intact so the chain still
         /// reaches, and gives up on the straight point rather than the site.
         /// </summary>
-        static Vector3 SteppedAsideFromObstruction(Vector3 np, float dx, float dz)
+        internal static Vector3 SteppedAsideFromObstruction(Vector3 np, float dx, float dz)
         {
             if (!EcoPlanner.IsObstructed(np)) return np;
 
