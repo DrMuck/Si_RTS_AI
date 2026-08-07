@@ -438,7 +438,8 @@ namespace Si_RTS_AI.Planning
             _freePatches = new Vector3[0];
             MigratedThisRound = 0;
             ReissuedThisRound = 0;
-            _inbound.Clear();
+            _walking.Clear();
+            _present.Clear();
             _spilled = 0;
             _lastSpillLogAt = 0f;
         }
@@ -461,33 +462,80 @@ namespace Si_RTS_AI.Planning
         // shrimp takes the next-best patch — which is exactly the "more headroom
         // in the middle to west" that sat unused while the north piled up.
         //
-        // Entries expire: a walk is a claim on a patch for as long as the trip
-        // takes, not forever. TTL covers a long crossing at shrimp speed.
-        const float INBOUND_TTL_S = 150f;
+        // COUNT WHAT IS TRUE, NOT WHAT WE ORDERED.
+        //
+        // The first version incremented a counter on every move order, which
+        // answered the wrong question three ways. It missed shrimps ALREADY
+        // STANDING on an untapped patch — there is no Bio Cache there, so no
+        // group, so nothing else counts them, and the quota was blind to a
+        // crowd that had already arrived. It double-counted a shrimp re-ordered
+        // to the same patch after the 15s reissue cooldown. And its entries
+        // expired after 150s, so a shrimp that arrived and stayed quietly
+        // released its slot and let ten more be sent — the pile rebuilding
+        // itself every couple of minutes.
+        //
+        // So each pass takes a census instead. Every shrimp lands in exactly one
+        // bucket — walking toward a destination, or standing in a cell — which
+        // cannot double-count and does not decay. The quota is then the honest
+        // one: bodies there plus bodies on the way.
+        const float ASSIGN_FRESH_S = 150f;      // a long crossing at shrimp speed
+        const float ARRIVED_M      = 80f;       // close enough to count as there
         const float INBOUND_CELL_M = 120f;      // one patch's worth of ground
 
-        struct Inbound { public int Count; public float At; }
-        static readonly Dictionary<long, Inbound> _inbound = new Dictionary<long, Inbound>();
+        static readonly Dictionary<long, int> _walking = new Dictionary<long, int>();
+        static readonly Dictionary<long, int> _present = new Dictionary<long, int>();
         static int _spilled;
         static float _lastSpillLogAt;
 
-        static long InboundKey(Vector3 p)
+        static long CellKey(Vector3 p)
             => ((long)Mathf.RoundToInt(p.x / INBOUND_CELL_M) << 32)
              ^ (uint)Mathf.RoundToInt(p.z / INBOUND_CELL_M);
 
-        static int InboundAt(Vector3 p, float now)
-        {
-            if (!_inbound.TryGetValue(InboundKey(p), out var e)) return 0;
-            return now - e.At > INBOUND_TTL_S ? 0 : e.Count;
-        }
+        static int Count(Dictionary<long, int> d, Vector3 p)
+            => d.TryGetValue(CellKey(p), out int n) ? n : 0;
 
+        /// <summary>Shrimps walking toward this ground.</summary>
+        static int WalkingTo(Vector3 p) => Count(_walking, p);
+
+        /// <summary>Shrimps standing on this ground — the ones the first version
+        /// could not see at an untapped patch.</summary>
+        static int StandingAt(Vector3 p) => Count(_present, p);
+
+        /// <summary>Orders issued during this pass, so a hundred shrimps decided
+        /// one after another in the same frame still see each other.</summary>
         static void NoteInbound(Vector3 p, float now)
         {
-            long k = InboundKey(p);
-            if (_inbound.TryGetValue(k, out var e) && now - e.At <= INBOUND_TTL_S)
-                _inbound[k] = new Inbound { Count = e.Count + 1, At = now };
-            else
-                _inbound[k] = new Inbound { Count = 1, At = now };
+            long k = CellKey(p);
+            _walking[k] = (_walking.TryGetValue(k, out int n) ? n : 0) + 1;
+        }
+
+        /// <summary>One bucket per shrimp: walking if it has a fresh assignment
+        /// it has not reached, standing otherwise.</summary>
+        static void TakeCensus(Team team, float now)
+        {
+            _walking.Clear();
+            _present.Clear();
+            var units = team.Units;
+            if (units == null) return;
+            for (int i = 0; i < units.Count; i++)
+            {
+                var u = units[i];
+                if (u == null || u.ObjectInfo == null || u.IsDestroyed) continue;
+                if (u.ObjectInfo.DisplayName != "Shrimp") continue;
+
+                Vector3 p = u.transform.position;
+                bool onTheWay = false;
+                Vector3 at = p;
+                if (_assign.TryGetValue(u, out var a) && now - a.AssignedAt < ASSIGN_FRESH_S)
+                {
+                    float dx = a.Target.x - p.x, dz = a.Target.z - p.z;
+                    if (dx * dx + dz * dz > ARRIVED_M * ARRIVED_M) { onTheWay = true; at = a.Target; }
+                }
+
+                var d = onTheWay ? _walking : _present;
+                long k = CellKey(at);
+                d[k] = (d.TryGetValue(k, out int n) ? n : 0) + 1;
+            }
         }
 
         /// <summary>Shrimps one destination may have walking toward it at once.
@@ -820,6 +868,9 @@ namespace Si_RTS_AI.Planning
             var units = team.Units;
             if (units == null) return;
 
+            // Who is where, and who is on the way, before anybody is re-tasked.
+            TakeCensus(team, now);
+
             for (int i = 0; i < units.Count; i++)
             {
                 var u = units[i];
@@ -907,7 +958,9 @@ namespace Si_RTS_AI.Planning
                     // Count what is already walking here. Current only refreshes
                     // on the regroup cadence, so within one pass a group with
                     // three free slots would accept every shrimp on the map.
-                    int walking = pileMax > 0 ? InboundAt(snap[gi].Best, now) : 0;
+                    // Bodies present are Current's job — adding StandingAt here
+                    // would count them twice.
+                    int walking = pileMax > 0 ? WalkingTo(snap[gi].Best) : 0;
                     if (snap[gi].Capacity - snap[gi].Current - walking <= 0) continue;
                     float dx = snap[gi].Best.x - p.x, dz = snap[gi].Best.z - p.z;
                     float walkS = Mathf.Sqrt(dx * dx + dz * dz) / SHRIMP_SPEED;
@@ -963,13 +1016,12 @@ namespace Si_RTS_AI.Planning
 
                     // A PATCH FEEDS A GROUP, NOT A CROWD.
                     //
-                    // Once ten shrimps are walking to a patch it stops being a
-                    // candidate and the eleventh takes the next one, however much
-                    // further that is. Without this every shrimp freed by the
-                    // same depletion converges on the same ground, because they
-                    // are standing together and the nearest patch is nearest to
-                    // all of them.
-                    if (pileMax > 0 && InboundAt(freeP[fi], now) >= pileMax)
+                    // Once ten shrimps are there OR walking there it stops being
+                    // a candidate and the eleventh takes the next one, however
+                    // much further that is. Both halves are needed: an untapped
+                    // patch has no Bio Cache and therefore no group, so nobody
+                    // else counts the ones already standing on it.
+                    if (pileMax > 0 && StandingAt(freeP[fi]) + WalkingTo(freeP[fi]) >= pileMax)
                     {
                         if (d < nearestFullSq) nearestFullSq = d;
                         continue;
@@ -1083,8 +1135,8 @@ namespace Si_RTS_AI.Planning
             {
                 _lastSpillLogAt = now;
                 MelonLogger.Msg($"[SHRIMP-SUP] anti-pile-up: {_spilled} shrimp(s) sent past a " +
-                                $"destination already holding {PileUpMax()} walkers — " +
-                                "spreading onto further ground instead of stacking");
+                                $"nearer patch already holding {PileUpMax()} shrimps " +
+                                "(standing + walking) — spreading onto further ground");
                 _spilled = 0;
             }
         }
