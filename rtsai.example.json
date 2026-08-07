@@ -105,6 +105,14 @@
   "chainExtendPerTick": 2,
   "chainExtendDemandPerTick": 3,
 
+  "_maxNodesAheadPerSite": [
+    "Unfinished nodes one site's chain may have in flight at once. A branch may",
+    "lay several hops in a tick because a node anchors the next while still",
+    "building — useful, but once out-of-reach hops stopped being skipped (v0.40.0)",
+    "runs of 8+ appeared. 4 keeps a chain moving without a long unfinished road."
+  ],
+  "maxNodesAheadPerSite": 4,
+
   "_timeScale": [
     "Simulation speed. 1 = real time. 2 finishes a 25 game-minute round in about",
     "12.5 wall-minutes, doubling soak throughput.",

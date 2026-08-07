@@ -2251,6 +2251,38 @@ namespace Si_RTS_AI.Planning
                     // How many unreachable sites may have their chain extended
                     // this tick. `chainExtendPerTick` in rtsai.json; 0 restores
                     // the pre-v0.31 behaviour of never noding for reach here.
+                    // HOW FAR THE CHAIN MAY RUN AHEAD OF ITSELF.
+                    //
+                    // A branch is allowed to lay its whole chain to one site in a
+                    // tick — hops anchor off each other while still building, so
+                    // dribbling one per tick would just pay the cost and defer
+                    // the return. That was fine while most hops were refused
+                    // anyway; once v0.40.0 stopped skipping out-of-reach hops,
+                    // eight-node runs appeared. DrMuck: "2-4 are ok but we have
+                    // places with 8+ node being placed ahead."
+                    //
+                    // Counted as nodes IN FLIGHT — placed and not yet finished —
+                    // near this site's planned chain, so it limits how much
+                    // unfinished road is out there rather than how fast a
+                    // finished chain may grow.
+                    int maxAhead = Mathf.Max(1, RtsaiConfig.Int("maxNodesAheadPerSite", 4));
+                    var aheadBySite = new Dictionary<int, int>();
+                    for (int n = 0; n < state.nodes.Count; n++)
+                    {
+                        if (state.nodes[n].finished) continue;
+                        int nearest = -1; float bestSq = Blueprint.NodeMergeM * Blueprint.NodeMergeM * 4f;
+                        for (int k = 0; k < Blueprint.Items.Count; k++)
+                        {
+                            var pi = Blueprint.Items[k];
+                            if (pi.kind != Blueprint.Kind.Node || pi.site < 0) continue;
+                            float dx = pi.pos.x - state.nodes[n].pos.x, dz = pi.pos.z - state.nodes[n].pos.z;
+                            float d = dx * dx + dz * dz;
+                            if (d < bestSq) { bestSq = d; nearest = pi.site; }
+                        }
+                        if (nearest >= 0)
+                            aheadBySite[nearest] = (aheadBySite.TryGetValue(nearest, out int c) ? c : 0) + 1;
+                    }
+
                     int extendsLeft = Mathf.Max(0, RtsaiConfig.Int("chainExtendPerTick", 2));
                     // GROUND SHRIMPS ARE ALREADY WALKING TO IS NOT SPECULATIVE.
                     //
@@ -2403,6 +2435,14 @@ namespace Si_RTS_AI.Planning
                         // plan would re-plan its own, and the two would build
                         // competing hops. That is precisely how the merge radius
                         // deadlocked a branch earlier today.
+                        // Enough unfinished road out there for this site already.
+                        if (kind == ActionKind.PlaceNode && it.site >= 0
+                            && aheadBySite.TryGetValue(it.site, out int ahead) && ahead >= maxAhead)
+                        {
+                            ClaimBranch(it);
+                            continue;
+                        }
+
                         // Out of reach? Keep the bearing, shorten the step.
                         if (kind == ActionKind.PlaceNode
                             && !IsChainReachable(it.pos, state, EcoSimulator.NODE_REACH_M)
@@ -2525,6 +2565,11 @@ namespace Si_RTS_AI.Planning
                         if (_skipReasons.Length == beforeSkips.Length)
                             Blueprint.NoteAsked(it.kind, it.pos);
                         if (fired > beforeFired && it.kind == Blueprint.Kind.BioCache) inFlightBcs++;
+                        // state.nodes is a snapshot taken before this tick, so
+                        // count our own fires too or the cap only binds next tick
+                        // — which is precisely when eight of them go up at once.
+                        if (fired > beforeFired && it.kind == Blueprint.Kind.Node && it.site >= 0)
+                            aheadBySite[it.site] = (aheadBySite.TryGetValue(it.site, out int a2) ? a2 : 0) + 1;
                         // This branch now owns a live site. Its remaining chain
                         // may still go up this tick; a second site may not.
                         if (it.kind != Blueprint.Kind.Cyst && it.site >= 0) ClaimBranch(it);
