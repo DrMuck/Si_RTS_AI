@@ -24,6 +24,22 @@
   ],
   "autoResourceDrain": false,
 
+  "_pileUp": [
+    "Anti-pile-up. Displaced shrimps each picked their own nearest free patch,",
+    "blind to the ones that just went there — so a depletion cascade sent all of",
+    "them to the same ground (56 on a patch with capacity 7, NarakaCity",
+    "2026-08-07) while the middle and west of the map sat empty.",
+    "pileUpMaxPerPatch — shrimps that may be WALKING to one destination at once.",
+    "  The 11th takes the next-best patch instead. 0 disables the mechanism and",
+    "  restores nearest-wins. 10 matches the per-Bio-Cache worker cap.",
+    "pileUpMaxDetourM — how much further a spilled shrimp may be sent once its",
+    "  first choice is full. 0 = no limit, which is the intent: a long walk to",
+    "  fresh ground beats standing on a dead patch. Raise off 0 only if a map",
+    "  punishes the walk more than the pile-up."
+  ],
+  "pileUpMaxPerPatch": 10,
+  "pileUpMaxDetourM": 0,
+
   "_storageBuffer": [
     "A pile of FREE Bio Caches spawned beside the Nest at a fixed minute, purely",
     "to raise team storage capacity so income stops clipping at the cap.",

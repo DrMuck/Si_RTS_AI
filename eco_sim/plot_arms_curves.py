@@ -33,8 +33,8 @@ SINCE = sys.argv[1] if len(sys.argv) > 1 else "2026-08-06T11"
 SURFACE, INK, INK_2, INK_MUTED, GRID = "#fcfcfb", "#0b0b0b", "#52514e", "#8a8983", "#e6e5e1"
 # Categorical slots 1,2,3,5 — skipping yellow, which sits beside orange.
 ARM_COLOUR = {"adaptive": "#2a78d6", "ratio2": "#eb6834",
-              "ratio3": "#1baf7a", "ratio5": "#e87ba4"}
-ARMS = ["adaptive", "ratio2", "ratio3", "ratio5"]
+              "ratio3": "#1baf7a", "ratio4": "#e87ba4"}
+ARMS = ["adaptive", "ratio2", "ratio3", "ratio4"]
 
 
 def stamp(n):
@@ -67,7 +67,7 @@ def style(ax, last=False):
     for s in ("left", "bottom"):
         ax.spines[s].set_color(GRID)
     ax.tick_params(colors=INK_2, labelsize=9, length=0, labelbottom=last)
-    ax.set_xlim(0, 36)
+    ax.set_xlim(0, 26)
     ax.set_xticks([0, 10, 20, 30])
 
 

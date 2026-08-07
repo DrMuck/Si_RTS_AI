@@ -438,7 +438,70 @@ namespace Si_RTS_AI.Planning
             _freePatches = new Vector3[0];
             MigratedThisRound = 0;
             ReissuedThisRound = 0;
+            _inbound.Clear();
+            _spilled = 0;
+            _lastSpillLogAt = 0f;
         }
+
+        // ---- Anti-pile-up: who is already walking where ---------------------
+        //
+        // EVERY DISPLACED SHRIMP PICKED ITS DESTINATION ALONE.
+        //
+        // Each one scored the free patches from its own position and took the
+        // nearest, and shrimps freed by the same depletion stand in the same
+        // place — so they all chose the same patch, every pass, and nothing in
+        // the loop knew the previous ninety-nine had already gone there.
+        // NarakaCity 2026-08-07: three patches died within 70s and 56 shrimps
+        // ended up on a group with capacity 7 at (975,2650). DrMuck: "aim to
+        // distribute the shrimp groups to further biotics in groups of max 10
+        // shrimps. Even if that means they have to walk a long distance."
+        //
+        // The fix is a ledger of committed walks. A destination that already has
+        // its quota walking toward it stops being a candidate, so the next
+        // shrimp takes the next-best patch — which is exactly the "more headroom
+        // in the middle to west" that sat unused while the north piled up.
+        //
+        // Entries expire: a walk is a claim on a patch for as long as the trip
+        // takes, not forever. TTL covers a long crossing at shrimp speed.
+        const float INBOUND_TTL_S = 150f;
+        const float INBOUND_CELL_M = 120f;      // one patch's worth of ground
+
+        struct Inbound { public int Count; public float At; }
+        static readonly Dictionary<long, Inbound> _inbound = new Dictionary<long, Inbound>();
+        static int _spilled;
+        static float _lastSpillLogAt;
+
+        static long InboundKey(Vector3 p)
+            => ((long)Mathf.RoundToInt(p.x / INBOUND_CELL_M) << 32)
+             ^ (uint)Mathf.RoundToInt(p.z / INBOUND_CELL_M);
+
+        static int InboundAt(Vector3 p, float now)
+        {
+            if (!_inbound.TryGetValue(InboundKey(p), out var e)) return 0;
+            return now - e.At > INBOUND_TTL_S ? 0 : e.Count;
+        }
+
+        static void NoteInbound(Vector3 p, float now)
+        {
+            long k = InboundKey(p);
+            if (_inbound.TryGetValue(k, out var e) && now - e.At <= INBOUND_TTL_S)
+                _inbound[k] = new Inbound { Count = e.Count + 1, At = now };
+            else
+                _inbound[k] = new Inbound { Count = 1, At = now };
+        }
+
+        /// <summary>Shrimps one destination may have walking toward it at once.
+        /// `pileUpMaxPerPatch` in rtsai.json; 0 disables the whole mechanism and
+        /// restores the nearest-patch-wins behaviour.</summary>
+        static int PileUpMax()
+            => Mathf.Max(0, RtsaiConfig.Int("pileUpMaxPerPatch", 10));
+
+        /// <summary>How much further a spilled shrimp may be sent, in metres,
+        /// once its first choice is full. 0 = no limit, which is the intent:
+        /// "even if that means they have to walk a long distance". Set it if a
+        /// map turns out to punish the long walk more than the pile-up.</summary>
+        static float PileUpMaxDetourM()
+            => Mathf.Max(0f, RtsaiConfig.Float("pileUpMaxDetourM", 0f));
 
         public static void MaybeRun(Team team)
         {
@@ -837,10 +900,15 @@ namespace Si_RTS_AI.Planning
                 // ground: one is available on arrival, the other has to be built.
                 // Time is the common unit, and it is what the shrimp actually
                 // loses.
+                int pileMax = PileUpMax();
                 int dst = -1; float dstScore = float.MaxValue;
                 for (int gi = 0; gi < snap.Length; gi++)
                 {
-                    if (snap[gi].Capacity - snap[gi].Current <= 0) continue;
+                    // Count what is already walking here. Current only refreshes
+                    // on the regroup cadence, so within one pass a group with
+                    // three free slots would accept every shrimp on the map.
+                    int walking = pileMax > 0 ? InboundAt(snap[gi].Best, now) : 0;
+                    if (snap[gi].Capacity - snap[gi].Current - walking <= 0) continue;
                     float dx = snap[gi].Best.x - p.x, dz = snap[gi].Best.z - p.z;
                     float walkS = Mathf.Sqrt(dx * dx + dz * dz) / SHRIMP_SPEED;
 
@@ -858,7 +926,7 @@ namespace Si_RTS_AI.Planning
                     // So ask the question that actually matters: can this group
                     // fill the slot sooner on its own than a walker can reach
                     // it? If not, the walker is worth sending.
-                    int spare = Mathf.Max(0, snap[gi].Capacity - snap[gi].Current);
+                    int spare = Mathf.Max(0, snap[gi].Capacity - snap[gi].Current - walking);
                     float localFillS = snap[gi].HasProducer
                         ? spare * EcoSimulator.SHRIMP_BUILD_S
                         : float.MaxValue;          // no producer: never, on its own
@@ -887,10 +955,25 @@ namespace Si_RTS_AI.Planning
                 // does instead of crowding a patch that was already spoken for.
                 var freeP = _freePatches;
                 int freeIdx = -1; float freshSq = float.MaxValue;
+                float nearestFullSq = float.MaxValue;      // best choice we turned down
                 for (int fi = 0; fi < freeP.Length; fi++)
                 {
                     float dx = freeP[fi].x - p.x, dz = freeP[fi].z - p.z;
                     float d = dx * dx + dz * dz;
+
+                    // A PATCH FEEDS A GROUP, NOT A CROWD.
+                    //
+                    // Once ten shrimps are walking to a patch it stops being a
+                    // candidate and the eleventh takes the next one, however much
+                    // further that is. Without this every shrimp freed by the
+                    // same depletion converges on the same ground, because they
+                    // are standing together and the nearest patch is nearest to
+                    // all of them.
+                    if (pileMax > 0 && InboundAt(freeP[fi], now) >= pileMax)
+                    {
+                        if (d < nearestFullSq) nearestFullSq = d;
+                        continue;
+                    }
 // EACH SHRIMP PICKS ITS OWN BEST DESTINATION.
                     //
                     // The expansion commitment used to be applied HERE, pulling
@@ -940,6 +1023,13 @@ namespace Si_RTS_AI.Planning
                 float freeWalkS = Mathf.Sqrt(freshSq) / SHRIMP_SPEED;
                 float waitS     = Mathf.Max(0f, ExpansionLeadS() - freeWalkS);
                 float freeScore = (freeWalkS + waitS * LEAD_WEIGHT) * VALUE_UNTAPPED;
+
+                // The detour cap, if one is set. Default 0 means no limit — a
+                // long walk to fresh ground beats standing on a dead patch.
+                float detourCap = PileUpMaxDetourM();
+                if (detourCap > 0f && nearestFullSq < float.MaxValue && freeIdx >= 0
+                    && Mathf.Sqrt(freshSq) - Mathf.Sqrt(nearestFullSq) > detourCap)
+                    freeIdx = -1;
                 if (freeIdx >= 0 && (dst < 0 || freeScore < dstScore))
                 {
                     // The REQUEST stays with whatever we already committed to, so
@@ -948,6 +1038,11 @@ namespace Si_RTS_AI.Planning
                     Vector3 askFor = CommittedOr(freeP[freeIdx]);
                     _hint = new ExpansionHint { Pos = askFor, Shrimps = stranded, AtTime = now };
                     Commit(askFor, now);
+                    NoteInbound(freeP[freeIdx], now);
+                    // Spilled past a nearer patch that was already full — the
+                    // behaviour this whole mechanism exists to produce, so it is
+                    // counted and reported rather than left to be inferred.
+                    if (nearestFullSq < freshSq) _spilled++;
                     IssueMove(u, freeP[freeIdx]);
                     _assign[u] = new Assignment { Target = freeP[freeIdx],
                                                   AssignedAt = now, LastOrderAt = now };
@@ -974,6 +1069,7 @@ namespace Si_RTS_AI.Planning
                     continue;
                 }
 
+                NoteInbound(snap[dst].Best, now);
                 IssueMove(u, snap[dst].Best);
                 _assign[u] = new Assignment { Target = snap[dst].Best, AssignedAt = now, LastOrderAt = now };
                 rescued++;
@@ -981,7 +1077,16 @@ namespace Si_RTS_AI.Planning
 
             if (rescued > 0 || unloading > 0)
                 MelonLogger.Msg($"[SHRIMP-SUP] depleted-patch shrimps: {stranded} stranded, " +
-                                $"{unloading} depositing first, {rescued} relocated");
+                                $"{unloading} depositing first, {rescued} relocated" +
+                                (_spilled > 0 ? $", {_spilled} spilled past a full patch" : ""));
+            if (_spilled > 0 && now - _lastSpillLogAt > 30f)
+            {
+                _lastSpillLogAt = now;
+                MelonLogger.Msg($"[SHRIMP-SUP] anti-pile-up: {_spilled} shrimp(s) sent past a " +
+                                $"destination already holding {PileUpMax()} walkers — " +
+                                "spreading onto further ground instead of stacking");
+                _spilled = 0;
+            }
         }
 
         const float SUPERVISE_CADENCE_S = 1f;
