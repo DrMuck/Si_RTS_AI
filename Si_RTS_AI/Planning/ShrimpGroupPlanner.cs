@@ -502,6 +502,52 @@ namespace Si_RTS_AI.Planning
         /// could not see at an untapped patch.</summary>
         static int StandingAt(Vector3 p) => Count(_present, p);
 
+        /// <summary>A haul longer than this says the ground being worked wants a
+        /// deposit point of its own. Round trip at shrimp speed is ~80s, which
+        /// is longer than a Bio Cache takes to build.</summary>
+        const float LONG_HAUL_M = 350f;
+
+        /// <summary>Free patch this position belongs to, or -1. The demand map is
+        /// keyed by free-patch index, so a haul has to be attributed to the
+        /// untapped ground it is working before it can be recorded.</summary>
+        static int FreePatchIndexNear(Vector3 p)
+        {
+            var free = _freePatches;
+            int best = -1; float bestSq = GROUP_PATCH_RADIUS_M * GROUP_PATCH_RADIUS_M;
+            for (int i = 0; i < free.Length; i++)
+            {
+                float dx = free[i].x - p.x, dz = free[i].z - p.z;
+                float d = dx * dx + dz * dz;
+                if (d < bestSq) { bestSq = d; best = i; }
+            }
+            return best;
+        }
+
+        static float _lastHaulLogAt;
+
+        static void NoteHaulIfFar(Vector3 p)
+        {
+            int fi = FreePatchIndexNear(p);
+            if (fi < 0) return;                     // not on untapped ground
+            var depot = NearestBcTo(p);
+            if (depot == Vector3.zero) return;
+            float dx = depot.x - p.x, dz = depot.z - p.z;
+            float haul = Mathf.Sqrt(dx * dx + dz * dz);
+            if (haul < LONG_HAUL_M) return;
+
+            _walkedPast.TryGetValue(fi, out float c);
+            _walkedPast[fi] = c + 1f;
+
+            float now = Time.time;
+            if (now - _lastHaulLogAt > 30f)
+            {
+                _lastHaulLogAt = now;
+                MelonLogger.Msg($"[SHRIMP-SUP] long haul: shrimps working " +
+                                $"({_freePatches[fi].x:F0},{_freePatches[fi].z:F0}) unload " +
+                                $"{haul:F0}m away — wants a Bio Cache there");
+            }
+        }
+
         /// <summary>Shrimps here or on their way here. The blueprint's Cyst pass
         /// reads this so it does not buy a producer for ground that relocation
         /// is already staffing.</summary>
@@ -544,6 +590,23 @@ namespace Si_RTS_AI.Planning
                 var d = onTheWay ? _walking : _present;
                 long k = CellKey(at);
                 d[k] = (d.TryGetValue(k, out int n) ? n : 0) + 1;
+
+                // WORKING FAR FROM ANY DEPOSIT POINT IS A REQUEST FOR ONE.
+                //
+                // Detours past untapped ground were already recorded as demand,
+                // but the commoner and costlier case had no signal at all: a
+                // shrimp that ARRIVES at distant ground and then hauls every
+                // load back across the map. DrMuck, 2026-08-07, watching shrimps
+                // at (1077,2007) work toward (604,887) and (597,1439): "seeing
+                // shrimps long distance harvest, despite there could be a
+                // biocache at this place in a timely manner is a significant
+                // disadvantage."
+                //
+                // The haul is measured against the nearest Bio Cache, so the
+                // demand lands on the ground being worked rather than on the
+                // route, and it feeds the same channel the planner already
+                // reads.
+                if (!onTheWay) NoteHaulIfFar(p);
             }
         }
 

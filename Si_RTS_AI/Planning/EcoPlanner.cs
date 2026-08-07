@@ -663,6 +663,12 @@ namespace Si_RTS_AI.Planning
         /// what a Cyst here would produce? Uses the same radius the plan uses to
         /// call a Bio Cache "this site's", widened by the slide the game applies
         /// to a placement.</summary>
+        /// <summary>Detours past a site before it outranks the build order.
+        /// Demand decays by half every 30s, so this is "a few shrimps went the
+        /// long way round recently", not one unlucky walk.</summary>
+        const float HAUL_DEMAND_JUMPS_QUEUE = 2f;
+        static float _lastHaulJumpLogAt;
+
         static bool BcStandingNear(EcoState s, Vector3 pos)
         {
             const float M = 160f;
@@ -2173,15 +2179,44 @@ namespace Si_RTS_AI.Planning
                         // still comes out of surplus: a loop earns nothing
                         // directly, so it waits for cash that has nowhere
                         // better to be.
+                        // SHRIMPS ASKING FOR GROUND OUTRANK THE BUILD ORDER.
+                        //
+                        // Every detour past an untapped patch is recorded as
+                        // demand, and the beam already priced it — but the
+                        // blueprint path bypasses the beam, so on Phase 2 the
+                        // signal was gathered and never spent. Meanwhile shrimps
+                        // harvested at long range because the site they were
+                        // standing on sat behind the build-order window.
+                        // DrMuck, 2026-08-07: "seeing shrimps long distance
+                        // harvest, despite there could be a biocache at this
+                        // place in a timely manner is a significant
+                        // disadvantage."
+                        //
+                        // A demanded site is not reaching FURTHER — the walking
+                        // is already happening and paid for. So it jumps the
+                        // window, exactly as a bridge does, and the chain
+                        // extension above then nodes toward it.
+                        float haulDemand = 0f;
+                        try { haulDemand = ShrimpGroupPlanner.WalkedPastDemand(it.pos); } catch { }
+                        bool demanded = haulDemand >= HAUL_DEMAND_JUMPS_QUEUE
+                                     && it.kind != Blueprint.Kind.Cyst;
+
                         if (it.site < 0)
                         {
                             if (state.cash < LOOP_CASH_FLOOR) continue;
                         }
-                        else if (it.kind != Blueprint.Kind.Cyst)
+                        else if (it.kind != Blueprint.Kind.Cyst && !demanded)
                         {
                             if (!BranchFree(it)) continue;
                             if (it.site != lastSite) { lastSite = it.site; sitesTouched++; }
                             if (sitesTouched > sitesAhead) continue;
+                        }
+                        else if (demanded && Time.time - _lastHaulJumpLogAt > 20f)
+                        {
+                            _lastHaulJumpLogAt = Time.time;
+                            MelonLogger.Msg($"[PLAN/EXEC] {it.kind} at ({it.pos.x:F0},{it.pos.z:F0}) " +
+                                            $"jumps the build order — shrimps have detoured past it " +
+                                            $"(demand {haulDemand:F1})");
                         }
 
                         // Asked for recently and still not standing? Give the

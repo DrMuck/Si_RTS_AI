@@ -215,3 +215,26 @@ Bio Caches at 8. Fix the opening, not the late game.
    read: Node cost was 100 when it is 200, and `TotalConstructionTime` was used
    where `BuildUpTime` was meant.)
 
+---
+
+## 11. Military tactics
+
+Specified 2026-08-07. Full design in **`MILITARY_TACTICS.md`**; this table is the
+rule-of-record. All four are **open** — nothing military is deployed
+(`DefenceExecute` is still false).
+
+| # | Rule | State |
+|---|---|---|
+| 11.1 | **Hold and push.** Hold cheaply while out-scaling, then commit once and commit everything. Hold accumulates a reserve rather than manning a perimeter; the push goes in as one mass at one point, hitting split enemy fragments in sequence rather than their concentration. | open |
+| 11.2 | **Push when army growth rate approaches zero**, not when the enemy is exhausted. Three ceilings stop the army growing — unit cap, production throughput, economy — and `d(armyValue)/dt` in cash detects all three without needing to know which one binds. At cap with a full army, waiting is strictly a loss. | open |
+| 11.3 | **The hold phase builds production, it does not bank cash.** Cash cannot be converted to army on demand, so the steamroll army must be produced *during* the hold. Rising unspent cash while holding is the diagnostic that we are under-built on production — the same waste rules 6.15 and 6.19 already measure, of which military is the missing claimant. | open |
+| 11.4 | **Enemy inactivity does not end the hold.** Static defence holds ground more cheaply per unit area than mobile army, so quiet minutes compound in our favour. What ends the hold is *their build-up rate exceeding ours* — a question of patch share, not aggression. Kills-at-our-defences is the wrong metric and should not be built. | open |
+| 11.5 | **Economic push.** The army advances with the expansion frontier rather than sitting home; a site is not complete until covered, and the next is not taken until the last holds. Hypothesis: rules 6.1/6.2 (weak multi-directional Phase 2/3 expansion) are partly *uncovered breadth dying*, which makes this an eco fix — judge it on the eco metrics. | open |
+| 11.6 | **Guerrilla raids.** Small fast force against weakly-defended critical infrastructure (HQ, eco, production), ranked by `value × 1/localDefence`. A concurrent mission under either posture, not a posture itself, budgeted as a capped fraction of army value so it can never starve the main force or garrison floor. | open |
+| 11.7 | **Formations are an execution layer, not a strategy** — weighted toward a flank to break a weak point. Deferred until `combat.jsonl` yields exchange ratios, per `MILITARY_DESIGN.md` §4. Concentration (unequal sub-groups, different objectives) before geometry; it captures most of the value and needs no new movement machinery. | open |
+| 11.8 | **Scouting for enemy structures is the gating dependency.** 11.4's abort condition, 11.6's targeting, and the enemy-army estimate in 11.2 all need it, and scouting is currently tuned for biotics discovery (7.6–7.8). One unblock, three tactics — and it is not a military feature. | open |
+| 11.9 | **The military plans a portfolio of missions, not per-tick responses** (DrMuck, 2026-08-07: "our military rts needs to think mission/project based"). This is rule 6.5's blueprint pattern applied to combat — scan, plan, execute to the plan, refresh — and it is queued to fail the same way if left greedy: `DefencePlanner` ranks threats per tick and `BattalionManager` raises a response per threatened asset, which at scale is the combat equivalent of noding madness. **Projects** stand and have no completion state (garrison, screen); **missions** complete (raid, deny, push). The test is *can it finish?* | open |
+| 11.10 | **A mission is the cash claimant, not "the military."** `MoneyBroker.IActionSource` already exists and cash is the genuinely shared resource (shrimps carry zero cap weight under the balance mod). Pricing the mission rather than the layer lets a raid compete with a Bio Cache on value, which is what turns rule 6.19's idle cash into something spent against a justification instead of a budget percentage. A flat military-budget constant would be a tuned number standing in for a decision the planner can make. | open |
+| 11.11 | **Battalions become a force pool; intent moves to the mission.** `Battalion.Role = "garrison"/"response"` bakes intent into the force, so re-tasking means re-typing. Also makes `CombatLog`'s deliberately-empty `missionType` the join key, so exchange ratios can finally be read *per mission kind* — the only way to learn whether raids pay, and whether holding really trades better than fighting. | open |
+| 11.12 | **A refresh re-scores, it does not cancel.** An executing mission ends on its own `abortWhen` or on completion, never because something else outscored it this tick. Generalises the rule already implemented in `BattalionManager` — "released by the condition that raised it, not on a timer" — and without it the portfolio thrashes and "never trickle in" is silently violated. | open |
+
