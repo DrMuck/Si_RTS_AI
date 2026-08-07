@@ -733,7 +733,12 @@ namespace Si_RTS_AI.Planning
                 {
                     float dx = s.bcs[i].pos.x - it.pos.x, dz = s.bcs[i].pos.z - it.pos.z;
                     if (dx * dx + dz * dz > WORKS_M2) continue;
-                    if (EcoSimulator.NearestActivePatchIdxPublic(s, s.bcs[i].pos) == mine) return true;
+                    if (EcoSimulator.NearestActivePatchIdxPublic(s, s.bcs[i].pos) != mine) continue;
+                    // Standing near the patch is not the same as being usable
+                    // from it — see Blueprint.ElevationOk. A Bio Cache up a cliff
+                    // leaves the site genuinely unbuilt, so the plan keeps it.
+                    if (!Blueprint.ElevationOk(s.bcs[i].pos, s.patches[mine].pos)) continue;
+                    return true;
                 }
                 return false;
             }
@@ -954,6 +959,29 @@ namespace Si_RTS_AI.Planning
             // and a Cyst follows its Bio Cache, so their slides say nothing about
             // the ground — marking those would have chains steering away from the
             // very patches they are trying to reach.
+            // A Bio Cache that lands up something is worth saying out loud: it
+            // looks fine on the map and earns badly, and until now nothing
+            // measured the one axis that matters for walking.
+            if (want == ActionKind.PlaceBc && team != null)
+            {
+                try
+                {
+                    var st = EcoStateBuilder.Build(team);
+                    int p = EcoSimulator.NearestActivePatchIdxPublic(st, actual);
+                    if (p >= 0 && !Blueprint.ElevationOk(actual, st.patches[p].pos))
+                    {
+                        float rise = Mathf.Abs(actual.y - st.patches[p].pos.y);
+                        float rdx = actual.x - st.patches[p].pos.x, rdz = actual.z - st.patches[p].pos.z;
+                        float run = Mathf.Sqrt(rdx * rdx + rdz * rdz);
+                        MelonLogger.Msg($"[PLACE] Bio Cache at ({actual.x:F0},{actual.z:F0}) sits " +
+                                        $"{rise:F0}m above/below its patch over {run:F0}m — " +
+                                        "shrimps will struggle to reach it; the site stays open");
+                        NoteObstruction(actual);
+                    }
+                }
+                catch { }
+            }
+
             if (want == ActionKind.PlaceNode)
             {
                 if (slide > OBSTRUCTION_SLIDE_M) NoteObstruction(log[best].pos);

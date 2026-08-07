@@ -219,6 +219,34 @@ namespace Si_RTS_AI.Planning
         const float SERVED_M = 50f;
 
         /// <summary>
+        /// Can a shrimp practically walk between these two, or is one of them up
+        /// something?
+        ///
+        /// The planner measures everything on the flat, which is right for build
+        /// ranges — the game checks those in 2D too — and wrong for anything a
+        /// unit has to walk. A Bio Cache on a rock, a cliff shoulder or a roof is
+        /// metres from its patch and a long detour away on foot.
+        ///
+        /// Judged as a gradient rather than a flat height difference: 20m of rise
+        /// over 30m of ground is a wall, the same 20m over 200m is a slope
+        /// shrimps walk without noticing. `maxBcPatchGradient` in rtsai.json;
+        /// 0 disables the test.
+        /// </summary>
+        internal static bool ElevationOk(Vector3 a, Vector3 b)
+        {
+            float maxGrad = RtsaiConfig.Float("maxBcPatchGradient", 0.5f);
+            if (maxGrad <= 0f) return true;
+            float rise = Mathf.Abs(a.y - b.y);
+            if (rise <= ELEVATION_FREE_M) return true;      // noise and kerbs
+            float run = Mathf.Sqrt(SqXZ(a, b));
+            return rise <= maxGrad * Mathf.Max(run, 1f);
+        }
+
+        /// <summary>Height difference below which nothing is judged — terrain
+        /// noise, a structure's own footing, the lip of a crater.</summary>
+        const float ELEVATION_FREE_M = 6f;
+
+        /// <summary>
         /// Do not plan a node that lands on top of something we own or have
         /// already planned.
         ///
@@ -322,6 +350,19 @@ namespace Si_RTS_AI.Planning
                 bool served = false;
                 for (int b = 0; b < s.bcs.Count && !served; b++)
                 {
+                    // HEIGHT IS DISTANCE. Everything here measures on the flat,
+                    // so a Bio Cache 30m from a patch but 25m up a cliff, on a
+                    // rock or on a roof reads as 30m away while the shrimps walk
+                    // the long way round or cannot reach it at all. DrMuck,
+                    // 2026-08-07: "we had some close biocaches but they were on
+                    // top of a rock, on a cliff side or on a building. This was
+                    // hard to reach for the shrimps."
+                    //
+                    // A Bio Cache the shrimps cannot practically use does not
+                    // serve the patch, so the plan should keep the patch as a
+                    // terminal and site another one that can.
+                    if (!ElevationOk(s.bcs[b].pos, s.patches[p].pos)) continue;
+
                     float d2 = SqXZ(s.bcs[b].pos, s.patches[p].pos);
                     if (d2 < SERVED_M * SERVED_M) { served = true; break; }
                     if (d2 > BC_WORKS_M * BC_WORKS_M) continue;

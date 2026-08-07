@@ -113,6 +113,17 @@
   ],
   "maxNodesAheadPerSite": 4,
 
+  "_maxBcPatchGradient": [
+    "Height a Bio Cache may sit above or below its patch, as a GRADIENT: rise",
+    "over horizontal run. Everything else in the planner measures on the flat,",
+    "which is right for build ranges and wrong for anything a shrimp has to walk",
+    "— a cache on a rock, a cliff shoulder or a roof is metres from its patch and",
+    "a long detour on foot. 0.5 means 20m of rise needs 40m of ground.",
+    "A site whose only cache fails this stays open, so the plan sites another.",
+    "0 disables the test."
+  ],
+  "maxBcPatchGradient": 0.5,
+
   "_timeScale": [
     "Simulation speed. 1 = real time. 2 finishes a 25 game-minute round in about",
     "12.5 wall-minutes, doubling soak throughput.",
