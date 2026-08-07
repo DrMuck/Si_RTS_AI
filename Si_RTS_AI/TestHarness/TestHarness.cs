@@ -314,6 +314,12 @@ namespace Si_RTS_AI.TestHarnessNs
                 case "ratio3":   perSites = 3; break;
                 case "ratio4":   perSites = 4; break;
                 case "ratio5":   perSites = 5; break;
+                // Same settings as ratio3, different tag. The anti-pile-up
+                // manager (v0.29.0) changes the bot underneath, so rounds run
+                // after it must not pool with last night's ratio3 in
+                // benchmarks.jsonl — the data has to label itself rather than
+                // rely on someone remembering a cutoff timestamp.
+                case "ratio3ap": perSites = 3; break;
                 case "cap18":    cap = 18; perSites = 0; break;
                 case "bridgeloop":
                     perSites = 3; bridge = Planning.RtsaiConfig.BridgeMode.Loop; break;

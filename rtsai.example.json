@@ -70,12 +70,14 @@
   "_rig": [
     "The A/B rig. configCycle rotates one arm per round; 'off' means the arms",
     "stop and the knobs below apply instead. Arms: adaptive, ratio2..ratio5,",
-    "cap18, bridgeloop, bridgeshortcut, bridgeoff.",
+    "cap18, bridgeloop, bridgeshortcut, bridgeoff, and ratio3ap.",
+    "ratio3ap is ratio3 under a different tag — the anti-pile-up manager changed",
+    "the bot, so its rounds must not pool with last night's ratio3.",
     "roundsPerMap holds the same map for that many rounds before the rotation",
     "advances — high on purpose, because arms need identical ground and only",
     "NarakaCity has a single spawn layout."
   ],
-  "configCycle": "adaptive,ratio2,ratio3,ratio4",
+  "configCycle": "ratio3ap",
   "endRoundAfterMinutes": 25,
   "roundsPerMap": 24,
 
