@@ -1074,6 +1074,33 @@ namespace Si_RTS_AI.Planning
         /// this the chains outrun the shrimps that have to staff them.</summary>
         const int MAX_NODE_FIRES = 6;
 
+        /// <summary>
+        /// HOW MANY FRONTS MAY BE NODING AT ONCE — a hard ceiling from
+        /// rtsai.json, above every budget the planner computes for itself.
+        ///
+        /// The planner funds fronts from surplus and will happily open six or
+        /// more once the bank is deep, which is what the eco soaks wanted. A
+        /// played game may not: broad noding spreads structures a defence cannot
+        /// cover, and DrMuck asked for at most two while playing against it.
+        ///
+        /// Applied at ALL THREE places fronts are opened — the per-tick node fire
+        /// budget, the escape hatch, and pioneer chains. A cap honoured in one of
+        /// three would look configured and do nothing, which is the same failure
+        /// the military layer's Lesser Cyst share had.
+        ///
+        /// 0 disables the ceiling and restores the planner's own budget, which is
+        /// the default: nothing about a soak changes unless the file says so.
+        /// </summary>
+        static int FrontCap => Mathf.Max(0, RtsaiConfig.Int("maxNodeFronts", 0));
+
+        /// <summary>Applies the ceiling to a limit the planner worked out for
+        /// itself. Never raises one.</summary>
+        static int CapFronts(int planned)
+        {
+            int cap = FrontCap;
+            return cap > 0 ? Mathf.Min(planned, cap) : planned;
+        }
+
         /// <summary>Value of one shrimp having walked past a patch to reach
         /// work elsewhere. Deliberately a fraction of PHASE2_BC_BONUS: a single
         /// detour is weak evidence, a horde of them is not, and the counts add
@@ -1692,10 +1719,12 @@ namespace Si_RTS_AI.Planning
                     // but cash is already checked per fire and the shrimp
                     // reserve is already held back, so it only needs to track
                     // how many fronts the strategy actually opened.
-                    int breadth = Mathf.Max(MAX_NODE_FIRES,
-                        BlueprintConfig.CystStrategyAuto ? ExpansionStrategy.SitesAhead : MAX_NODE_FIRES);
+                    int breadth = CapFronts(Mathf.Max(MAX_NODE_FIRES,
+                        BlueprintConfig.CystStrategyAuto ? ExpansionStrategy.SitesAhead : MAX_NODE_FIRES));
+                    // The floor of two is the planner's own "at least advance a
+                    // couple of lines"; it must not out-argue a ceiling of one.
                     maxNodeFires  = FanOutAllowed(state)
-                        ? Mathf.Clamp(surplus / frontCost, 2, breadth)
+                        ? Mathf.Clamp(surplus / frontCost, Mathf.Min(2, breadth), breadth)
                         : 1;
                 }
                 else maxNodeFires = 1;
@@ -2740,7 +2769,7 @@ namespace Si_RTS_AI.Planning
                         foreach (var c in cands)
                         {
                             if (c.kind == ActionKind.Noop) continue;
-                            if (firedHere.Count >= (FanOutAllowed(state) ? ESCAPE_MAX_FIRES : 1)) break;
+                            if (firedHere.Count >= (FanOutAllowed(state) ? CapFronts(ESCAPE_MAX_FIRES) : 1)) break;
 
                             // Spacing separates FRONTS. Two hops of the same
                             // node line share a front by definition, and
@@ -4260,7 +4289,7 @@ namespace Si_RTS_AI.Planning
                 {
                     pioneers.Sort((a, b) => b.score.CompareTo(a.score));
                     var taken = new List<Vector3>(PIONEER_MAX);
-                    int pioneerCap = FanOutAllowed(s) ? PIONEER_MAX : 1;
+                    int pioneerCap = FanOutAllowed(s) ? CapFronts(PIONEER_MAX) : 1;
                     for (int i = 0; i < pioneers.Count && taken.Count < pioneerCap; i++)
                     {
                         Vector3 t = FrontOf(pioneers[i].cand);

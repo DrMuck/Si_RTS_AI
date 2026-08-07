@@ -207,6 +207,29 @@
     "pushRetreatFraction": 0.4
   },
 
+  "_lockAlienCommander": [
+    "true — the alien commander seat is emptied and handed back to the AI within",
+    "  a second of any player taking it. Use it whenever you are playing AGAINST",
+    "  the bot: a human in that seat disables the AI commander, which stands the",
+    "  eco planner down and silences the whole military layer, and the round",
+    "  carries on looking normal. [ALIEN/LOCK] logs each ejection.",
+    "false (default) — anyone may command the aliens. Required for co-op, where",
+    "  EcoAssistWithHumanCommander keeps the economy running for a human."
+  ],
+  "lockAlienCommander": false,
+
+  "_maxNodeFronts": [
+    "Hard ceiling on how many fronts may be NODING at once. Applied at all three",
+    "places fronts are opened — the per-tick node fire budget, the escape hatch,",
+    "and pioneer chains — so it cannot be honoured in one path and ignored in",
+    "another.",
+    "The planner funds fronts from surplus and opens six or more on a deep bank,",
+    "which is right for an eco soak and wrong for a played game, where broad",
+    "noding spreads structures a defence cannot cover.",
+    "0 (default) — no ceiling, the planner's own budget applies."
+  ],
+  "maxNodeFronts": 0,
+
   "_eco": "Economy knobs worth changing between rounds.",
   "blueprintDrivesPhase2": true,
   "replanIntervalS": 30,

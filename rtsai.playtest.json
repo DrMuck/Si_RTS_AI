@@ -72,7 +72,28 @@
     "pushRetreatFraction": 0.4
   },
 
-  "_eco": "Unchanged from the soak configuration — this is the tuned economy.",
+  "_lockAlienCommander": [
+    "The alien commander seat is returned to the AI within a second of anyone",
+    "taking it. Not a courtesy: the moment a human commands the aliens the game",
+    "disables the AI commander, EcoPlanner stands down and every military tick",
+    "declines to order anything — the thing being tested silently stops running",
+    "while the round carries on. [ALIEN/LOCK] says so when it fires.",
+    "Leave false for co-op, where a human commands aliens on purpose."
+  ],
+  "lockAlienCommander": true,
+
+  "_maxNodeFronts": [
+    "Hard ceiling on how many fronts may be NODING at once, above every budget",
+    "the planner computes for itself — the per-tick node fire budget, the escape",
+    "hatch, and pioneer chains all obey it.",
+    "The planner funds fronts from surplus and will open six or more on a deep",
+    "bank, which is what the eco soaks wanted. Two is what a game wants: broad",
+    "noding spreads structures no defence can cover.",
+    "0 restores the planner's own budget."
+  ],
+  "maxNodeFronts": 2,
+
+  "_eco": "Otherwise unchanged from the soak configuration — this is the tuned economy.",
   "pileUpMaxPerPatch": 10,
   "pileUpMaxDetourM": 0,
   "bridgeMode": "loop",

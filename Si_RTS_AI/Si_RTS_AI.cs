@@ -94,6 +94,24 @@ namespace Si_RTS_AI
             MelonLogger.Msg($"[RTSA] Per-round dump dir: {Path.GetFullPath(_sessionLogDir)}");
             MelonLogger.Msg($"[RTSA] AI summary cadence: every {LOG_EVERY_N_TICKS} Think() ticks per team.");
 
+            // WHICH FACTIONS MAY PLAY, spelled the way the game spells it.
+            //
+            // [Silica]/VersusAutoSelectMode is a vanilla preference whose legal
+            // values are ETeamsVersus member names, and a value that does not
+            // parse is not an error anyone sees — it falls back, and the round
+            // starts with the wrong teams. The enum is three lines of reflection
+            // and guessing at it from the assembly's string heap is not the same
+            // as reading it, so print it once and stop guessing.
+            try
+            {
+                MelonLogger.Msg("[RTSA] [Silica]/VersusAutoSelectMode accepts: " +
+                                string.Join(", ", Enum.GetNames(typeof(GameModeExt.ETeamsVersus))) +
+                                "  (currently '" +
+                                (MelonPreferences.GetCategory("Silica")?
+                                    .GetEntry<string>("VersusAutoSelectMode")?.Value ?? "unset") + "')");
+            }
+            catch (Exception ex) { MelonLogger.Warning("[RTSA] ETeamsVersus dump failed: " + ex.Message); }
+
             // Headless test harness — MelonPreferences-gated soak-test driver.
             TestHarnessNs.TestHarness.Init();
             Planning.EcoPlannerConfig.Init();
@@ -237,6 +255,10 @@ namespace Si_RTS_AI
             {
                 var gm = GameMode.CurrentGameMode as MP_Strategy;
                 if (gm == null) return;
+
+                // BEFORE the per-team work, because standing the planner down for
+                // a seat we are about to take back would waste the tick.
+                Faction.AlienCommanderLock.Tick(gm);
                 var setups = gm.TeamSetups;
                 if (setups == null) return;
 
@@ -391,6 +413,10 @@ namespace Si_RTS_AI
                 if (!string.IsNullOrEmpty(mp))
                     AppendToRound(mp);
 
+                string acl = Faction.AlienCommanderLock.BuildRoundSummaryFragment();
+                if (!string.IsNullOrEmpty(acl))
+                    AppendToRound(acl);
+
                 string hh = Faction.HumanConstruction.BuildRoundSummaryFragment();
                 if (!string.IsNullOrEmpty(hh))
                     AppendToRound(hh);
@@ -452,6 +478,8 @@ namespace Si_RTS_AI
             Perception.UnitCaps.ResetForNewRound();
             Perception.CombatLog.ResetForNewRound();
             Planning.MilitaryConfig.Reload();
+            Faction.AlienCommanderLock.Reload();
+            Faction.AlienCommanderLock.ResetForNewRound();
             Planning.DefencePlanner.ResetForNewRound();
             Planning.MissionPlanner.ResetForNewRound();
             Planning.BattalionManager.ResetForNewRound();
