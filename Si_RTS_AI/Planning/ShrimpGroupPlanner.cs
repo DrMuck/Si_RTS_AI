@@ -441,6 +441,13 @@ namespace Si_RTS_AI.Planning
             _walking.Clear();
             _present.Clear();
             _censusAt = -999f;
+            // Demand is keyed by index into _freePatches, and that array is
+            // rebuilt from scratch each round — carrying the counts over would
+            // attribute last round's detours to whatever patch happens to land
+            // on the same index. It was never cleared before.
+            _walkedPast.Clear();
+            _haulNotedAt.Clear();
+            _walkedPastDecayAt = 0f;
             _spilled = 0;
             _lastSpillLogAt = 0f;
         }
@@ -507,6 +514,9 @@ namespace Si_RTS_AI.Planning
         /// is longer than a Bio Cache takes to build.</summary>
         const float LONG_HAUL_M = 350f;
 
+        /// <summary>One haul point per patch per this long. See NoteHaulIfFar.</summary>
+        const float HAUL_NOTE_COOLDOWN_S = 15f;
+
         /// <summary>Free patch this position belongs to, or -1. The demand map is
         /// keyed by free-patch index, so a haul has to be attributed to the
         /// untapped ground it is working before it can be recorded.</summary>
@@ -524,7 +534,13 @@ namespace Si_RTS_AI.Planning
         }
 
         static float _lastHaulLogAt;
+        static readonly Dictionary<int, float> _haulNotedAt = new Dictionary<int, float>();
 
+        /// <summary>The late signal: shrimps already standing on distant ground
+        /// and hauling back. Kept because vanilla re-tasks shrimps we never
+        /// dispatched, so this is the only evidence for those — but throttled
+        /// per patch, since the census would otherwise add a point per shrimp
+        /// per second and drown the dispatch signal that matters more.</summary>
         static void NoteHaulIfFar(Vector3 p)
         {
             int fi = FreePatchIndexNear(p);
@@ -534,6 +550,10 @@ namespace Si_RTS_AI.Planning
             float dx = depot.x - p.x, dz = depot.z - p.z;
             float haul = Mathf.Sqrt(dx * dx + dz * dz);
             if (haul < LONG_HAUL_M) return;
+
+            float t = Time.time;
+            if (_haulNotedAt.TryGetValue(fi, out float last) && t - last < HAUL_NOTE_COOLDOWN_S) return;
+            _haulNotedAt[fi] = t;
 
             _walkedPast.TryGetValue(fi, out float c);
             _walkedPast[fi] = c + 1f;
@@ -559,7 +579,36 @@ namespace Si_RTS_AI.Planning
         {
             long k = CellKey(p);
             _walking[k] = (_walking.TryGetValue(k, out int n) ? n : 0) + 1;
+
+            // THE MOMENT TO NODE IS WHEN THEY SET OFF, NOT WHEN THEY ARRIVE.
+            //
+            // DrMuck, 2026-08-07: "it is rather more important to node there,
+            // once the shrimps aim already to relocate to that (non expanded)
+            // biotics (not when they are already there)."
+            //
+            // The walk is 40-160s and a Bio Cache takes 20s, so a request raised
+            // at dispatch is met before they get there and the ground earns from
+            // the first load. Raised on arrival it is already too late: they are
+            // standing on a patch with nowhere to deposit, which is the long-haul
+            // case, and the haul has begun.
+            //
+            // Recorded once per dispatched shrimp — this runs exactly once per
+            // issued order, unlike the census, which would add a point per
+            // second of walking and saturate the signal.
+            int fi = FreePatchIndexNear(p);
+            if (fi < 0) return;
+            _walkedPast.TryGetValue(fi, out float c);
+            _walkedPast[fi] = c + 1f;
+            if (now - _lastDispatchLogAt > 20f)
+            {
+                _lastDispatchLogAt = now;
+                MelonLogger.Msg($"[SHRIMP-SUP] heading for untapped " +
+                                $"({_freePatches[fi].x:F0},{_freePatches[fi].z:F0}) — " +
+                                "raising demand now so the chain arrives with them");
+            }
         }
+
+        static float _lastDispatchLogAt;
 
         /// <summary>One bucket per shrimp: walking if it has a fresh assignment
         /// it has not reached, standing otherwise.</summary>

@@ -238,3 +238,19 @@ rule-of-record. All four are **open** — nothing military is deployed
 | 11.11 | **Battalions become a force pool; intent moves to the mission.** `Battalion.Role = "garrison"/"response"` bakes intent into the force, so re-tasking means re-typing. Also makes `CombatLog`'s deliberately-empty `missionType` the join key, so exchange ratios can finally be read *per mission kind* — the only way to learn whether raids pay, and whether holding really trades better than fighting. | open |
 | 11.12 | **A refresh re-scores, it does not cancel.** An executing mission ends on its own `abortWhen` or on completion, never because something else outscored it this tick. Generalises the rule already implemented in `BattalionManager` — "released by the condition that raised it, not on a timer" — and without it the portfolio thrashes and "never trickle in" is silently violated. | open |
 
+
+---
+
+## 12. Learning from matches
+
+Specified 2026-08-07. Full plan in **`LEARNING.md`**.
+
+| # | Rule | State |
+|---|---|---|
+| 12.1 | **Reinforcement learning does not fit and should not be attempted.** RL needs 10⁵–10⁶ episodes; a Silica match is 15–35 min of real time against humans who have to show up, so a community server yields 20–50 a week — three to four orders of magnitude short. The gap is a missing simulator, not missing patience. Compounded by sparse credit assignment (one bit at match end) and non-stationarity (every eco change invalidates prior experience). | open |
+| 12.2 | **The unit of learning is the engagement, not the match.** This is what makes the goal achievable: one round yields tens of independent observations of compositions trading, so ~1,000 engagements ≈ 20–35 matches. Turns an intractable policy-learning problem into parameter estimation with a dense immediate signal and no credit-assignment problem. | open |
+| 12.3 | **Hand-authored prior, updated by measurement, pooled by class.** Per `MILITARY_DESIGN.md` §2.6 — ship the honest table first; shrinkage moves a cell off the prior in proportion to its sample count; sparse unit pairings borrow from their class pairing. Every cell carries its sample count so the planner can refuse to act on four fights. No network, no training loop. | open |
+| 12.4 | **BLOCKING: `combat.jsonl` records who died, not who fought.** The row carries `lost{}` only, with no record of forces present, so a composition that wins without losses is indistinguishable from one that was absent and every ratio is conditioned on having died. `engaged` must be added before any match data is worth collecting. | open, blocks 12.5 |
+| 12.5 | **Stamp the confounders before opening the server** — they cannot be reconstructed afterwards. AI version + config hash (the AI changes weekly), commander identity (**skill is a larger effect than composition** — without it the matrix learns "we lose to this player"), FPS players in the fight (a piloted unit is worth several AI ones), static defence in range (else unit quality is conflated with turret support, which is the hold-and-push premise itself). | open |
+| 12.6 | **Human commander rounds are demonstration data, and that is the best reason to run the server.** Already proven here: §9 is one human round turned into the benchmark the whole eco stack is measured against, and it yielded the reach-crosses-2000m insight from a single game. Do the same for army composition — log what the human builds, when, against what; the gap to ours is the finding. | open |
+| 12.7 | **Exploration only after the populated cells are real.** A matrix learned from our own play only describes compositions we already build, so a unit never built stays at the prior forever. Fix with ε-greedy composition choice flagged as exploratory — a contextual bandit, not RL, with a rate that can be set to zero. Exploring before you can measure is noise. | open |
