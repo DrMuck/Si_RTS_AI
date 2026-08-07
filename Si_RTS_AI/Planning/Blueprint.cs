@@ -99,21 +99,54 @@ namespace Si_RTS_AI.Planning
         const float RETRY_S = 20f;
         const float RETRY_M = 45f;
 
+        /// <summary>
+        /// Asked recently, with an ESCALATING wait.
+        ///
+        /// A flat 20s retry assumes the spot works and the search was merely
+        /// slow. When the spot itself is unbuildable — obstruction, terrain, a
+        /// no-build zone — the request can never succeed there, and retrying it
+        /// every 20s for a whole round is how five nodes ended up stacked at
+        /// (1200,1770) on NarakaCity 2026-08-07: each attempt slid ~57m to the
+        /// nearest legal ground, the plan never recognised it, and asked again.
+        /// DrMuck's read, confirmed by the constant 57m offset: "maybe the node
+        /// couldn't be placed due to obstructions at the blueprint planned
+        /// position, that lead to confusion."
+        ///
+        /// So the wait doubles with each attempt at the same spot. A spot that
+        /// works is unaffected — it succeeds and stops being asked. A spot that
+        /// cannot work backs off to minutes instead of burning a structure every
+        /// 45 seconds, and the next replan gets to propose somewhere else.
+        /// </summary>
         internal static bool RecentlyAsked(Kind k, Vector3 p)
         {
             float now = Time.time;
-            bool hit = false;
+            int tries = 0;
+            float newest = 0f;
             for (int i = _attempts.Count - 1; i >= 0; i--)
             {
-                if (now - _attempts[i].at > RETRY_S) { _attempts.RemoveAt(i); continue; }
-                if (hit || _attempts[i].kind != k) continue;
-                if (SqXZ(_attempts[i].pos, p) < RETRY_M * RETRY_M) hit = true;
+                if (now - _attempts[i].at > FORGET_S) { _attempts.RemoveAt(i); continue; }
+                if (_attempts[i].kind != k) continue;
+                if (SqXZ(_attempts[i].pos, p) >= RETRY_M * RETRY_M) continue;
+                tries++;
+                if (_attempts[i].at > newest) newest = _attempts[i].at;
             }
-            return hit;
+            if (tries == 0) return false;
+            float wait = Mathf.Min(RETRY_S * Mathf.Pow(2f, tries - 1), RETRY_MAX_S);
+            return now - newest < wait;
         }
 
         internal static void NoteAsked(Kind k, Vector3 p) =>
             _attempts.Add(new Attempt { kind = k, pos = p, at = Time.time });
+
+        /// <summary>Ceiling on the escalating retry wait — long enough that a
+        /// blocked spot stops costing structures, short enough that ground which
+        /// opens up (a wreck cleared, a rival's building lost) is tried again
+        /// within a round.</summary>
+        const float RETRY_MAX_S = 300f;
+
+        /// <summary>How long an attempt is remembered for the escalation count.
+        /// Longer than RETRY_MAX_S so the backoff cannot reset itself.</summary>
+        const float FORGET_S = 600f;
 
         // ---- Geometry the plan is built against ---------------------------
         //

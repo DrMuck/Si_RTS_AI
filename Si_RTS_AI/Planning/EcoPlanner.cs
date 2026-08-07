@@ -682,7 +682,18 @@ namespace Si_RTS_AI.Planning
 
         static bool BlueprintAlreadyStanding(Blueprint.Item it, EcoState s)
         {
-            float m = it.kind == Blueprint.Kind.Node ? 45f
+            // A NODE IS "BUILT" WHERE THE GAME PUT IT, NOT WHERE WE ASKED.
+            //
+            // 45m was tighter than the slide. NarakaCity 2026-08-07, the site at
+            // (1092,2005): five nodes requested at (1234,1811) and landed at
+            // (1195,1770), (1205,1770), (1210,1770), (1200,1770), (1215,1770) —
+            // every one ~57m short, none inside 45m, so the plan re-planned the
+            // identical hop and fired again every 45s. A thousand credits stacked
+            // in a 20m spread while the chain never advanced and shrimps hauled
+            // 544m. Half a node reach is still well inside the ~135m spacing, so
+            // it cannot merge two genuinely distinct hops.
+            float m = it.kind == Blueprint.Kind.Node
+                        ? Mathf.Max(45f, EcoSimulator.NODE_REACH_M * 0.5f)
                     : it.kind == Blueprint.Kind.BioCache ? 60f
                     : CYST_ORDERED_RADIUS_M;
             float m2 = m * m;
