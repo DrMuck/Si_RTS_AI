@@ -1797,15 +1797,35 @@ namespace Si_RTS_AI.Planning
                             && now - ca.AssignedAt < RELOCATE_COOLDOWN_S) continue;
                         if (CarriedBy(u) > 0) continue;      // deposit first, as ever
 
+                        // EVACUATING ONTO GROUND WE CANNOT EQUIP IS NOT A RESCUE.
+                        //
+                        // This picked the NEAREST free patch on raw distance. The
+                        // displaced-shrimp path weighs how ready the ground is —
+                        // build time plus a build per outstanding hop — but the
+                        // spill did not, so it emptied crowded patches onto
+                        // untapped ground the chain had not reached and the
+                        // shrimps hauled from there. NarakaCity 2026-08-07:
+                        // "long haul: shrimps working (610,880) unload 704m away"
+                        // in the same second as "spill: 7 shrimp(s) onto untapped
+                        // ground". We were causing the mass migration DrMuck was
+                        // watching, and then paying for it in per-worker income.
+                        //
+                        // Same scoring as the other path now: the walk, plus
+                        // whatever of the wait outlasts it.
                         Vector3 p = u.transform.position;
-                        int best = -1; float bestSq = float.MaxValue, nearestFullSq = float.MaxValue;
+                        int best = -1; float bestScore = float.MaxValue, nearestFullSq = float.MaxValue;
+                        float bestSq = float.MaxValue;
                         for (int fi = 0; fi < _freePatches.Length; fi++)
                         {
                             float dx = _freePatches[fi].x - p.x, dz = _freePatches[fi].z - p.z;
                             float d = dx * dx + dz * dz;
                             if (StandingAt(_freePatches[fi]) + WalkingTo(_freePatches[fi]) >= pileMax)
                             { if (d < nearestFullSq) nearestFullSq = d; continue; }
-                            if (d < bestSq) { bestSq = d; best = fi; }
+
+                            float walkS = Mathf.Sqrt(d) / SHRIMP_SPEED;
+                            float waitS = Mathf.Max(0f, ExpansionLeadFor(_freePatches[fi]) - walkS);
+                            float score = walkS + waitS * LEAD_WEIGHT;
+                            if (score < bestScore) { bestScore = score; bestSq = d; best = fi; }
                         }
                         if (best < 0) break;                 // every free patch is spoken for
                         if (detourCap > 0f && nearestFullSq < float.MaxValue
