@@ -440,6 +440,7 @@ namespace Si_RTS_AI.Planning
             ReissuedThisRound = 0;
             _walking.Clear();
             _present.Clear();
+            _censusAt = -999f;
             _spilled = 0;
             _lastSpillLogAt = 0f;
         }
@@ -511,8 +512,11 @@ namespace Si_RTS_AI.Planning
 
         /// <summary>One bucket per shrimp: walking if it has a fresh assignment
         /// it has not reached, standing otherwise.</summary>
+        static float _censusAt = -999f;
+
         static void TakeCensus(Team team, float now)
         {
+            _censusAt = now;
             _walking.Clear();
             _present.Clear();
             var units = team.Units;
@@ -543,6 +547,13 @@ namespace Si_RTS_AI.Planning
         /// restores the nearest-patch-wins behaviour.</summary>
         static int PileUpMax()
             => Mathf.Max(0, RtsaiConfig.Int("pileUpMaxPerPatch", 10));
+
+        /// <summary>Shrimps one tick may push off over-capacity groups. Bigger
+        /// than MOVES_PER_TICK on purpose: that budget protects shrimps that are
+        /// WORKING, and a shrimp standing 24-deep on a patch that feeds 3 is not
+        /// one of them. Still bounded, so a cascade does not become an order
+        /// storm.</summary>
+        const int SPILL_PER_TICK = 12;
 
         /// <summary>How much further a spilled shrimp may be sent, in metres,
         /// once its first choice is full. 0 = no limit, which is the intent:
@@ -1591,6 +1602,88 @@ namespace Si_RTS_AI.Planning
                 dst.Current++;
                 moved++;
                 MigratedThisRound++;
+            }
+
+            // ---- Spill: an over-capacity group pushes onto untapped ground ----
+            //
+            // GATE ON ARRIVAL, NOT ON DISPLACEMENT.
+            //
+            // v0.29 capped how many shrimps we SEND to a patch, which turned out
+            // to govern almost nothing: when a patch dies, the game's own harvest
+            // AI re-tasks every shrimp on it before our supervisor looks, so they
+            // are already walking and never enter that path. NarakaCity
+            // 2026-08-07 measured "20 stranded, 16 depositing first, 4 relocated"
+            // against seven depletions in three minutes, and not one anti-pile-up
+            // line all round — while the map showed 24 shrimps on a patch with
+            // capacity 3.
+            //
+            // So correct the crowd wherever it came from. A group holding more
+            // than its capacity has shrimps that are producing nothing by
+            // definition, and the trickle budget that protects WORKING shrimps
+            // has no claim on them. They go to untapped ground, which is the only
+            // destination that adds capacity rather than moving the queue —
+            // DrMuck, 2026-08-07, naming two patches 1,200m out that the pile at
+            // (1684,899) should have gone to.
+            int pileMax = PileUpMax();
+            int spilledNow = 0;
+            if (pileMax > 0 && _freePatches.Length > 0)
+            {
+                // Supervise takes the census, but it has its own cadence and
+                // several early exits — an empty census would read every patch
+                // as unoccupied and send the whole surplus to the nearest one,
+                // which is the bug this pass exists to fix.
+                if (now - _censusAt > 2f) TakeCensus(team, now);
+                float detourCap = PileUpMaxDetourM();
+                for (int gi = 0; gi < groups.Count && spilledNow < SPILL_PER_TICK; gi++)
+                {
+                    var g = groups[gi];
+                    int over = g.Current - g.Capacity;
+                    if (over <= 0) continue;
+
+                    // Furthest from the patch leaves first — it is doing the
+                    // least good where it stands.
+                    g.Members.Sort((x, y) =>
+                        SqDist(y.transform.position, g.BestPatch).CompareTo(SqDist(x.transform.position, g.BestPatch)));
+
+                    for (int k = 0; k < g.Members.Count && over > 0 && spilledNow < SPILL_PER_TICK; k++)
+                    {
+                        var u = g.Members[k];
+                        if (u == null || u.IsDestroyed) continue;
+                        if (_assign.TryGetValue(u, out var ca)
+                            && now - ca.AssignedAt < RELOCATE_COOLDOWN_S) continue;
+                        if (CarriedBy(u) > 0) continue;      // deposit first, as ever
+
+                        Vector3 p = u.transform.position;
+                        int best = -1; float bestSq = float.MaxValue, nearestFullSq = float.MaxValue;
+                        for (int fi = 0; fi < _freePatches.Length; fi++)
+                        {
+                            float dx = _freePatches[fi].x - p.x, dz = _freePatches[fi].z - p.z;
+                            float d = dx * dx + dz * dz;
+                            if (StandingAt(_freePatches[fi]) + WalkingTo(_freePatches[fi]) >= pileMax)
+                            { if (d < nearestFullSq) nearestFullSq = d; continue; }
+                            if (d < bestSq) { bestSq = d; best = fi; }
+                        }
+                        if (best < 0) break;                 // every free patch is spoken for
+                        if (detourCap > 0f && nearestFullSq < float.MaxValue
+                            && Mathf.Sqrt(bestSq) - Mathf.Sqrt(nearestFullSq) > detourCap) break;
+
+                        Vector3 dstPos = _freePatches[best];
+                        NoteInbound(dstPos, now);
+                        IssueMove(u, dstPos);
+                        _assign[u] = new Assignment { Target = dstPos, AssignedAt = now, LastOrderAt = now };
+                        g.Current--; over--; spilledNow++; MigratedThisRound++;
+                        // One Bio Cache at a time still gets finished — the
+                        // commitment governs the REQUEST, not the walk.
+                        Commit(CommittedOr(dstPos), now);
+                    }
+                }
+                if (spilledNow > 0 && now - _lastSpillLogAt > 20f)
+                {
+                    _lastSpillLogAt = now;
+                    MelonLogger.Msg($"[SHRIMP-SUP] spill: {spilledNow} shrimp(s) off over-capacity " +
+                                    $"groups onto untapped ground (quota {pileMax} per patch, " +
+                                    "standing + walking)");
+                }
             }
 
             // ---- Publish an expansion hint if shrimps have nowhere good to go ----
