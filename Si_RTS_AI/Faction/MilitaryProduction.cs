@@ -249,10 +249,16 @@ namespace Si_RTS_AI.Faction
                     try { queueDepth = s.ProductionQueue?.Count ?? 0; } catch { }
                     _totalThisPass++;
                     if (queueDepth >= QUEUE_DEPTH) { _busyThisPass++; continue; }
-                    // A free slot exists at THIS type, so throughput is not what
-                    // is stopping it — whatever happens next, this type does not
-                    // count as saturated this pass.
-                    _typeBusy[kv.Key] = false;
+                    // A free slot here is NOT yet evidence of slack. We are the
+                    // thing that fills it, and we are looking at it in the
+                    // instant before we do — so a producer running flat out
+                    // shows a free slot on every single pass.
+                    //
+                    // That is why "asking for another" never fired: one Greater
+                    // Spawning Cyst, pinned on 45-second Behemoths, read as
+                    // not-saturated forever because our own tick caught it
+                    // between units. Slack means the slot was free AND WE COULD
+                    // NOT USE IT — see below, where a failed queue marks it.
 
                     var opts = new List<ConstructionData>();
                     if (s.ConstructionOptions != null)
@@ -323,7 +329,12 @@ namespace Si_RTS_AI.Faction
                         reasons.Append(opt.ObjectInfo?.DisplayName).Append('=').Append(res).Append(' ');
                     }
                     if (!queued)
+                    {
+                        // Free slot we could not fill: genuine slack. Money, tech
+                        // or options are the constraint, not building count.
+                        _typeBusy[kv.Key] = false;
                         LogFailureOnce(kv.Key, $"[MIL/PROD] {kv.Key} queued nothing: {reasons}");
+                    }
                 }
             }
         }
@@ -398,10 +409,32 @@ namespace Si_RTS_AI.Faction
             // producer converts roughly its unit cost every build time; if cash
             // is piling up faster than the producers can consume it, the answer
             // is another producer, not a deeper queue.
+            // A FORWARD SITE IS A REASON BY ITSELF.
+            //
+            // Producer count is a THROUGHPUT question and the FOB is a POSITION
+            // question, and answering the second with the first is why DrMuck
+            // kept seeing no FOB: the blueprint planned one for minutes at a
+            // time — "Forward (1036,-786) ... on our network front, covered by
+            // our own force" — and nothing built it, because home production was
+            // not saturated enough to justify a second building.
+            //
+            // But we do not want a second Greater Cyst there for its output. We
+            // want units to appear 3,000m closer to the enemy. That is worth one
+            // building whether or not the first one is busy.
+            var plan = Planning.MilitaryBlueprint.NextSite(team);
+            bool forwardWanted =
+                plan != null &&
+                plan.Purpose == Planning.MilitaryBlueprint.Purpose.Forward &&
+                !NearAnyExisting(team, plan.Pos, 350f);
+
             foreach (var name in HigherTierProducerNames)
             {
                 if (!_producerStructureCds.TryGetValue(name, out var cd)) continue;
                 int want = WantedProducerCount(name);
+                // One extra allowance, for the forward site only, and only up to
+                // the configured cap.
+                if (forwardWanted)
+                    want = Mathf.Min(want + 1, Planning.MilitaryConfig.MaxProducersPerType);
                 have.TryGetValue(name, out int c);
 
                 // Did the last request for this type actually land?
@@ -556,6 +589,29 @@ namespace Si_RTS_AI.Faction
             }
             catch { }
             return total;
+        }
+
+        /// <summary>Is a producer of ours already standing near this ground?</summary>
+        static bool NearAnyExisting(Team team, Vector3 pos, float radiusM)
+        {
+            float r2 = radiusM * radiusM;
+            try
+            {
+                var structs = team.Structures;
+                if (structs == null) return false;
+                for (int i = 0; i < structs.Count; i++)
+                {
+                    var st = structs[i];
+                    if (st?.ObjectInfo == null || st.IsDestroyed) continue;
+                    string n = st.ObjectInfo.DisplayName ?? "";
+                    if (!ProducerStructureNames.Contains(n)) continue;
+                    Vector3 p = st.transform.position;
+                    float dx = p.x - pos.x, dz = p.z - pos.z;
+                    if (dx * dx + dz * dz <= r2) return true;
+                }
+            }
+            catch { }
+            return false;
         }
 
         static bool IsLesser(string typeName) =>
