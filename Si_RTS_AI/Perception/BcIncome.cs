@@ -207,6 +207,28 @@ namespace Si_RTS_AI.Perception
             return e.RecentWindow + (e.Deposited - e.MarkDeposited);
         }
 
+        /// <summary>
+        /// WHAT THE ECONOMY EARNS PER SECOND, measured from deliveries.
+        ///
+        /// EcoRateSampler cannot answer this and it took a wasted round to see
+        /// why: it counts cash INCREASES, so once the team sits at its storage
+        /// cap the cash stops rising and measured income reads zero — precisely
+        /// when there is most money and most reason to spend it. The military
+        /// production gate read 0/s all round and never opened a second
+        /// producer, which is the "still just one cyst" DrMuck kept seeing.
+        ///
+        /// Deliveries do not care about the cap. This sums what every Bio Cache
+        /// actually brought in over the recent window, which is earning power
+        /// whether or not the bank had room for it.
+        /// </summary>
+        internal static float EarnedPerSec()
+        {
+            long recent = 0;
+            foreach (var kv in _bcs)
+                recent += kv.Value.RecentWindow + (kv.Value.Deposited - kv.Value.MarkDeposited);
+            return recent / RECENT_WINDOW_S;
+        }
+
         /// <summary>Every Bio Cache we have seen, with what it earned lately.</summary>
         internal static void ForEach(Action<UnityEngine.Vector3, long, long> fn)
         {

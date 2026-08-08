@@ -399,7 +399,8 @@ namespace Si_RTS_AI.Faction
                     now - askedAt < REQUEST_TTL_S) continue;
                 int cost = SafeCost(cd);
                 if (cost > budget) return;
-                Vector3 at = ProducerAnchor(team, nestPos);
+                var site = ProducerSite(team);
+                Vector3 at = site.Pos == Vector3.zero ? nestPos : site.Pos;
                 bool fired = false;
                 try { fired = AlienConstruction.TryBuildStructureByCd(team, cd, at); }
                 catch (Exception ex) { MelonLogger.Warning("[MIL/PROD] TryBuildStructureByCd threw: " + ex.Message); }
@@ -410,9 +411,7 @@ namespace Si_RTS_AI.Faction
                     SpentThisRound += cost;
                     _requestedAt[name] = now;
                     MelonLogger.Msg($"[MIL/PROD] placed {name} #{c + 1}/{want} at " +
-                                    $"({at.x:F0},{at.z:F0})" +
-                                    (at == nestPos ? " (Nest — nothing worth covering yet)"
-                                                   : " (toward the ground we are defending)"));
+                                    $"({at.x:F0},{at.z:F0}) — {site.Purpose}: {site.Why}");
                 }
                 return;
             }
@@ -505,6 +504,13 @@ namespace Si_RTS_AI.Faction
                     if (st?.ObjectInfo == null || st.IsDestroyed) continue;
                     string tn = st.ObjectInfo.DisplayName ?? "";
                     if (!ProducerStructureNames.Contains(tn)) continue;
+                    // ONLY WHAT THE MILITARY IS ACTUALLY FEEDING. The first
+                    // version summed every Lesser Spawning Cyst on the map and
+                    // reported a draw of 333/s — but fifteen of those belong to
+                    // the economy and are making shrimps. Counting the
+                    // economy's producers against the military's budget shut the
+                    // gate on its own.
+                    if (IsLesser(tn) && !IsClaimed(st)) continue;
                     bool functional = false;
                     try { functional = st.IsFunctional; } catch { }
                     if (!functional) continue;
@@ -519,6 +525,9 @@ namespace Si_RTS_AI.Faction
             catch { }
             return total;
         }
+
+        static bool IsLesser(string typeName) =>
+            string.Equals(typeName, "Lesser Spawning Cyst", StringComparison.OrdinalIgnoreCase);
 
         /// <summary>Cash per second one producer consumes if it never idles.</summary>
         static float DrawOf(Structure s)
@@ -580,10 +589,13 @@ namespace Si_RTS_AI.Faction
             // So: income over the last minute, projected forward to the moment
             // the producer would come online. Trend clamped non-negative, since
             // betting on a decline reversing is hope rather than prediction.
+            // Deliveries, not cash deltas — see BcIncome.EarnedPerSec. The cash
+            // reading goes to zero at the storage cap, which is the one moment
+            // the answer should certainly be yes.
             float income = 0f, trend = 0f;
             try
             {
-                income = Perception.EcoRateSampler.GetRecentIncomePerSec(team);
+                income = Perception.BcIncome.EarnedPerSec();
                 trend  = Mathf.Max(0f, Perception.EcoRateSampler.GetIncomeTrend(team));
             }
             catch { }
@@ -632,42 +644,10 @@ namespace Si_RTS_AI.Faction
             return Mathf.Clamp(w < 1 ? 1 : w, 1, Mathf.Max(1, Planning.MilitaryConfig.MaxProducersPerType));
         }
 
-        /// <summary>
-        /// WHERE a producer goes, which decides how long its units walk before
-        /// they matter.
-        ///
-        /// DrMuck: "Military cant apply pressure from the distance ... it could
-        /// be more efficient to place producers more to the front lines or FOBs
-        /// to save delay in walking distance."
-        ///
-        /// He is right and the old rule was the worst case: everything at the
-        /// Nest, so every unit walked the full radius of the base before
-        /// reaching anything. This is the cheap version of the fix — anchor on
-        /// the highest-scoring thing DefencePlanner is already worried about,
-        /// which is by construction ground that earns and is threatened. A real
-        /// FOB siting pass belongs in the blueprint, with the frontier and the
-        /// enemy approach as inputs; this only stops us building at the back.
-        ///
-        /// Falls back to the Nest when nothing is under threat, because a
-        /// producer parked at a random expansion in peacetime is worse than one
-        /// at home.
-        /// </summary>
-        static Vector3 ProducerAnchor(Team team, Vector3 nestPos)
-        {
-            try
-            {
-                var tasks = Planning.DefencePlanner.Tasks;
-                for (int i = 0; i < tasks.Count; i++)
-                {
-                    if (tasks[i].Kind == "home") continue;
-                    // Pull back toward the Nest so it is behind the line it
-                    // covers rather than on top of it.
-                    return Vector3.Lerp(tasks[i].Pos, nestPos, 0.35f);
-                }
-            }
-            catch { }
-            return nestPos;
-        }
+        /// <summary>Where the next producer goes, and what it is for. The
+        /// decision belongs to MilitaryBlueprint — this only asks.</summary>
+        static Planning.MilitaryBlueprint.Site ProducerSite(Team team) =>
+            Planning.MilitaryBlueprint.NextSite(team);
 
         // ================================================================
         // Helpers

@@ -337,6 +337,8 @@ namespace Si_RTS_AI
                             // Bio Cache candidates are fog-gated.
                             Planning.ScoutPlanner.Tick(team);
 
+                            try { Planning.MilitaryBlueprint.Tick(team); }
+                            catch (Exception ex) { MelonLogger.Warning("[MIL] blueprint threw: " + ex.Message); }
                             try { Planning.DefencePlanner.Tick(team); }
                             catch (Exception ex) { MelonLogger.Warning("[MIL] defence threw: " + ex.Message); }
                             try { Planning.MissionPlanner.Tick(team); }
@@ -496,6 +498,7 @@ namespace Si_RTS_AI
             Planning.DefencePlanner.ResetForNewRound();
             Planning.MissionPlanner.ResetForNewRound();
             Planning.ArmyPlan.ResetForNewRound();
+            Planning.MilitaryBlueprint.ResetForNewRound();
             Planning.BattalionManager.ResetForNewRound();
             Perception.UnitValues.ResetForNewRound();
             Perception.ShrimpStateSampler.ResetForNewRound();

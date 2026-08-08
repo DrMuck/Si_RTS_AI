@@ -408,8 +408,25 @@ namespace Si_RTS_AI.Planning
             // home does not save the Nest; it only guarantees the expansions die
             // too. The floor is homeShare, the ceiling homeCapShare, and between
             // them it is what the enemy has actually brought.
+            // PRESSURE AT THE RIGHT PLACE IS DEFENCE, AND IT IS CHEAPER.
+            //
+            // DrMuck: "only a small army is needed to defend the nest when the
+            // enemy is pressured by our army at the forward operating base and
+            // comes not through." The old floor could not express that — it was
+            // a flat share of the army held at home whatever else we controlled,
+            // so the bot paid full price for base defence while also standing on
+            // the ground the attack would have come through. That is how it
+            // ended up a sitting duck at spawn.
+            //
+            // Holding forward ground halves the share. Not zero: the Queen is
+            // still a loss condition and a forward hold can break.
+            float share = MilitaryConfig.HomeShare;
+            bool forward = false;
+            try { forward = MilitaryBlueprint.HoldingForward; } catch { }
+            if (forward) share *= 0.5f;
+
             int wanted = Mathf.Max(DefencePlanner.GarrisonValue,
-                                   Mathf.CeilToInt(ArmyValue * MilitaryConfig.HomeShare));
+                                   Mathf.CeilToInt(ArmyValue * share));
             int homeCap = Mathf.Max(Mathf.CeilToInt(ArmyValue * MilitaryConfig.HomeCapShare),
                                     Mathf.CeilToInt(ArmyValue * MilitaryConfig.HomeShare));
             int homeFloor = Mathf.Min(wanted, homeCap);
@@ -418,9 +435,10 @@ namespace Si_RTS_AI.Planning
             {
                 Id = IdFor(Kind.Garrison, nest), Kind = Kind.Garrison, Objective = nest,
                 RequiredValue = homeFloor, Score = float.MaxValue,
-                Note = wanted > homeFloor
+                Note = (forward ? "forward hold, half share; " : "") +
+                       (wanted > homeFloor
                      ? $"home, wanted {wanted} capped to {homeFloor} of army {ArmyValue}"
-                     : $"home (enemy near nest {DefencePlanner.GarrisonValue})",
+                     : $"home (enemy near nest {DefencePlanner.GarrisonValue})"),
                 CreatedAt = now,
             });
 
