@@ -195,6 +195,7 @@
     "execute": true,
     "produce": true,
     "offence": true,
+    "blockVanillaAttackOrders": true,
 
     "strengthMargin": 1.5,
 

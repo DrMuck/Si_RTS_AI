@@ -36,6 +36,22 @@ namespace Si_RTS_AI.Planning
         /// <summary>Queue combat units and place higher-tier producers.</summary>
         internal static bool Produce;
 
+        /// <summary>
+        /// Take our units out of any attack order the GAME's commander issues.
+        ///
+        /// On by default because vanilla was demonstrably steering our army:
+        /// 1,311 attack orders in one round on a team where this mod issues
+        /// none, which is the trickle toward the enemy HQ DrMuck watched.
+        ///
+        /// THE RISK, stated plainly: units may rely on those orders to engage at
+        /// all. They should auto-acquire inside TargetingDistance, but if the
+        /// army goes passive this is the switch to turn off, and combat.jsonl
+        /// shows it within one round — engagements simply stop appearing.
+        /// [BATTALION] reports vanillaAttacksBlocked so the size of the effect
+        /// is visible rather than assumed.
+        /// </summary>
+        internal static bool BlockVanillaAttackOrders;
+
         /// <summary>Allow push missions. Defence runs without it, so the two can
         /// be brought up separately — which is the whole point of having it.</summary>
         internal static bool Offence;
@@ -127,6 +143,8 @@ namespace Si_RTS_AI.Planning
             Execute  = RtsaiConfig.Bool ("military.execute",  true);
             Produce  = RtsaiConfig.Bool ("military.produce",  true);
             Offence  = RtsaiConfig.Bool ("military.offence",  true);
+            BlockVanillaAttackOrders =
+                       RtsaiConfig.Bool ("military.blockVanillaAttackOrders", true);
 
             StrengthMargin  = RtsaiConfig.Float("military.strengthMargin", 1.5f);
 
@@ -149,7 +167,8 @@ namespace Si_RTS_AI.Planning
             {
                 _announced = true;
                 MelonLogger.Msg($"[MIL/CONFIG] enabled={Enabled} execute={Execute} produce={Produce} " +
-                                $"offence={Offence} | margin={StrengthMargin:F2} " +
+                                $"offence={Offence} blockVanillaAttacks={BlockVanillaAttackOrders} | " +
+                                $"margin={StrengthMargin:F2} " +
                                 $"home={HomeShare:F2}..{HomeCapShare:F2} of army " +
                                 $"producers<={MaxProducersPerType} " +
                                 $"ecoReserve={EcoReserve} lesserCystShare={LesserCystShare:F2} " +

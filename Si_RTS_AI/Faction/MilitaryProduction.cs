@@ -129,10 +129,10 @@ namespace Si_RTS_AI.Faction
             _claimed.Clear();
             _requestedAt.Clear();
             _pickLogged.Clear();
-            _allProducersBusy = false;
+            _typeBusy.Clear();
+            _typeSaturatedSince.Clear();
+            _typeWant.Clear();
             _leftoverBudget = 0;
-            _saturatedSince = -1f;
-            _wantProducers = 1;
             _failuresLogged.Clear();
             _producerStructureCds.Clear();
         }
@@ -198,9 +198,11 @@ namespace Si_RTS_AI.Faction
 
             LogCatalogOnce(producersByType);
 
-            // Reset the observation for this pass; the loop below sets it false
-            // the moment any producer had a free slot we could have used.
-            _allProducersBusy = true;
+            // Reset the observation for this pass, per type. A type with no
+            // producers at all is not "busy" — it is absent, and absence is
+            // handled by the first-of-each rule rather than by saturation.
+            _typeBusy.Clear();
+            foreach (var kvp in producersByType) _typeBusy[kvp.Key] = true;
 
             foreach (var kv in producersByType)
             {
@@ -236,10 +238,10 @@ namespace Si_RTS_AI.Faction
                     int queueDepth = 0;
                     try { queueDepth = s.ProductionQueue?.Count ?? 0; } catch { }
                     if (queueDepth >= QUEUE_DEPTH) continue;
-                    // A free slot exists, so throughput is not what is stopping
-                    // us — whatever happens next, this pass does not count as
-                    // saturated.
-                    _allProducersBusy = false;
+                    // A free slot exists at THIS type, so throughput is not what
+                    // is stopping it — whatever happens next, this type does not
+                    // count as saturated this pass.
+                    _typeBusy[kv.Key] = false;
 
                     var opts = new List<ConstructionData>();
                     if (s.ConstructionOptions != null)
@@ -385,10 +387,10 @@ namespace Si_RTS_AI.Faction
             // producer converts roughly its unit cost every build time; if cash
             // is piling up faster than the producers can consume it, the answer
             // is another producer, not a deeper queue.
-            int want = WantedProducerCount();
             foreach (var name in HigherTierProducerNames)
             {
                 if (!_producerStructureCds.TryGetValue(name, out var cd)) continue;
+                int want = WantedProducerCount(name);
                 have.TryGetValue(name, out int c);
                 if (c >= want) continue;
                 // Already asked for, and the request has not aged out.
@@ -449,10 +451,27 @@ namespace Si_RTS_AI.Faction
         /// held for a while, because a producer ordered on one busy tick is a
         /// producer paid for out of the army.
         /// </summary>
-        static bool _allProducersBusy;
+        /// <summary>
+        /// SATURATION IS A QUESTION PER PRODUCER TYPE, not per army.
+        ///
+        /// The first version asked "was EVERY producer busy", and the answer was
+        /// no, forever: a round runs fifteen Lesser Spawning Cysts turning out
+        /// 220-cash Shockers in seconds, so at any instant one of them has a free
+        /// slot. Meanwhile the single Greater Spawning Cyst was pinned for
+        /// forty-five seconds at a time building Behemoths and never got a
+        /// second building — 42 Behemoths against 144 Shockers, and the log line
+        /// "every producer busy" fired zero times across a whole round.
+        ///
+        /// The question is always "are the GREATER cysts saturated", and the
+        /// Lesser cysts have no vote in it.
+        /// </summary>
+        static readonly Dictionary<string, bool> _typeBusy =
+            new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+        static readonly Dictionary<string, float> _typeSaturatedSince =
+            new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
+        static readonly Dictionary<string, int> _typeWant =
+            new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         static int  _leftoverBudget;
-        static float _saturatedSince = -1f;
-        static int  _wantProducers = 1;
 
         /// <summary>How long the constraint must hold before it is believed. A
         /// producer takes most of a minute to build and then wants paying, so a
@@ -462,27 +481,36 @@ namespace Si_RTS_AI.Faction
         static void UpdateProducerDemand(float now)
         {
             int cap = Planning.MilitaryConfig.MaxProducersPerType;
-            if (cap <= 1) { _wantProducers = Mathf.Max(1, cap); return; }
+            if (cap <= 1) return;
 
-            // Leftover has to be worth a producer, or we would add one to soak
-            // up pocket change.
-            bool throughputBound = _allProducersBusy && _leftoverBudget >= 4000;
-            if (!throughputBound) { _saturatedSince = -1f; return; }
-
-            if (_saturatedSince < 0f) { _saturatedSince = now; return; }
-            if (now - _saturatedSince < SATURATED_FOR_S) return;
-
-            _saturatedSince = now;              // restart the clock for the next one
-            if (_wantProducers < cap)
+            foreach (var name in HigherTierProducerNames)
             {
-                _wantProducers++;
-                MelonLogger.Msg($"[MIL/PROD] every producer busy with {_leftoverBudget} " +
+                _typeBusy.TryGetValue(name, out bool busy);
+                // Leftover has to be worth a producer, or we would add one to
+                // soak up pocket change.
+                bool bound = busy && _leftoverBudget >= 4000;
+                if (!bound) { _typeSaturatedSince.Remove(name); continue; }
+
+                if (!_typeSaturatedSince.TryGetValue(name, out float since))
+                { _typeSaturatedSince[name] = now; continue; }
+                if (now - since < SATURATED_FOR_S) continue;
+
+                _typeSaturatedSince[name] = now;      // restart for the next one
+                _typeWant.TryGetValue(name, out int want);
+                if (want < 1) want = 1;
+                if (want >= cap) continue;
+                _typeWant[name] = want + 1;
+                MelonLogger.Msg($"[MIL/PROD] every {name} busy with {_leftoverBudget} " +
                                 $"still unspent for {SATURATED_FOR_S:F0}s — " +
-                                $"asking for {_wantProducers} of each (cap {cap})");
+                                $"asking for {want + 1} (cap {cap})");
             }
         }
 
-        static int WantedProducerCount() => Mathf.Max(1, _wantProducers);
+        static int WantedProducerCount(string producerName)
+        {
+            _typeWant.TryGetValue(producerName, out int w);
+            return Mathf.Clamp(w < 1 ? 1 : w, 1, Mathf.Max(1, Planning.MilitaryConfig.MaxProducersPerType));
+        }
 
         /// <summary>
         /// WHERE a producer goes, which decides how long its units walk before

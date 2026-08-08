@@ -77,6 +77,7 @@ namespace Si_RTS_AI.Planning
             Battalions.Clear();
             _lastTickAt = _lastLogAt = 0f;
             _releasedToScouts = 0;
+            StrippedFromVanillaAttack = 0;
         }
 
         internal static void Tick(Team team)
@@ -559,6 +560,67 @@ namespace Si_RTS_AI.Planning
             }
         }
 
+        /// <summary>
+        /// VANILLA WAS STILL COMMANDING OUR ARMY, THROUGH THE ONE DOOR WE LEFT OPEN.
+        ///
+        /// The move-order prefix above stops the game AI walking a committed unit
+        /// away. It says nothing about ATTACK orders, and the game's own commander
+        /// keeps running for the alien team — so it was picking units out of our
+        /// battalions and sending them at whatever it fancied, one group at a
+        /// time. Measured on the 2026-08-08 round: 25,926 move orders and
+        /// **1,311 attack orders**, all attributed to the AI commander, on a team
+        /// where THIS MOD ISSUES NO ATTACK ORDERS AT ALL. Every one of those 1,311
+        /// was vanilla, and DrMuck watching the replay saw the result — units
+        /// trickling toward the enemy HQ one at a time.
+        ///
+        /// That is the stream. It was never our push arriving in speed order; it
+        /// was the game AI pulling units out of formation and sending them
+        /// individually, which is also why they died piecemeal.
+        ///
+        /// Units are STRIPPED from the group rather than the call being blocked,
+        /// the same way the shrimps are protected: a group that also holds units
+        /// we do not own should still get its order. Ours simply stop being in it.
+        /// </summary>
+        [HarmonyPatch(typeof(AIGroup), nameof(AIGroup.OnAttackOrder))]
+        static class Patch_AIGroup_OnAttackOrder_Battalion
+        {
+            static readonly List<Unit> _scratch = new List<Unit>(16);
+
+            static void Prefix(AIGroup __instance)
+            {
+                try
+                {
+                    if (__instance == null) return;
+                    if (!MilitaryConfig.Enabled || !MilitaryConfig.Execute) return;
+                    if (!MilitaryConfig.BlockVanillaAttackOrders) return;
+                    var units = __instance.Units;
+                    if (units == null || units.Count == 0) return;
+
+                    _scratch.Clear();
+                    for (int i = 0; i < units.Count; i++)
+                    {
+                        var u = units[i];
+                        if (u != null && Owns(u)) _scratch.Add(u);
+                    }
+                    if (_scratch.Count == 0) return;
+
+                    for (int i = 0; i < _scratch.Count; i++)
+                    {
+                        try { if (__instance.RemoveUnit(_scratch[i])) StrippedFromVanillaAttack++; }
+                        catch { }
+                    }
+                    _scratch.Clear();
+                }
+                catch (Exception ex)
+                { MelonLogger.Warning("[BATTALION] attack-order prefix threw: " + ex.Message); }
+            }
+        }
+
+        /// <summary>How many times the game AI tried to take a unit we own into an
+        /// attack order. If this is large the two layers are fighting, and the
+        /// army's behaviour is not ours to explain.</summary>
+        internal static int StrippedFromVanillaAttack;
+
         // ---- Helpers ---------------------------------------------------------
 
         static int ValueOf(List<Unit> units)
@@ -646,6 +708,8 @@ namespace Si_RTS_AI.Planning
                 sb.Append(" | ");
             }
             if (_releasedToScouts > 0) sb.Append("releasedToScouts=").Append(_releasedToScouts).Append(' ');
+            if (StrippedFromVanillaAttack > 0)
+                sb.Append("vanillaAttacksBlocked=").Append(StrippedFromVanillaAttack).Append(' ');
             if (!MilitaryConfig.Execute) sb.Append("[shadow — no orders issued]");
             MelonLogger.Msg(sb.ToString());
         }
