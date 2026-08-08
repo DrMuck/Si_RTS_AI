@@ -565,6 +565,13 @@ namespace Si_RTS_AI.Faction
         /// trend is clamped at zero before it is used.</summary>
         const float PRODUCER_LEAD_S = 60f;
 
+        /// <summary>Seconds of the NEW producer's appetite the bank must cover
+        /// for banked cash alone to justify it. Not a schedule — a ratio between
+        /// money we are holding and the rate the thing would eat it. Two minutes
+        /// is long enough that the building is not stranded and short enough
+        /// that a large bank always converts.</summary>
+        const float BANK_COVERS_S = 120f;
+
         static readonly Dictionary<string, float> _gateLogged =
             new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
 
@@ -576,9 +583,11 @@ namespace Si_RTS_AI.Faction
             float now = Time.time;
             if (_gateLogged.TryGetValue(name, out float at) && now - at < 60f) return;
             _gateLogged[name] = now;
-            MelonLogger.Msg($"[MIL/PROD] {name} is saturated but income will not feed another: " +
-                            $"{income:F0}/s now, {projected:F0}/s projected, against " +
-                            $"{draw:F0}/s already committed and {newDraw:F0}/s more needed.");
+            MelonLogger.Msg($"[MIL/PROD] {name} is saturated but cannot be fed: " +
+                            $"income {income:F0}/s ({projected:F0}/s projected) against " +
+                            $"{draw:F0}/s committed and {newDraw:F0}/s more needed, " +
+                            $"and the bank holds {_leftoverBudget} " +
+                            $"({newDraw * BANK_COVERS_S:F0} would do it).");
         }
 
         static void UpdateProducerDemand(float now, Team team)
@@ -615,9 +624,30 @@ namespace Si_RTS_AI.Faction
 
                 float draw = ProducerDraw(team, name, out float newDraw);
                 if (newDraw <= 0f) newDraw = draw > 0f ? draw : 25f;
-                // Can the projected economy carry everything already building
-                // AND one more? If not, the constraint is income, not buildings.
-                bool affordable = projected - draw >= newDraw;
+
+                // CAN WE AFFORD IT FROM THE RATE, OR FROM THE BANK? Either will
+                // do, and the first version only asked the first — which is how
+                // the bot refused to build a second Greater Spawning Cyst while
+                // sitting on THIRTY-NINE MINUTES of income:
+                //
+                //   [UTIL] cash 39.3min idle | producers 86% busy
+                //   [MIL/PROD] income will not feed another: 78/s now, against
+                //              93/s already committed and 53/s more needed
+                //
+                // Both halves of that were wrong together. The draw is a
+                // THEORETICAL maximum — every producer building its most
+                // expensive option and never idling — so it reads above real
+                // spend, which is why the bank was growing while the arithmetic
+                // claimed we were overcommitted. And a rate test cannot see a
+                // bank at all, so the one condition that most obviously means
+                // "build more" was the one condition it ignored.
+                //
+                // DrMuck's own rule settles it: money sitting is potential
+                // sitting dead. Enough banked to run the new producer for a
+                // couple of minutes IS affording it, whatever the rate says.
+                bool fromRate = projected - draw >= newDraw;
+                bool fromBank = _leftoverBudget >= newDraw * BANK_COVERS_S;
+                bool affordable = fromRate || fromBank;
 
                 if (!bound || !affordable)
                 {
@@ -637,9 +667,12 @@ namespace Si_RTS_AI.Faction
                 if (want >= cap) continue;
                 _typeWant[name] = want + 1;
                 MelonLogger.Msg($"[MIL/PROD] every {name} busy with {_leftoverBudget} unspent " +
-                                $"for {SATURATED_FOR_S:F0}s, and income {income:F0}/s " +
-                                $"(projected {projected:F0}/s) covers {draw:F0}/s committed " +
-                                $"plus {newDraw:F0}/s more — asking for {want + 1} (cap {cap})");
+                                $"for {SATURATED_FOR_S:F0}s — " +
+                                (fromRate
+                                    ? $"income {income:F0}/s covers it"
+                                    : $"the bank covers it ({_leftoverBudget} against " +
+                                      $"{newDraw * BANK_COVERS_S:F0} needed)") +
+                                $" — asking for {want + 1} (cap {cap})");
             }
         }
 

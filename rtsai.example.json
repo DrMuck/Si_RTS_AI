@@ -202,7 +202,7 @@
     "homeShare": 0.25,
     "homeCapShare": 0.5,
     "maxDefendMissions": 3,
-    "maxProducersPerType": 3,
+    "maxProducersPerType": 6,
 
     "ecoReserve": 15000,
     "lesserCystShare": 0.25,
