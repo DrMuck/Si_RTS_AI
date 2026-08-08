@@ -673,22 +673,38 @@ namespace Si_RTS_AI.Faction
                             $"({newDraw * BANK_COVERS_S:F0} would do it).");
         }
 
+        /// <summary>
+        /// HOW MANY PRODUCERS THE MONEY CAN ACTUALLY SUPPORT — computed, not
+        /// crept toward.
+        ///
+        /// DrMuck, seeing one forward Cyst appear: "we have so much more money to
+        /// spend that could support probably 10 cyst blasting behemoth." He is
+        /// right, and the old rule could not have got there: it added ONE
+        /// producer per 45 seconds of continuous saturation, so reaching ten
+        /// would have taken seven and a half minutes of everything going
+        /// perfectly, and the cap stopped it at six regardless.
+        ///
+        /// Neither number described the money. The money describes itself:
+        ///
+        ///     sustainable = income/s / drawPerProducer
+        ///     from the bank = bank / (drawPerProducer x BANK_COVERS_S)
+        ///
+        /// The first is what we can feed forever. The second is how many MORE
+        /// the money already sitting there could run for a couple of minutes —
+        /// which is the right way to spend a bank, because a bank is a one-off
+        /// and a producer built from it converts dead cash into army before the
+        /// cash stops existing.
+        ///
+        /// Still gated on saturation, and that gate matters more now than when
+        /// the growth was incremental: a large bank would otherwise buy ten
+        /// buildings that stand idle. If what we have is not busy, more will not
+        /// help, whatever the bank says.
+        /// </summary>
         static void UpdateProducerDemand(float now, Team team)
         {
             int cap = Planning.MilitaryConfig.MaxProducersPerType;
             if (cap <= 1) return;
 
-            // THE INCOME GATE. It used to look at the BANK, which is a stock —
-            // and a stock buys a building that then idles. What a producer needs
-            // is a RATE, sustained, and the round average is no good either
-            // because a curve starting near zero reads low forever.
-            //
-            // So: income over the last minute, projected forward to the moment
-            // the producer would come online. Trend clamped non-negative, since
-            // betting on a decline reversing is hope rather than prediction.
-            // Deliveries, not cash deltas — see BcIncome.EarnedPerSec. The cash
-            // reading goes to zero at the storage cap, which is the one moment
-            // the answer should certainly be yes.
             float income = 0f, trend = 0f;
             try
             {
@@ -701,61 +717,43 @@ namespace Si_RTS_AI.Faction
             foreach (var name in HigherTierProducerNames)
             {
                 _typeBusy.TryGetValue(name, out bool busy);
-                // Leftover has to be worth a producer, or we would add one to
-                // soak up pocket change.
-                bool bound = busy && _leftoverBudget >= 4000;
 
                 float draw = ProducerDraw(team, name, out float newDraw);
                 if (newDraw <= 0f) newDraw = draw > 0f ? draw : 25f;
 
-                // CAN WE AFFORD IT FROM THE RATE, OR FROM THE BANK? Either will
-                // do, and the first version only asked the first — which is how
-                // the bot refused to build a second Greater Spawning Cyst while
-                // sitting on THIRTY-NINE MINUTES of income:
-                //
-                //   [UTIL] cash 39.3min idle | producers 86% busy
-                //   [MIL/PROD] income will not feed another: 78/s now, against
-                //              93/s already committed and 53/s more needed
-                //
-                // Both halves of that were wrong together. The draw is a
-                // THEORETICAL maximum — every producer building its most
-                // expensive option and never idling — so it reads above real
-                // spend, which is why the bank was growing while the arithmetic
-                // claimed we were overcommitted. And a rate test cannot see a
-                // bank at all, so the one condition that most obviously means
-                // "build more" was the one condition it ignored.
-                //
-                // DrMuck's own rule settles it: money sitting is potential
-                // sitting dead. Enough banked to run the new producer for a
-                // couple of minutes IS affording it, whatever the rate says.
-                bool fromRate = projected - draw >= newDraw;
-                bool fromBank = _leftoverBudget >= newDraw * BANK_COVERS_S;
-                bool affordable = fromRate || fromBank;
+                // What the economy could keep busy, from flow and from stock.
+                int fromRate = Mathf.FloorToInt(projected / newDraw);
+                int fromBank = Mathf.FloorToInt(_leftoverBudget / (newDraw * BANK_COVERS_S));
+                int affordable = Mathf.Clamp(fromRate + fromBank, 1, cap);
 
-                if (!bound || !affordable)
-                {
-                    if (bound && !affordable)
-                        LogIncomeGateOnce(name, income, projected, draw, newDraw);
-                    _typeSaturatedSince.Remove(name);
-                    continue;
-                }
-
-                if (!_typeSaturatedSince.TryGetValue(name, out float since))
-                { _typeSaturatedSince[name] = now; continue; }
-                if (now - since < SATURATED_FOR_S) continue;
-
-                _typeSaturatedSince[name] = now;      // restart for the next one
                 _typeWant.TryGetValue(name, out int want);
                 if (want < 1) want = 1;
-                if (want >= cap) continue;
-                _typeWant[name] = want + 1;
-                MelonLogger.Msg($"[MIL/PROD] every {name} busy with {_leftoverBudget} unspent " +
-                                $"for {SATURATED_FOR_S:F0}s — " +
-                                (fromRate
-                                    ? $"income {income:F0}/s covers it"
-                                    : $"the bank covers it ({_leftoverBudget} against " +
-                                      $"{newDraw * BANK_COVERS_S:F0} needed)") +
-                                $" — asking for {want + 1} (cap {cap})");
+
+                // Growing needs BOTH the money and the evidence that the current
+                // buildings cannot absorb it. Shrinking needs neither — we never
+                // demolish, so want only ratchets up and the cap is the brake.
+                if (affordable > want && busy && _leftoverBudget >= 4000)
+                {
+                    if (!_typeSaturatedSince.TryGetValue(name, out float since))
+                    { _typeSaturatedSince[name] = now; continue; }
+                    if (now - since < SATURATED_FOR_S) continue;
+
+                    _typeSaturatedSince[name] = now;
+                    _typeWant[name] = affordable;
+                    MelonLogger.Msg($"[MIL/PROD] every {name} busy and {_leftoverBudget} unspent — " +
+                                    $"income {income:F0}/s supports {fromRate}, the bank another " +
+                                    $"{fromBank} at {newDraw:F0}/s each — asking for " +
+                                    $"{affordable} (cap {cap})");
+                }
+                else if (!busy)
+                {
+                    _typeSaturatedSince.Remove(name);
+                }
+                else if (affordable <= want && busy && _leftoverBudget >= 4000)
+                {
+                    LogIncomeGateOnce(name, income, projected, draw, newDraw);
+                    _typeSaturatedSince.Remove(name);
+                }
             }
         }
 
