@@ -160,6 +160,13 @@ namespace Si_RTS_AI.Planning
             catch { }
             ArmyValue = value;
 
+            // The plan is fed here because this is where the army is counted;
+            // two places measuring the same thing is how the eco layer's worst
+            // day happened.
+            float roundS = 0f;
+            try { roundS = Perception.MapLayers.LayerReplay.CurrentRoundTime; } catch { }
+            ArmyPlan.Update(roundS, value);
+
             _armyTrace.Add((now, value));
             while (_armyTrace.Count > 1 && now - _armyTrace[0].t > GROWTH_WINDOW_S)
                 _armyTrace.RemoveAt(0);

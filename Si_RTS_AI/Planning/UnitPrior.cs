@@ -79,7 +79,7 @@ namespace Si_RTS_AI.Planning
                 {
                     if (Loaded) MelonLogger.Msg("[MIL/PRIOR] rtsai_units.json removed — " +
                                                 "falling back to most-expensive-option");
-                    _units.Clear(); _enemyClass.Clear(); Loaded = false;
+                    _units.Clear(); _enemyClass.Clear(); ArmyPlan.SetCurve(null); Loaded = false;
                     return;
                 }
                 var stamp = File.GetLastWriteTimeUtc(PATH);
@@ -110,6 +110,13 @@ namespace Si_RTS_AI.Planning
                         _units[p.Name] = en;
                     }
 
+                var curve = root["armyCurve"] as JObject;
+                var pts = new Dictionary<string, int>();
+                if (curve != null)
+                    foreach (var c in curve.Properties())
+                        pts[c.Name] = (int)c.Value;
+                ArmyPlan.SetCurve(pts);
+
                 var ec = root["enemyClasses"] as JObject;
                 if (ec != null)
                     foreach (var p in ec.Properties())
@@ -117,7 +124,8 @@ namespace Si_RTS_AI.Planning
 
                 Loaded = _units.Count > 0;
                 MelonLogger.Msg($"[MIL/PRIOR] loaded {PATH}: {_units.Count} units, " +
-                                $"{_enemyClass.Count} enemy chassis classified" +
+                                $"{_enemyClass.Count} enemy chassis classified, " +
+                                $"armyCurve {(ArmyPlan.HasCurve ? "present" : "absent")}" +
                                 (root["_source"]?["generated"] != null
                                     ? $" (generated {root["_source"]["generated"]})" : ""));
             }

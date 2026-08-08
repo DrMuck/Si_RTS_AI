@@ -129,6 +129,10 @@ namespace Si_RTS_AI.Faction
             _claimed.Clear();
             _requestedAt.Clear();
             _pickLogged.Clear();
+            _allProducersBusy = false;
+            _leftoverBudget = 0;
+            _saturatedSince = -1f;
+            _wantProducers = 1;
             _failuresLogged.Clear();
             _producerStructureCds.Clear();
         }
@@ -157,6 +161,8 @@ namespace Si_RTS_AI.Faction
                     PlaceProducerStructures(team, now, ref budget);
                     QueueUnits(team, ref budget);
                 }
+                _leftoverBudget = budget;
+                UpdateProducerDemand(now);
                 MaybeLog(now, team, budget);
             }
             catch (Exception ex) { MelonLogger.Warning("[MIL/PROD] tick threw: " + ex.Message); }
@@ -192,6 +198,10 @@ namespace Si_RTS_AI.Faction
 
             LogCatalogOnce(producersByType);
 
+            // Reset the observation for this pass; the loop below sets it false
+            // the moment any producer had a free slot we could have used.
+            _allProducersBusy = true;
+
             foreach (var kv in producersByType)
             {
                 var producers = kv.Value;
@@ -226,6 +236,10 @@ namespace Si_RTS_AI.Faction
                     int queueDepth = 0;
                     try { queueDepth = s.ProductionQueue?.Count ?? 0; } catch { }
                     if (queueDepth >= QUEUE_DEPTH) continue;
+                    // A free slot exists, so throughput is not what is stopping
+                    // us — whatever happens next, this pass does not count as
+                    // saturated.
+                    _allProducersBusy = false;
 
                     var opts = new List<ConstructionData>();
                     if (s.ConstructionOptions != null)
@@ -371,7 +385,7 @@ namespace Si_RTS_AI.Faction
             // producer converts roughly its unit cost every build time; if cash
             // is piling up faster than the producers can consume it, the answer
             // is another producer, not a deeper queue.
-            int want = WantedProducerCount(budget);
+            int want = WantedProducerCount();
             foreach (var name in HigherTierProducerNames)
             {
                 if (!_producerStructureCds.TryGetValue(name, out var cd)) continue;
@@ -414,17 +428,61 @@ namespace Si_RTS_AI.Faction
         /// should eventually become, siting producers against the frontier
         /// rather than counting them against the bank.
         /// </summary>
-        static int WantedProducerCount(int budget)
+        /// <summary>
+        /// ARE THE PRODUCERS WE HAVE ABLE TO ABSORB THE MONEY WE HAVE?
+        ///
+        /// That is the whole rule, and it is the only one here that cannot rot.
+        /// It asks nothing about the clock, nothing about a target army size and
+        /// nothing about a curve fitted to other people's games — DrMuck, on
+        /// being shown one: "we dont need to rotate around hard coded numbers,
+        /// this is only an indication."
+        ///
+        /// It is also exactly the condition MILITARY_TACTICS §3 names as the
+        /// production ceiling: "rising unspent cash while producers saturated".
+        /// Observed directly rather than inferred from a derivative — after a
+        /// pass we know whether every producer was already busy AND whether
+        /// money was still left over. Both true means throughput is the
+        /// constraint and another producer is the answer. Either false means the
+        /// constraint is somewhere else and a new building would idle.
+        ///
+        /// The count only ever moves by one, and only after the condition has
+        /// held for a while, because a producer ordered on one busy tick is a
+        /// producer paid for out of the army.
+        /// </summary>
+        static bool _allProducersBusy;
+        static int  _leftoverBudget;
+        static float _saturatedSince = -1f;
+        static int  _wantProducers = 1;
+
+        /// <summary>How long the constraint must hold before it is believed. A
+        /// producer takes most of a minute to build and then wants paying, so a
+        /// momentary pile-up is not evidence of anything.</summary>
+        const float SATURATED_FOR_S = 45f;
+
+        static void UpdateProducerDemand(float now)
         {
             int cap = Planning.MilitaryConfig.MaxProducersPerType;
-            if (cap <= 1) return Mathf.Max(1, cap);
-            // Roughly what one producer consumes over a build cycle. Under-spend
-            // by design: an idle producer is cheaper than a producer we built
-            // instead of an army.
-            const int THROUGHPUT_PER_PRODUCER = 6000;
-            int want = 1 + budget / THROUGHPUT_PER_PRODUCER;
-            return Mathf.Clamp(want, 1, cap);
+            if (cap <= 1) { _wantProducers = Mathf.Max(1, cap); return; }
+
+            // Leftover has to be worth a producer, or we would add one to soak
+            // up pocket change.
+            bool throughputBound = _allProducersBusy && _leftoverBudget >= 4000;
+            if (!throughputBound) { _saturatedSince = -1f; return; }
+
+            if (_saturatedSince < 0f) { _saturatedSince = now; return; }
+            if (now - _saturatedSince < SATURATED_FOR_S) return;
+
+            _saturatedSince = now;              // restart the clock for the next one
+            if (_wantProducers < cap)
+            {
+                _wantProducers++;
+                MelonLogger.Msg($"[MIL/PROD] every producer busy with {_leftoverBudget} " +
+                                $"still unspent for {SATURATED_FOR_S:F0}s — " +
+                                $"asking for {_wantProducers} of each (cap {cap})");
+            }
         }
+
+        static int WantedProducerCount() => Mathf.Max(1, _wantProducers);
 
         /// <summary>
         /// WHERE a producer goes, which decides how long its units walk before

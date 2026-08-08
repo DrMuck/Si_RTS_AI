@@ -495,6 +495,7 @@ namespace Si_RTS_AI
             Faction.AlienCommanderLock.ResetForNewRound();
             Planning.DefencePlanner.ResetForNewRound();
             Planning.MissionPlanner.ResetForNewRound();
+            Planning.ArmyPlan.ResetForNewRound();
             Planning.BattalionManager.ResetForNewRound();
             Perception.UnitValues.ResetForNewRound();
             Perception.ShrimpStateSampler.ResetForNewRound();
