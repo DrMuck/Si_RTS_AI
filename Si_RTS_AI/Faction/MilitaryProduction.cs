@@ -41,10 +41,36 @@ namespace Si_RTS_AI.Faction
 
         static float _lastTickAt, _lastLogAt;
 
-        /// <summary>Queue depth per producer. Shallow on purpose — a deep queue
-        /// is cash committed to units the situation has not asked for yet, and
-        /// the producer refills within a tick of finishing anyway.</summary>
+        /// <summary>Baseline queue depth. Shallow on purpose — a deep queue is
+        /// cash committed to units the situation has not asked for yet, and the
+        /// producer refills within a tick of finishing anyway.</summary>
         const int QUEUE_DEPTH = 1;
+
+        /// <summary>Deepest a queue goes when there is money spare.</summary>
+        const int QUEUE_DEPTH_MAX = 3;
+
+        /// <summary>
+        /// HOW THE BANK GETS SPENT WITHOUT BUYING PERMANENT DRAW.
+        ///
+        /// A deeper queue converts idle cash into units immediately and stops
+        /// costing anything the moment the cash runs out — unlike a building,
+        /// which keeps claiming income forever. So a large bank runs the
+        /// producers we already have harder rather than adding more.
+        ///
+        /// Scaled by how many minutes of income are sitting dead, which is the
+        /// same number the utilisation meter reports, so the log and the
+        /// decision cannot disagree about whether there is money spare.
+        /// </summary>
+        static int QueueDepthFor(int budget, float income)
+        {
+            if (income <= 1f) return QUEUE_DEPTH;
+            float idleMinutes = budget / income / 60f;
+            if (idleMinutes >= 6f) return QUEUE_DEPTH_MAX;
+            if (idleMinutes >= 2f) return QUEUE_DEPTH + 1;
+            return QUEUE_DEPTH;
+        }
+
+        static int _queueDepth = QUEUE_DEPTH;
 
         // Workers, excluded from "combat unit" by name because they are the only
         // two the alien tree offers that are not one.
@@ -139,6 +165,7 @@ namespace Si_RTS_AI.Faction
             _typeSaturatedSince.Clear();
             _typeWant.Clear();
             _gateLogged.Clear();
+            _queueDepth = QUEUE_DEPTH;
             _leftoverBudget = 0;
             _failuresLogged.Clear();
             _producerStructureCds.Clear();
@@ -169,6 +196,17 @@ namespace Si_RTS_AI.Faction
                     QueueUnits(team, ref budget);
                 }
                 _leftoverBudget = budget;
+                float inc = 0f;
+                try { inc = Perception.BcIncome.EarnedPerSec(); } catch { }
+                int wantDepth = QueueDepthFor(budget, inc);
+                if (wantDepth != _queueDepth)
+                {
+                    MelonLogger.Msg($"[MIL/PROD] queue depth {_queueDepth} -> {wantDepth} " +
+                                    $"({budget} banked against {inc:F0}/s income) — " +
+                                    "spending the bank through the producers we have " +
+                                    "rather than building more.");
+                    _queueDepth = wantDepth;
+                }
                 Perception.Utilisation.NoteProducers(_busyThisPass, _totalThisPass);
                 UpdateProducerDemand(now, team);
                 MaybeLog(now, team, budget);
@@ -248,7 +286,7 @@ namespace Si_RTS_AI.Faction
                     int queueDepth = 0;
                     try { queueDepth = s.ProductionQueue?.Count ?? 0; } catch { }
                     _totalThisPass++;
-                    if (queueDepth >= QUEUE_DEPTH) { _busyThisPass++; continue; }
+                    if (queueDepth >= _queueDepth) { _busyThisPass++; continue; }
                     // A free slot here is NOT yet evidence of slack. We are the
                     // thing that fills it, and we are looking at it in the
                     // instant before we do — so a producer running flat out
@@ -422,10 +460,15 @@ namespace Si_RTS_AI.Faction
             // want units to appear 3,000m closer to the enemy. That is worth one
             // building whether or not the first one is busy.
             var plan = Planning.MilitaryBlueprint.NextSite(team);
+            // DrMuck: "only one at the fob." One building 3,000m forward is a
+            // gesture, not a base — it produces a trickle at exactly the place
+            // that most needs a stream. The forward site carries its own
+            // allowance rather than a single slot.
+            int atForward = plan == null ? 0 : CountProducersNear(team, plan.Pos, 400f);
             bool forwardWanted =
                 plan != null &&
                 plan.Purpose == Planning.MilitaryBlueprint.Purpose.Forward &&
-                !NearAnyExisting(team, plan.Pos, 350f);
+                atForward < FORWARD_PRODUCERS;
 
             foreach (var name in HigherTierProducerNames)
             {
@@ -434,7 +477,8 @@ namespace Si_RTS_AI.Faction
                 // One extra allowance, for the forward site only, and only up to
                 // the configured cap.
                 if (forwardWanted)
-                    want = Mathf.Min(want + 1, Planning.MilitaryConfig.MaxProducersPerType);
+                    want = Mathf.Min(want + (FORWARD_PRODUCERS - atForward),
+                                     Planning.MilitaryConfig.MaxProducersPerType);
                 have.TryGetValue(name, out int c);
 
                 // Did the last request for this type actually land?
@@ -591,6 +635,33 @@ namespace Si_RTS_AI.Faction
             return total;
         }
 
+        /// <summary>Producers the forward site is worth on its own, before the
+        /// income-driven count has any say. Enough to be a base rather than a
+        /// gesture; few enough that a lost FOB is not a lost army.</summary>
+        const int FORWARD_PRODUCERS = 3;
+
+        static int CountProducersNear(Team team, Vector3 pos, float radiusM)
+        {
+            int n = 0;
+            float r2 = radiusM * radiusM;
+            try
+            {
+                var structs = team.Structures;
+                if (structs == null) return 0;
+                for (int i = 0; i < structs.Count; i++)
+                {
+                    var st = structs[i];
+                    if (st?.ObjectInfo == null || st.IsDestroyed) continue;
+                    if (!ProducerStructureNames.Contains(st.ObjectInfo.DisplayName ?? "")) continue;
+                    Vector3 p = st.transform.position;
+                    float dx = p.x - pos.x, dz = p.z - pos.z;
+                    if (dx * dx + dz * dz <= r2) n++;
+                }
+            }
+            catch { }
+            return n;
+        }
+
         /// <summary>Is a producer of ours already standing near this ground?</summary>
         static bool NearAnyExisting(Team team, Vector3 pos, float radiusM)
         {
@@ -721,7 +792,16 @@ namespace Si_RTS_AI.Faction
                 float draw = ProducerDraw(team, name, out float newDraw);
                 if (newDraw <= 0f) newDraw = draw > 0f ? draw : 25f;
 
-                // What the economy could keep busy, from flow and from stock.
+// What the economy could keep busy, from flow and from stock.
+                //
+                // MEASURED 2026-08-08, after I misread the gate log and proposed
+                // cutting this to income-only: actual military spend over the
+                // round was 217/s against ~280/s income, with cash flat at
+                // 22-28k. The "507/s committed" in the saturation log is the
+                // THEORETICAL draw — every producer, most expensive unit, never
+                // idle between them — and real producers spend roughly 40% of
+                // it. Sizing the count off that number would have cut ten
+                // producers to five for a drain that was not happening.
                 int fromRate = Mathf.FloorToInt(projected / newDraw);
                 int fromBank = Mathf.FloorToInt(_leftoverBudget / (newDraw * BANK_COVERS_S));
                 int affordable = Mathf.Clamp(fromRate + fromBank, 1, cap);
@@ -751,7 +831,15 @@ namespace Si_RTS_AI.Faction
                 }
                 else if (affordable <= want && busy && _leftoverBudget >= 4000)
                 {
-                    LogIncomeGateOnce(name, income, projected, draw, newDraw);
+                    // Say which wall we are against. "Cannot be fed" while want
+                    // is already at the cap reads as an income problem when the
+                    // cap is the whole story, and sent me chasing the wrong one.
+                    if (want >= cap)
+                        LogFailureOnce(name + ":cap",
+                            $"[MIL/PROD] {name} at the configured cap of {cap} with " +
+                            $"{_leftoverBudget} still unspent — raise maxProducersPerType to spend it");
+                    else
+                        LogIncomeGateOnce(name, income, projected, draw, newDraw);
                     _typeSaturatedSince.Remove(name);
                 }
             }

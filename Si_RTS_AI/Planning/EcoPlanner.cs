@@ -1884,12 +1884,12 @@ namespace Si_RTS_AI.Planning
                         // have kept three producers running is the same trade
                         // in a larger denomination.
                         floor = Mathf.Max(floor, shrimpReserve);
-                        if (floor > 0 && cashLeft - c.cost < floor)
-                        {
-                            Skip("reserve" + floor);
-                            NoteCashBlocked();
-                            return true;
-                        }
+                        // NOT starvation. This is the planner deliberately
+                        // HOLDING money for a Cyst or the shrimp queue — it has
+                        // the cash and is choosing not to spend it here. Counting
+                        // that as blocked would have the military yield to a
+                        // decision the economy already made in its own favour.
+                        if (floor > 0 && cashLeft - c.cost < floor) { Skip("reserve" + floor); return true; }
                     }
                     // These two were ABORTS ("later actions depend on this one"),
                     // and they were killing whole ticks: one unreachable action
