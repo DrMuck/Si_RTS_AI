@@ -163,6 +163,7 @@ namespace Si_RTS_AI.Faction
                     QueueUnits(team, ref budget);
                 }
                 _leftoverBudget = budget;
+                Perception.Utilisation.NoteProducers(_busyThisPass, _totalThisPass);
                 UpdateProducerDemand(now, team);
                 MaybeLog(now, team, budget);
             }
@@ -204,6 +205,8 @@ namespace Si_RTS_AI.Faction
             // handled by the first-of-each rule rather than by saturation.
             _typeBusy.Clear();
             foreach (var kvp in producersByType) _typeBusy[kvp.Key] = true;
+            _busyThisPass = 0;
+            _totalThisPass = 0;
 
             foreach (var kv in producersByType)
             {
@@ -238,7 +241,8 @@ namespace Si_RTS_AI.Faction
                     if (budget <= 0) return;
                     int queueDepth = 0;
                     try { queueDepth = s.ProductionQueue?.Count ?? 0; } catch { }
-                    if (queueDepth >= QUEUE_DEPTH) continue;
+                    _totalThisPass++;
+                    if (queueDepth >= QUEUE_DEPTH) { _busyThisPass++; continue; }
                     // A free slot exists at THIS type, so throughput is not what
                     // is stopping it — whatever happens next, this type does not
                     // count as saturated this pass.
@@ -472,6 +476,7 @@ namespace Si_RTS_AI.Faction
         static readonly Dictionary<string, int> _typeWant =
             new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         static int  _leftoverBudget;
+        static int  _busyThisPass, _totalThisPass;
 
         /// <summary>How long the constraint must hold before it is believed. A
         /// producer takes most of a minute to build and then wants paying, so a

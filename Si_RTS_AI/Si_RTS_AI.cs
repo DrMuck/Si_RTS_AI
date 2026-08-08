@@ -347,6 +347,9 @@ namespace Si_RTS_AI
                             catch (Exception ex) { MelonLogger.Warning("[MIL] battalions threw: " + ex.Message); }
                             try { Faction.MilitaryProduction.Tick(team); }
                             catch (Exception ex) { MelonLogger.Warning("[MIL] production threw: " + ex.Message); }
+                            // The instrument, last, so it grades the tick that
+                            // just happened rather than the one before it.
+                            Perception.Utilisation.Tick(team);
 
                             // Cyst steps react within ~1s of their BC finishing.
                             Planning.OpenerPlanner.TickFast(team);
@@ -431,6 +434,10 @@ namespace Si_RTS_AI
                 if (!string.IsNullOrEmpty(acl))
                     AppendToRound(acl);
 
+                string util = Perception.Utilisation.BuildRoundSummaryFragment();
+                if (!string.IsNullOrEmpty(util))
+                    AppendToRound(util);
+
                 string hh = Faction.HumanConstruction.BuildRoundSummaryFragment();
                 if (!string.IsNullOrEmpty(hh))
                     AppendToRound(hh);
@@ -499,6 +506,7 @@ namespace Si_RTS_AI
             Planning.MissionPlanner.ResetForNewRound();
             Planning.ArmyPlan.ResetForNewRound();
             Planning.MilitaryBlueprint.ResetForNewRound();
+            Perception.Utilisation.ResetForNewRound();
             Planning.BattalionManager.ResetForNewRound();
             Perception.UnitValues.ResetForNewRound();
             Perception.ShrimpStateSampler.ResetForNewRound();
