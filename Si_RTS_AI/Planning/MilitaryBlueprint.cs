@@ -143,9 +143,14 @@ namespace Si_RTS_AI.Planning
                 float dHome = Vector3.Distance(pos, nest);
                 if (dHome < COVER_RADIUS_M) return;                   // the Nest covers it
 
-                // Behind the site relative to home, so it is not the first thing
-                // an attacker meets.
-                Vector3 at = Vector3.Lerp(pos, nest, 0.25f);
+                // A short step behind the Bio Cache rather than a quarter of the
+                // way home: the Cache is ON the network, and open ground between
+                // it and the Nest may not be. Same lesson as the Forward site.
+                Vector3 back = nest - pos;
+                back.y = 0f;
+                Vector3 at = back.sqrMagnitude < 1f
+                           ? pos
+                           : pos + back.normalized * Mathf.Min(BUILD_REACH_M * 0.6f, dHome * 0.2f);
                 Sites.Add(new Site
                 {
                     Pos = at, Purpose = Purpose.Cover, Score = 10f + recent / 1000f,
@@ -187,7 +192,16 @@ namespace Si_RTS_AI.Planning
                 target = bases[0].Centre;
             }
 
-            Vector3 at = Vector3.Lerp(nest, target, FORWARD_FRACTION);
+            // Anchor on the front of our own network rather than on a fraction
+            // of the distance — see TryAnchorToward for what the fraction cost.
+            if (!TryAnchorToward(team, target, out Vector3 at, out float gapToUs)) return false;
+
+            // If the network does not reach forward of the Nest at all, there is
+            // no forward base to build yet; the economy has to get there first.
+            float nestToTarget = Vector3.Distance(nest, target);
+            float atToTarget = Vector3.Distance(at, target);
+            if (atToTarget >= nestToTarget - COVER_RADIUS_M) return false;
+
             if (NearAny(existing, at, COVER_RADIUS_M)) return false;
 
             float threat = 0f;
@@ -202,11 +216,80 @@ namespace Si_RTS_AI.Planning
             site = new Site
             {
                 Pos = at, Purpose = Purpose.Forward, Score = 50f,
-                Why = quiet
-                    ? $"forward toward ({target.x:F0},{target.z:F0}), ground quiet (threat {threat:F0})"
-                    : $"forward toward ({target.x:F0},{target.z:F0}), covered by our own force",
+                Why = $"forward toward ({target.x:F0},{target.z:F0}), " +
+                      $"on our network front, {atToTarget:F0}m from them, " +
+                      (quiet ? $"ground quiet (threat {threat:F0})" : "covered by our own force")
             };
             return true;
+        }
+
+
+        /// <summary>
+        /// ALIEN BUILDINGS ONLY GO WHERE THE NETWORK ALREADY REACHES.
+        ///
+        /// This is the bug that made the FOB imaginary. The blueprint picked a
+        /// point 35% of the way to the enemy — (1136,-40) on 2026-08-08, roughly
+        /// 1,900m from anything of ours — and production dutifully ordered a
+        /// Greater Spawning Cyst there FIFTEEN TIMES. The order was accepted
+        /// every time and no building ever appeared, because an alien structure
+        /// must be placed within MaximumBaseStructureDistance of an existing one
+        /// and open ground is not.
+        ///
+        /// DrMuck, watching the same round: "at least around 2221.2, 364.1 or
+        /// 2193.2, -297.0 would be close enough for a fob." Those are near the
+        /// southern end of our own node network, which is the whole point — a
+        /// forward base is the FURTHEST POINT OF OUR NETWORK toward them, not an
+        /// arbitrary fraction of the distance.
+        ///
+        /// So the anchor is the structure of ours nearest the target, and the
+        /// site sits a short step in front of it. As the economy expands toward
+        /// them the anchor moves and the FOB follows, which is the coupling
+        /// DrMuck asked for between expanding toward the enemy and basing there.
+        /// </summary>
+        static bool TryAnchorToward(Team team, Vector3 target, out Vector3 at, out float gap)
+        {
+            at = Vector3.zero;
+            gap = float.MaxValue;
+            Vector3 best = Vector3.zero;
+            float bestD = float.MaxValue;
+            try
+            {
+                var structs = team.Structures;
+                if (structs == null) return false;
+                for (int i = 0; i < structs.Count; i++)
+                {
+                    var st = structs[i];
+                    if (st?.ObjectInfo == null || st.IsDestroyed) continue;
+                    bool functional = false;
+                    try { functional = st.IsFunctional; } catch { }
+                    if (!functional) continue;
+                    Vector3 p = st.transform.position;
+                    float d = (p - target).sqrMagnitude;
+                    if (d < bestD) { bestD = d; best = p; }
+                }
+            }
+            catch { }
+            if (bestD == float.MaxValue) return false;
+
+            gap = Mathf.Sqrt(bestD);
+            // A short step in front of the anchor, well inside the placement
+            // radius so a slide does not push it out of range.
+            float step = Mathf.Min(BUILD_REACH_M * 0.6f, gap * 0.5f);
+            Vector3 dir = target - best;
+            dir.y = 0f;
+            at = dir.sqrMagnitude < 1f ? best : best + dir.normalized * step;
+            return true;
+        }
+
+        /// <summary>How far from an existing structure the game will place a new
+        /// one. Read from live ConstructionData by EcoSimulator, so a balance
+        /// change moves it rather than stranding every forward site.</summary>
+        static float BUILD_REACH_M
+        {
+            get
+            {
+                try { return Mathf.Max(60f, EcoSimulator.NODE_REACH_M); } catch { return 150f; }
+            }
         }
 
         /// <summary>Is anything of ours standing near this ground? A battalion

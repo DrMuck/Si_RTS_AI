@@ -114,6 +114,10 @@ namespace Si_RTS_AI.Faction
         /// </summary>
         static readonly Dictionary<string, float> _requestedAt =
             new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
+        static readonly Dictionary<string, Vector3> _pendingSite =
+            new Dictionary<string, Vector3>(StringComparer.OrdinalIgnoreCase);
+        static readonly Dictionary<string, int> _pendingCount =
+            new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>How long a placement request is believed before we conclude
         /// it never happened. Comfortably longer than the time for a request to
@@ -128,6 +132,8 @@ namespace Si_RTS_AI.Faction
             _catalogLogged = false;
             _claimed.Clear();
             _requestedAt.Clear();
+            _pendingSite.Clear();
+            _pendingCount.Clear();
             _pickLogged.Clear();
             _typeBusy.Clear();
             _typeSaturatedSince.Clear();
@@ -397,6 +403,22 @@ namespace Si_RTS_AI.Faction
                 if (!_producerStructureCds.TryGetValue(name, out var cd)) continue;
                 int want = WantedProducerCount(name);
                 have.TryGetValue(name, out int c);
+
+                // Did the last request for this type actually land?
+                if (_pendingSite.TryGetValue(name, out var lastAt) &&
+                    _requestedAt.TryGetValue(name, out float orderedAt) &&
+                    now - orderedAt >= REQUEST_TTL_S)
+                {
+                    _pendingCount.TryGetValue(name, out int before);
+                    if (c <= before)
+                        MelonLogger.Warning(
+                            $"[MIL/PROD] {name} was ordered at ({lastAt.x:F0},{lastAt.z:F0}) " +
+                            $"{REQUEST_TTL_S:F0}s ago and never appeared — the ground is " +
+                            "probably out of build range of our network.");
+                    _pendingSite.Remove(name);
+                    _pendingCount.Remove(name);
+                }
+
                 if (c >= want) continue;
                 // Already asked for, and the request has not aged out.
                 if (_requestedAt.TryGetValue(name, out float askedAt) &&
@@ -414,6 +436,11 @@ namespace Si_RTS_AI.Faction
                     budget -= cost;
                     SpentThisRound += cost;
                     _requestedAt[name] = now;
+                    // A request that never becomes a building is worth saying
+                    // out loud. Fifteen identical "placed" lines and no producer
+                    // read as success in the log and were a silent refusal.
+                    _pendingSite[name] = at;
+                    _pendingCount[name] = c;
                     MelonLogger.Msg($"[MIL/PROD] placed {name} #{c + 1}/{want} at " +
                                     $"({at.x:F0},{at.z:F0}) — {site.Purpose}: {site.Why}");
                 }
