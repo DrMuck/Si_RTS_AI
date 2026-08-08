@@ -16,7 +16,7 @@ down rather than estimated.
 TWO THINGS DECIDE WHICH REPLAYS ARE WORTH READING, and both were found by
 looking rather than assumed.
 
-UNIT kills are missing from 2026-07-11 to 2026-08-01. A game update broke the
+UNIT kills are missing from 2026-07-15 to 2026-07-31. A game update broke the
 readout and it was fixed on 2026-08-02 (Si_ReplayLogging was rebuilt that day).
 Structure kills were written throughout, so a file from the window looks healthy
 and is useless for composition: 20260801_200736_NarakaCity is a real 50-minute
@@ -85,7 +85,7 @@ NEUTRAL_TEAMS = {"Wildlife", "GM", "Unknown"}
 
 # Unit destructions were not written between these dates. Structure destructions
 # were, so the files parse cleanly and simply contain no duels.
-BROKEN_FROM, BROKEN_TO = "20260711", "20260801"
+BROKEN_FROM, BROKEN_TO = "20260715", "20260731"
 
 
 def load_costs():
