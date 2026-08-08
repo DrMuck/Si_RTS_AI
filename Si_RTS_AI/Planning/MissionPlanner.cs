@@ -428,7 +428,38 @@ namespace Si_RTS_AI.Planning
                 bestScore = score; best = b; bestPrice = price;
             }
 
-            if (best == null) return false;
+            // NOTHING DISCOVERED IS NOT A REASON TO STAND STILL.
+            //
+            // The round that prompted this held 217 units worth 179,900 at the
+            // nest for 29 minutes with posture=hold and "no discovered
+            // objective" — an army that could have ended the game several times
+            // over, waiting on a scouting report that a lone Crab was never
+            // going to deliver. Meanwhile 35 Crabs died telling us exactly where
+            // to look.
+            //
+            // A Behemoth battalion survives ground that kills a Crab, so the
+            // army does its own scouting. This is armed reconnaissance, not a
+            // push: the objective is the ground itself, and its value is that
+            // arriving there lifts the fog and turns a guess into the real HQ
+            // target that the branch above then prefers on the next cycle.
+            if (best == null)
+            {
+                if (!ScoutPlanner.DeathGround(out var deathGround, out int votes)) return false;
+
+                // No raze term — there is nothing known to raze. Beat what we
+                // believe is there and keep the ordinary margin, so this cannot
+                // become the five-Crabs-into-an-unseen-base failure in a larger
+                // denomination.
+                int need = Mathf.CeilToInt(Mathf.Max(EnemyEstimate, 1) * MilitaryConfig.PushMargin);
+                pos = deathGround;
+                PushRequirement = need;
+                TargetIsHq = false;
+                what = $"armed reconnaissance to ({deathGround.x:F0},{deathGround.z:F0}) — " +
+                       $"no base discovered, but {votes} scouts died there; " +
+                       $"need {need} against theirs~{EnemyEstimate}";
+                return true;
+            }
+
             pos = best.Centre;
             PushRequirement = bestPrice;
             TargetIsHq = best.HasHq;
@@ -645,7 +676,7 @@ namespace Si_RTS_AI.Planning
               .Append(" theirs~").Append(EnemyEstimate)
               .Append(" known=").Append(Perception.ThreatMap.KnownCount)
               .Append(" enemyHQs=").Append(KnownEnemyHqs())
-              .Append(" | ");
+              .Append(" [").Append(Perception.ThreatMap.SightReport()).Append("] | ");
             for (int i = 0; i < Missions.Count; i++)
             {
                 var m = Missions[i];

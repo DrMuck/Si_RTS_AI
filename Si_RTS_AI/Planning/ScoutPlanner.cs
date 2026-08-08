@@ -168,6 +168,39 @@ namespace Si_RTS_AI.Planning
         struct Grave { public Vector3 Pos; public float At; public int Arm; }
         static readonly List<Grave> _graves = new List<Grave>(8);
 
+        /// <summary>
+        /// WHERE OUR SCOUTS KEEP DYING IS WHERE THEY LIVE.
+        ///
+        /// A grave is currently only a no-go marker, which throws away the one
+        /// thing it reliably tells us. A lone Crab that walks into defended
+        /// ground and dies has, in the act of dying, located the enemy — 35 of
+        /// them did so this round while the army stood at the nest for want of
+        /// an objective.
+        ///
+        /// This is intelligence a human commander reads the same way, and it
+        /// costs nothing: the deaths are already recorded. Returns the centroid
+        /// of unforgotten graves and how many voted for it, so the caller can
+        /// weigh how much to believe it.
+        /// </summary>
+        internal static bool DeathGround(out Vector3 centre, out int votes)
+        {
+            centre = Vector3.zero; votes = 0;
+            try
+            {
+                float now = Time.time;
+                Vector3 sum = Vector3.zero;
+                for (int i = 0; i < _graves.Count; i++)
+                {
+                    if (now - _graves[i].At > GRAVE_FORGET_S) continue;
+                    sum += _graves[i].Pos; votes++;
+                }
+                if (votes < 2) { votes = 0; return false; }
+                centre = sum / votes;
+                return true;
+            }
+            catch { votes = 0; return false; }
+        }
+
         /// <summary>How much ground one death closes. Not a precise radius —
         /// the point is that a neighbourhood becomes off-limits, not a circle
         /// measured to the metre.</summary>

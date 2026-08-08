@@ -314,6 +314,28 @@ namespace Si_RTS_AI.Perception
             return null;
         }
 
+        // ---- why does the army not know where to go? ------------------------
+        //
+        // The round said known=2 enemyHQs=0 after 29 minutes while scouting
+        // reported explored=87.2% and lost 35 scouts on enemy ground. Those two
+        // cannot both be true, so one of them is measured wrong, and every
+        // candidate on inspection looked correct. This counts the gate directly:
+        // how many enemy structures exist, how many our fog layer accepts, and
+        // where the HQ is when we reject it.
+        static int _structsSeenTotal, _structsInSight, _hqTotal, _hqInSight;
+        static string _hqWhere;
+
+        internal static string SightReport()
+        {
+            string r = $"structs {_structsInSight}/{_structsSeenTotal} in sight, " +
+                       $"HQ {_hqInSight}/{_hqTotal}, known={_known.Count}";
+            if (_hqTotal > 0 && _hqInSight == 0 && _hqWhere != null)
+                r += " — nearest rejected: " + _hqWhere;
+            _structsSeenTotal = _structsInSight = _hqTotal = _hqInSight = 0;
+            _hqWhere = null;
+            return r;
+        }
+
         static string KeyOf(string team, string name, Vector3 p) =>
             team + "|" + name + "|" + Mathf.RoundToInt(p.x / 20f) + "," + Mathf.RoundToInt(p.z / 20f);
 
@@ -450,8 +472,19 @@ namespace Si_RTS_AI.Perception
                 Vector3 p = st.transform.position;
                 int cx = GridWorld.CellX(p.x), cz = GridWorld.CellZ(p.z);
                 if (cx < 0 || cz < 0 || cx >= GridWorld.Width || cz >= GridWorld.Height) continue;
-                if (visible != null && !visible.IsSet(cx, cz)) continue;
-                string sname = st.ObjectInfo.DisplayName ?? "?";
+                _structsSeenTotal++;
+                bool inSight = visible == null || visible.IsSet(cx, cz);
+                string sname0 = st.ObjectInfo.DisplayName ?? "?";
+                if (sname0.IndexOf("Headquarters", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    _hqTotal++;
+                    if (inSight) _hqInSight++;
+                    else if (_hqWhere == null)
+                        _hqWhere = $"{sname0} at ({p.x:F0},{p.z:F0}) cell({cx},{cz})";
+                }
+                if (!inSight) continue;
+                _structsInSight++;
+                string sname = sname0;
                 int    scost = 0;
                 try { scost = st.ObjectInfo.Cost; } catch { }
                 string steam = enemy.name ?? "?";
