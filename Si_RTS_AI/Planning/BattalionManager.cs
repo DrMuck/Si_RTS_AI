@@ -59,6 +59,10 @@ namespace Si_RTS_AI.Planning
             public float AssignedAt;
             public float LastOrderAt;
             public float CommittedAt;
+            /// <summary>True while the group is gathering rather than advancing.
+            /// Kept on the battalion so the transition can be logged once
+            /// instead of every pass.</summary>
+            public bool  ClosingUp;
         }
 
         internal static readonly List<Battalion> Battalions = new List<Battalion>(6);
@@ -440,6 +444,52 @@ namespace Si_RTS_AI.Planning
         struct LastOrder { public Vector3 Dest; public float At; }
         static readonly Dictionary<Unit, LastOrder> _ordered = new Dictionary<Unit, LastOrder>();
 
+        /// <summary>
+        /// THE GROUP IS THE UNIT OF COMMAND, NOT THE UNIT.
+        ///
+        /// DrMuck: "we think in army groups not in single units." The executor
+        /// did not — it held a List&lt;Unit&gt; and gave each member the same
+        /// destination independently, which is not a group, it is a crowd with a
+        /// shared appointment. Wasps move at 35 and Behemoths at 9, so what
+        /// arrived was a queue, and a queue arrives in the order that gets it
+        /// killed: fastest and flimsiest first.
+        ///
+        /// A group needs three things the list did not have — a POSITION, a
+        /// SPREAD, and the discipline to wait. All three come from the centroid.
+        /// </summary>
+        static void Cohesion(Battalion bat, out Vector3 centre, out float spread)
+        {
+            centre = Vector3.zero;
+            spread = 0f;
+            int n = 0;
+            for (int i = 0; i < bat.Units.Count; i++)
+            {
+                Vector3 p;
+                try { p = bat.Units[i].transform.position; } catch { continue; }
+                centre += p; n++;
+            }
+            if (n == 0) return;
+            centre /= n;
+
+            // Worst straggler rather than the average: the group is only as
+            // together as the member furthest from it, and averaging hides one
+            // Behemoth half a map behind four Wasps.
+            for (int i = 0; i < bat.Units.Count; i++)
+            {
+                Vector3 p;
+                try { p = bat.Units[i].transform.position; } catch { continue; }
+                float dx = p.x - centre.x, dz = p.z - centre.z;
+                float d = dx * dx + dz * dz;
+                if (d > spread) spread = d;
+            }
+            spread = Mathf.Sqrt(spread);
+        }
+
+        /// <summary>How strung out a group may get before it stops advancing and
+        /// closes up. Generous enough that ordinary pathing noise does not stall
+        /// it, tight enough that the tail is in the same fight as the head.</summary>
+        const float COHESION_M = 220f;
+
         /// <summary>Is this unit in a fight? Nothing we want is worth
         /// interrupting one — the order can wait until it resolves.</summary>
         static bool IsFighting(Unit u)
@@ -500,6 +550,24 @@ namespace Si_RTS_AI.Planning
 
                 Vector3 dest = bat.Phase == State.Returning ? bat.Rally : bat.Objective;
                 if (dest == Vector3.zero) continue;
+
+                // MOVE AS A BODY. If the group is strung out, the destination for
+                // everyone becomes its own centre: the head stops, the tail
+                // closes, and the whole thing resumes together on the next pass.
+                // One rule, and it produces staging, pace-matching and regroup
+                // after a fight without any of them being written separately.
+                Cohesion(bat, out Vector3 centre, out float spread);
+                bool closingUp = spread > COHESION_M && bat.Units.Count > 1;
+                Vector3 target = closingUp ? centre : dest;
+                if (closingUp != bat.ClosingUp)
+                {
+                    bat.ClosingUp = closingUp;
+                    MelonLogger.Msg($"[BATTALION] {bat.Name} " +
+                                    (closingUp
+                                        ? $"strung out over {spread:F0}m — closing up before advancing"
+                                        : $"together again ({spread:F0}m) — advancing"));
+                }
+
                 int arrived = 0;
                 for (int i = 0; i < bat.Units.Count; i++)
                 {
@@ -512,7 +580,16 @@ namespace Si_RTS_AI.Planning
                     // the same spot — a unit standing on its objective is a unit
                     // free to shoot at whatever is in front of it.
                     if (dx * dx + dz * dz < ARRIVED_M * ARRIVED_M) { arrived++; continue; }
-                    if (NeedsOrder(u, dest, now)) IssueMove(u, dest);
+
+                    // While closing up, whoever is already near the centre has
+                    // nowhere to be. Ordering them at it would jostle the group
+                    // in place and interrupt anyone shooting.
+                    if (closingUp)
+                    {
+                        float cx = p.x - centre.x, cz = p.z - centre.z;
+                        if (cx * cx + cz * cz < ARRIVED_M * ARRIVED_M) continue;
+                    }
+                    if (NeedsOrder(u, target, now)) IssueMove(u, target);
                 }
 
                 // Home and dissolved: units return to the free pool and the next
@@ -778,8 +855,16 @@ namespace Si_RTS_AI.Planning
                   .Append(b.Value);
                 if (b.RequiredValue > 0) sb.Append('/').Append(b.RequiredValue);
                 if (b.Kind != MissionPlanner.Kind.Garrison)
+                {
                     sb.Append(" -> (").Append(b.Objective.x.ToString("F0")).Append(',')
                       .Append(b.Objective.z.ToString("F0")).Append(')');
+                    if (b.Units.Count > 1)
+                    {
+                        Cohesion(b, out _, out float sp);
+                        sb.Append(" spread ").Append(sp.ToString("F0")).Append('m');
+                        if (b.ClosingUp) sb.Append(" closing");
+                    }
+                }
                 sb.Append(" | ");
             }
             if (_releasedToScouts > 0) sb.Append("releasedToScouts=").Append(_releasedToScouts).Append(' ');
