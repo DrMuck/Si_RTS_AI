@@ -129,6 +129,20 @@ namespace Si_RTS_AI.Planning
         /// <summary>Our army value over the enemy estimate before committing.</summary>
         internal static float PushMargin;
 
+        /// <summary>
+        /// Share of a base's cash value the attacking force must ALSO be worth,
+        /// on top of beating its defenders, to be judged able to raze it.
+        ///
+        /// The one invented number in the kill-base price, and in config for
+        /// that reason. Too low and the army arrives, wins the fight and cannot
+        /// finish the buildings — which is the trickle failure wearing a
+        /// different hat. Too high and it never leaves home.
+        ///
+        /// Measurable later: combat.jsonl plus structure kills say what a razing
+        /// actually costs, and this should be replaced by that.
+        /// </summary>
+        internal static float StructureRazeShare;
+
         /// <summary>Fraction of its committed peak value a push may fall to
         /// before it is called off. Not a timer, and not first contact.</summary>
         internal static float PushRetreatFraction;
@@ -159,6 +173,7 @@ namespace Si_RTS_AI.Planning
             PushGrowthFloor     = RtsaiConfig.Float("military.pushGrowthFloor",     20f);
             PushMargin          = RtsaiConfig.Float("military.pushMargin",          1.5f);
             PushRetreatFraction = RtsaiConfig.Float("military.pushRetreatFraction", 0.4f);
+            StructureRazeShare  = RtsaiConfig.Float("military.structureRazeShare",  0.5f);
 
             // Say what the round is about to run under. A military layer that
             // silently switched itself on would be the worst kind of surprise

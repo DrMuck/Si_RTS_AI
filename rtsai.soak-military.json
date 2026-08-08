@@ -100,7 +100,8 @@
 
     "pushGrowthFloor": 20.0,
     "pushMargin": 1.5,
-    "pushRetreatFraction": 0.4
+    "pushRetreatFraction": 0.4,
+    "structureRazeShare": 0.5
   },
 
   "_lockAlienCommander": [

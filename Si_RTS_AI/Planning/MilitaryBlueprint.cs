@@ -172,18 +172,20 @@ namespace Si_RTS_AI.Planning
         static bool TryForward(Team team, Vector3 nest, List<Vector3> existing, out Site site)
         {
             site = null;
-            Vector3 target = Vector3.zero;
-            int bestCost = 0;
-            try
+            // THE FOB AIMS AT THE BASE THE PUSH IS AIMED AT. It used to pick the
+            // most expensive single structure independently, so the forward
+            // production could be built toward one place while the army went to
+            // another — two decisions about the same intent, drifting apart,
+            // which is the failure this project has now made three times.
+            Vector3 target = MissionPlanner.PushObjective;
+            if (target == Vector3.zero)
             {
-                Perception.ThreatMap.ForEachKnown(k =>
-                {
-                    if (k.Cost <= bestCost) return;
-                    bestCost = k.Cost; target = k.Pos;
-                });
+                // No push chosen yet: aim at their richest known base, which is
+                // what the push will choose once it can afford anything.
+                var bases = Perception.ThreatMap.Bases;
+                if (bases.Count == 0) return false;
+                target = bases[0].Centre;
             }
-            catch { }
-            if (bestCost <= 0 || target == Vector3.zero) return false;
 
             Vector3 at = Vector3.Lerp(nest, target, FORWARD_FRACTION);
             if (NearAny(existing, at, COVER_RADIUS_M)) return false;

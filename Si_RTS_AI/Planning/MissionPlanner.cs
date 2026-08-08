@@ -118,6 +118,8 @@ namespace Si_RTS_AI.Planning
             Current = Posture.Hold;
             ArmyValue = 0; ArmyGrowthPerS = 0f; EnemyEstimate = 0;
             PushObjective = Vector3.zero;
+            PushRequirement = 0;
+            TargetIsHq = false;
             _lastTickAt = _lastLogAt = 0f;
             _nextId = 0;
             _postureChangedAt = 0f;
@@ -274,15 +276,19 @@ namespace Si_RTS_AI.Planning
             // manage to look at, which is the safer of the two failures and is
             // visible in the log as knownStructures and theirs~0.
             if (EnemyEstimate <= 0) return;
-            if (ArmyValue < EnemyEstimate * MilitaryConfig.PushMargin) return;
 
+            // Pick the target FIRST, because the bar to clear is the price of
+            // killing THAT base — not a generic multiple of their army. A push
+            // that leaves before it can finish the job is the one-by-one trickle
+            // in a larger denomination.
             if (!TryPickTarget(out var objective, out string what)) return;
+            if (ArmyValue < PushRequirement) return;
 
             PushObjective  = objective;
             _pushPeakValue = 0;      // the force has not formed yet
             SetPosture(Posture.Push, now,
                        $"army {ArmyValue} flat at {ArmyGrowthPerS:F1}/s with {spendable} spendable, " +
-                       $"theirs ~{EnemyEstimate} → {what}");
+                       $"and {ArmyValue} >= {PushRequirement} needed → {what}");
         }
 
         static void SetPosture(Posture p, float now, string why)
@@ -332,39 +338,138 @@ namespace Si_RTS_AI.Planning
         }
 
         /// <summary>
-        /// The best of what we have SEEN, ranked by what it is worth over how
-        /// defended it is. Weakly-defended value first, which on any real map
-        /// means their expansions before their main base — the Silica form of a
-        /// blockade, since there are no supply lines to cut and contesting
-        /// patches is the equivalent.
+        /// WHICH BASE WE ARE TRYING TO KILL, and what finishing it would cost.
         ///
-        /// Only discovered structures are eligible. The AI could read every
-        /// enemy position off the server and that would be both unfair and
-        /// misleading — a planner trained on omniscience makes decisions it
-        /// could never justify from what it can see.
+        /// DrMuck: "maybe we go first for an objective to kill the enemy base(s).
+        /// Build a strong army where we are sure it could destroy the base."
+        ///
+        /// The old rule picked the most expensive single STRUCTURE weighted by
+        /// how undefended it was, which is a building rather than a base — so
+        /// the army walked at a Refinery, killed it, and stood there. Nothing
+        /// ever asked what finishing the job would take, so "sure it could
+        /// destroy the base" was not a thought the layer could have.
+        ///
+        /// Now the target is a base cluster and the price has two parts:
+        ///
+        ///   BEAT WHAT DEFENDS IT — and not merely what is standing there. Their
+        ///   whole army can answer a push on their base, so the requirement uses
+        ///   the larger of the local force and their total estimated force. A
+        ///   push sized against the garrison arrives and then meets the rest.
+        ///
+        ///   THEN KILL THE BUILDINGS — structures take time and damage to remove
+        ///   and the force has to still exist afterwards. Priced as a share of
+        ///   the base's cash value. That share is a PLACEHOLDER; it is the one
+        ///   invented number here and it is in config for that reason.
+        ///
+        /// Choosing between bases: prefer one we can afford over a richer one we
+        /// cannot, and prefer an HQ when the prices are close, because HQs are
+        /// the actual win condition.
         /// </summary>
         static bool TryPickTarget(out Vector3 pos, out string what)
         {
             pos = Vector3.zero; what = null;
-            float best = 0f;
-            Vector3 bestPos = Vector3.zero;
-            string bestName = null;
+            // THE WIN CONDITION IS THE OBJECTIVE. DrMuck: "as you know destruct
+            // all enemy HQs is the objective."
+            //
+            // That is not a preference to weight, it is the definition of
+            // winning, and the four drivers in the spec — deny expansion, weaken
+            // eco, weaken production, weaken military — are INSTRUMENTAL. They
+            // exist to make an HQ killable. Scoring an HQ base against a
+            // Refinery on value-per-cash would let a rich enough Refinery
+            // outrank the thing that ends the game, which is the wrong shape of
+            // decision no matter what the constants are.
+            //
+            // So: an HQ base we can afford always wins. Only when none is
+            // affordable do we look at what would make one affordable later.
+            Perception.ThreatMap.Base best = null;
+            int bestPrice = 0;
+            float bestScore = 0f;
+            bool bestIsHq = false;
 
-            Perception.ThreatMap.ForEachKnown(k =>
+            var bases = Perception.ThreatMap.Bases;
+            for (int i = 0; i < bases.Count; i++)
             {
-                if (k.Cost <= 0) return;
-                float local = 0f;
-                try { local = Perception.ThreatMap.ThreatNear(k.Pos, TARGET_THREAT_RADIUS); } catch { }
-                float score = k.Cost / (1f + local);
-                if (score <= best) return;
-                best = score; bestPos = k.Pos; bestName = k.Name;
-            });
+                var b = bases[i];
+                if (b.Cost <= 0) continue;
+                int price = PriceOfKilling(b);
+                if (price <= 0) continue;
 
-            if (bestName == null) return false;
-            pos = bestPos;
-            what = $"{bestName} at ({bestPos.x:F0},{bestPos.z:F0})";
+                bool affordable = ArmyValue >= price;
+                bool isHq = b.HasHq;
+
+                // An affordable HQ ends the argument. Among several, the
+                // cheapest to finish — we can come back for the others.
+                if (isHq && affordable)
+                {
+                    if (!bestIsHq || price < bestPrice)
+                    { best = b; bestPrice = price; bestIsHq = true; }
+                    continue;
+                }
+                if (bestIsHq) continue;      // nothing outranks an affordable HQ
+
+                // Nothing decisive is in reach, so pick what best weakens them
+                // per cash committed. Value carries the spec's ordering: their
+                // eco and production are worth more than their army standing on
+                // open ground, and a base is worth what it cost them.
+                float score = b.Cost / (float)price;
+                if (affordable) score *= 2f;   // able to finish beats able to start
+                if (score <= bestScore) continue;
+                bestScore = score; best = b; bestPrice = price;
+            }
+
+            if (best == null) return false;
+            pos = best.Centre;
+            PushRequirement = bestPrice;
+            TargetIsHq = best.HasHq;
+            what = (best.HasHq
+                        ? $"THEIR HQ — {best.Count} buildings worth {best.Cost}"
+                        : $"a base of {best.Count} buildings worth {best.Cost} (no HQ; " +
+                          "weakening them until one is reachable)") +
+                   $" at ({best.Centre.x:F0},{best.Centre.z:F0}), " +
+                   $"costing about {bestPrice} to finish";
             return true;
         }
+
+        /// <summary>True when the current push objective would remove an enemy
+        /// HQ, which is the only thing that actually wins.</summary>
+        internal static bool TargetIsHq { get; private set; }
+
+        /// <summary>Enemy HQs we have discovered and still believe stand. The
+        /// win condition made countable, so a round can be read as progress
+        /// toward it rather than as a list of skirmishes.</summary>
+        internal static int KnownEnemyHqs()
+        {
+            int n = 0;
+            try
+            {
+                var bs = Perception.ThreatMap.Bases;
+                for (int i = 0; i < bs.Count; i++) if (bs[i].HasHq) n++;
+            }
+            catch { }
+            return n;
+        }
+
+        /// <summary>What it would take to take this base down and still be
+        /// standing. See TryPickTarget for why it is these two terms.</summary>
+        static int PriceOfKilling(Perception.ThreatMap.Base b)
+        {
+            int local = 0;
+            try { local = Perception.ThreatMap.ValueNear(b.Centre, BASE_DEFENCE_RADIUS); } catch { }
+            int defenders = Mathf.Max(local, EnemyEstimate);
+            int beatThem = Mathf.CeilToInt(defenders * MilitaryConfig.PushMargin);
+            int razeIt   = Mathf.CeilToInt(b.Cost * MilitaryConfig.StructureRazeShare);
+            return beatThem + razeIt;
+        }
+
+        /// <summary>How wide to look when asking what is standing in a base.
+        /// Matches the clustering distance, so "defending it" and "part of it"
+        /// mean the same ground.</summary>
+        const float BASE_DEFENCE_RADIUS = 700f;
+
+        /// <summary>Cash the push must be worth to finish the CURRENT target.
+        /// Set by TryPickTarget so the portfolio and the log agree on one
+        /// number rather than each computing their own.</summary>
+        internal static int PushRequirement { get; private set; }
 
         // ---- The portfolio ----------------------------------------------------
 
@@ -471,9 +576,9 @@ namespace Si_RTS_AI.Planning
                 Missions.Add(new Mission
                 {
                     Id = IdFor(Kind.Push, PushObjective), Kind = Kind.Push, Objective = PushObjective,
-                    RequiredValue = Mathf.Max(1, Mathf.CeilToInt(EnemyEstimate * MilitaryConfig.PushMargin)),
+                    RequiredValue = Mathf.Max(1, PushRequirement),
                     Score = 0f,
-                    Note = $"theirs ~{EnemyEstimate}, ours {ArmyValue}",
+                    Note = $"kill base — need {PushRequirement}, have {ArmyValue}, theirs ~{EnemyEstimate}",
                     CreatedAt = now,
                 });
             }
@@ -528,6 +633,7 @@ namespace Si_RTS_AI.Planning
                                          ? "warmup" : ArmyGrowthPerS.ToString("F1") + "/s")
               .Append(" theirs~").Append(EnemyEstimate)
               .Append(" known=").Append(Perception.ThreatMap.KnownCount)
+              .Append(" enemyHQs=").Append(KnownEnemyHqs())
               .Append(" | ");
             for (int i = 0; i < Missions.Count; i++)
             {

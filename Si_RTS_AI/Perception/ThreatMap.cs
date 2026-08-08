@@ -210,6 +210,110 @@ namespace Si_RTS_AI.Perception
             }
         }
 
+
+        // ---- BASES, not buildings --------------------------------------------
+        //
+        // "Kill the enemy base" is not a sentence the layer could form. It knew
+        // individual structures and picked the most expensive one, which is a
+        // building, not a base — so the army walked at a Refinery and stopped,
+        // and nothing ever said what finishing the job would cost.
+        //
+        // Structures are grouped by proximity into bases. Single-linkage at
+        // BASE_LINK_M: anything within that of any member joins the cluster,
+        // which is how a base actually looks — a spread of buildings, not a
+        // circle around a centre.
+
+        /// <summary>Two structures this close belong to the same base. Wide
+        /// enough to hold a spread-out main, tight enough that a lone forward
+        /// Refinery is its own thing and can be denied on its own.</summary>
+        const float BASE_LINK_M = 700f;
+
+        internal class Base
+        {
+            public string  Team;
+            public Vector3 Centre;
+            public int     Cost;          // everything standing in it, in cash
+            public int     Count;
+            public bool    HasHq;
+            public float   NewestSeenAt;  // youngest member — a fresh expansion
+            public readonly List<Known> Members = new List<Known>();
+        }
+
+        static readonly List<Base> _bases = new List<Base>(8);
+        static float _lastClusterAt;
+
+        /// <summary>Enemy bases as we currently believe them. Rebuilt on a slow
+        /// cadence — a base is not a fast-moving thing.</summary>
+        internal static IReadOnlyList<Base> Bases => _bases;
+
+        static void RebuildBases(float now)
+        {
+            if (now - _lastClusterAt < 5f) return;
+            _lastClusterAt = now;
+            _bases.Clear();
+            if (_known.Count == 0) return;
+
+            var pending = new List<Known>(_known.Count);
+            foreach (var kv in _known) pending.Add(kv.Value);
+
+            float link2 = BASE_LINK_M * BASE_LINK_M;
+            while (pending.Count > 0)
+            {
+                var seed = pending[pending.Count - 1];
+                pending.RemoveAt(pending.Count - 1);
+                var b = new Base { Team = seed.Team };
+                b.Members.Add(seed);
+
+                // Grow the cluster until nothing else is within reach of ANY
+                // member. Quadratic in cluster size and that is fine: a map
+                // holds tens of enemy structures, not thousands.
+                bool grew = true;
+                while (grew)
+                {
+                    grew = false;
+                    for (int i = pending.Count - 1; i >= 0; i--)
+                    {
+                        if (pending[i].Team != b.Team) continue;
+                        for (int m = 0; m < b.Members.Count; m++)
+                        {
+                            float dx = pending[i].Pos.x - b.Members[m].Pos.x;
+                            float dz = pending[i].Pos.z - b.Members[m].Pos.z;
+                            if (dx * dx + dz * dz > link2) continue;
+                            b.Members.Add(pending[i]);
+                            pending.RemoveAt(i);
+                            grew = true;
+                            break;
+                        }
+                    }
+                }
+
+                Vector3 sum = Vector3.zero;
+                for (int m = 0; m < b.Members.Count; m++)
+                {
+                    var k = b.Members[m];
+                    sum += k.Pos;
+                    b.Cost += k.Cost;
+                    if (k.LastSeenAt > b.NewestSeenAt) b.NewestSeenAt = k.LastSeenAt;
+                    if (k.Name != null &&
+                        k.Name.IndexOf("Headquarters", StringComparison.OrdinalIgnoreCase) >= 0)
+                        b.HasHq = true;
+                }
+                b.Count = b.Members.Count;
+                b.Centre = sum / Mathf.Max(1, b.Members.Count);
+                _bases.Add(b);
+            }
+            _bases.Sort((x, y) => y.Cost.CompareTo(x.Cost));
+        }
+
+        /// <summary>Their main, by value. Everything else of theirs is an
+        /// expansion by definition, which is what objective #1 needs.</summary>
+        internal static Base MainBaseOf(string team)
+        {
+            for (int i = 0; i < _bases.Count; i++)
+                if (_bases[i].Team == team) return _bases[i];   // sorted by cost
+            return null;
+        }
+
         static string KeyOf(string team, string name, Vector3 p) =>
             team + "|" + name + "|" + Mathf.RoundToInt(p.x / 20f) + "," + Mathf.RoundToInt(p.z / 20f);
 
@@ -226,6 +330,8 @@ namespace Si_RTS_AI.Perception
             _known.Clear();
             _mix.Clear();
             _mixNow.Clear();
+            _bases.Clear();
+            _lastClusterAt = 0f;
         }
 
         static void EnsureSized()
@@ -283,6 +389,9 @@ namespace Si_RTS_AI.Perception
 
             try { ForgetWhatWeCanSeeIsGone(now); }
             catch (Exception ex) { MelonLogger.Warning("[THREAT] forget threw: " + ex.Message); }
+
+            try { RebuildBases(now); }
+            catch (Exception ex) { MelonLogger.Warning("[THREAT] cluster threw: " + ex.Message); }
 
             if (now - _lastReportAt < REPORT_S) return;
             _lastReportAt = now;
@@ -479,7 +588,8 @@ namespace Si_RTS_AI.Perception
             var sb = new System.Text.StringBuilder();
             sb.Append("[THREAT] danger=").Append((int)total).Append(" peak=").Append((int)peak)
               .Append(" enemyValue=").Append(TotalValue)
-              .Append(" known=").Append(_known.Count);
+              .Append(" known=").Append(_known.Count)
+              .Append(" bases=").Append(_bases.Count);
             if (peakIdx >= 0 && peak > 0.5f)
             {
                 var c = GridWorld.CellCenter(peakIdx % GridWorld.Width, peakIdx / GridWorld.Width);
