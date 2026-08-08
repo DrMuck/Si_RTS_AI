@@ -132,6 +132,7 @@ namespace Si_RTS_AI.Faction
             _typeBusy.Clear();
             _typeSaturatedSince.Clear();
             _typeWant.Clear();
+            _gateLogged.Clear();
             _leftoverBudget = 0;
             _failuresLogged.Clear();
             _producerStructureCds.Clear();
@@ -162,7 +163,7 @@ namespace Si_RTS_AI.Faction
                     QueueUnits(team, ref budget);
                 }
                 _leftoverBudget = budget;
-                UpdateProducerDemand(now);
+                UpdateProducerDemand(now, team);
                 MaybeLog(now, team, budget);
             }
             catch (Exception ex) { MelonLogger.Warning("[MIL/PROD] tick threw: " + ex.Message); }
@@ -478,10 +479,115 @@ namespace Si_RTS_AI.Faction
         /// momentary pile-up is not evidence of anything.</summary>
         const float SATURATED_FOR_S = 45f;
 
-        static void UpdateProducerDemand(float now)
+        /// <summary>
+        /// WHAT THE PRODUCERS WE ALREADY HAVE EAT, PER SECOND.
+        ///
+        /// A producer that never idles converts one unit per build time, so its
+        /// draw is cost/buildTime — a Behemoth at 1,200 over 45s is about 27/s.
+        /// Summed over every military producer, that is what the economy must
+        /// sustain just to keep the current buildings busy.
+        ///
+        /// Read from live ConstructionData rather than a table, so a balance
+        /// change moves it, and taken from the most expensive thing the producer
+        /// offers because that is the upper bound on what it can consume.
+        /// </summary>
+        static float ProducerDraw(Team team, string forType, out float perNewProducer)
+        {
+            perNewProducer = 0f;
+            float total = 0f;
+            try
+            {
+                var structs = team.Structures;
+                if (structs == null) return 0f;
+                for (int i = 0; i < structs.Count; i++)
+                {
+                    var st = structs[i];
+                    if (st?.ObjectInfo == null || st.IsDestroyed) continue;
+                    string tn = st.ObjectInfo.DisplayName ?? "";
+                    if (!ProducerStructureNames.Contains(tn)) continue;
+                    bool functional = false;
+                    try { functional = st.IsFunctional; } catch { }
+                    if (!functional) continue;
+
+                    float draw = DrawOf(st);
+                    total += draw;
+                    if (string.Equals(tn, forType, StringComparison.OrdinalIgnoreCase)
+                        && draw > perNewProducer)
+                        perNewProducer = draw;
+                }
+            }
+            catch { }
+            return total;
+        }
+
+        /// <summary>Cash per second one producer consumes if it never idles.</summary>
+        static float DrawOf(Structure s)
+        {
+            try
+            {
+                if (s.ConstructionOptions == null) return 0f;
+                float best = 0f;
+                foreach (var opt in s.ConstructionOptions)
+                {
+                    if (opt?.ObjectInfo == null) continue;
+                    if (WorkerUnitNames.Contains(opt.ObjectInfo.DisplayName ?? "")) continue;
+                    int cost = SafeCost(opt);
+                    float bt = 0f;
+                    try { bt = opt.TotalConstructionTime; } catch { }
+                    if (cost <= 0 || bt <= 0.01f) continue;
+                    float d = cost / bt;
+                    if (d > best) best = d;
+                }
+                return best;
+            }
+            catch { return 0f; }
+        }
+
+        /// <summary>How far ahead income is projected: roughly how long a
+        /// producer takes to become useful, its build plus its first unit.
+        /// Ordering against income that has not arrived yet is the entire point
+        /// — DrMuck: "usually eco starts to bump up around 4-5 min". Ordering
+        /// against income that never will is the failure mode, which is why the
+        /// trend is clamped at zero before it is used.</summary>
+        const float PRODUCER_LEAD_S = 60f;
+
+        static readonly Dictionary<string, float> _gateLogged =
+            new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>Say so when the ECONOMY is what is holding production back,
+        /// so "still just one cyst" never again costs a round of guessing.</summary>
+        static void LogIncomeGateOnce(string name, float income, float projected,
+                                      float draw, float newDraw)
+        {
+            float now = Time.time;
+            if (_gateLogged.TryGetValue(name, out float at) && now - at < 60f) return;
+            _gateLogged[name] = now;
+            MelonLogger.Msg($"[MIL/PROD] {name} is saturated but income will not feed another: " +
+                            $"{income:F0}/s now, {projected:F0}/s projected, against " +
+                            $"{draw:F0}/s already committed and {newDraw:F0}/s more needed.");
+        }
+
+        static void UpdateProducerDemand(float now, Team team)
         {
             int cap = Planning.MilitaryConfig.MaxProducersPerType;
             if (cap <= 1) return;
+
+            // THE INCOME GATE. It used to look at the BANK, which is a stock —
+            // and a stock buys a building that then idles. What a producer needs
+            // is a RATE, sustained, and the round average is no good either
+            // because a curve starting near zero reads low forever.
+            //
+            // So: income over the last minute, projected forward to the moment
+            // the producer would come online. Trend clamped non-negative, since
+            // betting on a decline reversing is hope rather than prediction.
+            float income = 0f, trend = 0f;
+            try
+            {
+                income = Perception.EcoRateSampler.GetRecentIncomePerSec(team);
+                trend  = Mathf.Max(0f, Perception.EcoRateSampler.GetIncomeTrend(team));
+            }
+            catch { }
+            float projected = income + trend * PRODUCER_LEAD_S;
 
             foreach (var name in HigherTierProducerNames)
             {
@@ -489,7 +595,20 @@ namespace Si_RTS_AI.Faction
                 // Leftover has to be worth a producer, or we would add one to
                 // soak up pocket change.
                 bool bound = busy && _leftoverBudget >= 4000;
-                if (!bound) { _typeSaturatedSince.Remove(name); continue; }
+
+                float draw = ProducerDraw(team, name, out float newDraw);
+                if (newDraw <= 0f) newDraw = draw > 0f ? draw : 25f;
+                // Can the projected economy carry everything already building
+                // AND one more? If not, the constraint is income, not buildings.
+                bool affordable = projected - draw >= newDraw;
+
+                if (!bound || !affordable)
+                {
+                    if (bound && !affordable)
+                        LogIncomeGateOnce(name, income, projected, draw, newDraw);
+                    _typeSaturatedSince.Remove(name);
+                    continue;
+                }
 
                 if (!_typeSaturatedSince.TryGetValue(name, out float since))
                 { _typeSaturatedSince[name] = now; continue; }
@@ -500,9 +619,10 @@ namespace Si_RTS_AI.Faction
                 if (want < 1) want = 1;
                 if (want >= cap) continue;
                 _typeWant[name] = want + 1;
-                MelonLogger.Msg($"[MIL/PROD] every {name} busy with {_leftoverBudget} " +
-                                $"still unspent for {SATURATED_FOR_S:F0}s — " +
-                                $"asking for {want + 1} (cap {cap})");
+                MelonLogger.Msg($"[MIL/PROD] every {name} busy with {_leftoverBudget} unspent " +
+                                $"for {SATURATED_FOR_S:F0}s, and income {income:F0}/s " +
+                                $"(projected {projected:F0}/s) covers {draw:F0}/s committed " +
+                                $"plus {newDraw:F0}/s more — asking for {want + 1} (cap {cap})");
             }
         }
 

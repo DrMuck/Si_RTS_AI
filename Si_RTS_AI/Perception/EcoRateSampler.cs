@@ -86,6 +86,12 @@ namespace Si_RTS_AI.Perception
             public int   TotalIncome;       // sum of positive deltas across the round
             public int   PeakRatePerSec;
             public readonly Dictionary<int, int> CashAtCheckpoint = new Dictionary<int, int>();
+
+            // Rolling samples of (time, cumulative income) so a RECENT rate can
+            // be read. The round average cannot answer "can we afford to feed
+            // another producer": it is dragged down for the whole game by the
+            // slow opening, and it lags every real change by minutes.
+            public readonly List<(float t, int cum)> Trace = new List<(float, int)>(256);
         }
 
         static readonly Dictionary<Team, TeamEco> _perTeam = new Dictionary<Team, TeamEco>();
@@ -115,6 +121,68 @@ namespace Si_RTS_AI.Perception
             float dt = Time.time - e.FirstSampleAt;
             if (dt < 1f) return 0f;
             return e.TotalIncome / dt;
+        }
+
+        /// <summary>Seconds of history a recent rate is measured over. Long
+        /// enough that one delivery does not move it, short enough to notice the
+        /// economy coming up around minute four or five.</summary>
+        const float RATE_WINDOW_S = 60f;
+
+        /// <summary>
+        /// Income per second over the last minute, rather than over the round.
+        ///
+        /// This is the number anything deciding "can we afford another producer"
+        /// has to use. GetAvgIncomePerSec answers a different question — what
+        /// the round has averaged so far — and on a curve that starts near zero
+        /// and climbs it reads low forever.
+        /// </summary>
+        internal static float GetRecentIncomePerSec(Team team)
+        {
+            if (team == null || !_perTeam.TryGetValue(team, out var e)) return 0f;
+            var tr = e.Trace;
+            if (tr.Count < 2) return 0f;
+            float now = tr[tr.Count - 1].t;
+            for (int i = tr.Count - 1; i >= 0; i--)
+            {
+                float dt = now - tr[i].t;
+                if (dt >= RATE_WINDOW_S * 0.75f)
+                    return (tr[tr.Count - 1].cum - tr[i].cum) / Mathf.Max(1f, dt);
+            }
+            // Less than a window of history: use everything we have rather than
+            // report zero, which would read as "no economy" during the opening.
+            float span = now - tr[0].t;
+            return span < 5f ? 0f : (tr[tr.Count - 1].cum - tr[0].cum) / span;
+        }
+
+        /// <summary>
+        /// How fast the income rate itself is changing, in cash per second per
+        /// second. Positive means the economy is still coming up.
+        ///
+        /// DrMuck: "usually eco starts to bump up around 4-5 min." That bump is
+        /// exactly what this measures, and it is what lets a producer be ordered
+        /// slightly early — by the time it finishes building, the income to feed
+        /// it has arrived.
+        /// </summary>
+        internal static float GetIncomeTrend(Team team)
+        {
+            if (team == null || !_perTeam.TryGetValue(team, out var e)) return 0f;
+            var tr = e.Trace;
+            if (tr.Count < 3) return 0f;
+            float now = tr[tr.Count - 1].t;
+            int midIdx = -1, oldIdx = -1;
+            for (int i = tr.Count - 1; i >= 0; i--)
+            {
+                float dt = now - tr[i].t;
+                if (midIdx < 0 && dt >= RATE_WINDOW_S * 0.5f) midIdx = i;
+                if (dt >= RATE_WINDOW_S) { oldIdx = i; break; }
+            }
+            if (midIdx < 0 || oldIdx < 0 || midIdx == oldIdx) return 0f;
+            float recent = (tr[tr.Count - 1].cum - tr[midIdx].cum) /
+                           Mathf.Max(1f, now - tr[midIdx].t);
+            float older  = (tr[midIdx].cum - tr[oldIdx].cum) /
+                           Mathf.Max(1f, tr[midIdx].t - tr[oldIdx].t);
+            float span = Mathf.Max(1f, now - tr[oldIdx].t) * 0.5f;
+            return (recent - older) / span;
         }
 
         internal static void Tick(Team team)
@@ -151,6 +219,12 @@ namespace Si_RTS_AI.Perception
                 int drainedNow = AutoDrainEnabled ? TryDrain(team) : 0;
                 if (drainedNow > 0) eco.TotalIncome += drainedNow;
                 int cashPost   = drainedNow > 0 ? TryGetResources(team) : cashPre;
+
+                // Rolling history for the recent-rate and trend readers. Pruned
+                // to twice the window so it cannot grow across a long round.
+                eco.Trace.Add((now, eco.TotalIncome));
+                while (eco.Trace.Count > 2 && now - eco.Trace[0].t > RATE_WINDOW_S * 2f)
+                    eco.Trace.RemoveAt(0);
 
                 float elapsed = now - eco.FirstSampleAt;
 
