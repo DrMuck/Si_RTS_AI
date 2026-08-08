@@ -55,6 +55,15 @@ namespace Si_RTS_AI.Perception
         /// <summary>Ground we hold, from ControlMap.</summary>
         internal static float MapHeld { get; private set; }
 
+        /// <summary>Share of the round in which the ECONOMY was blocked for want
+        /// of cash. This is the number that says whether military spending is
+        /// hurting expansion — the thing DrMuck wants held at zero while the
+        /// other meters climb. Above a few percent and the military is taking
+        /// money the economy had a use for.</summary>
+        internal static float EcoStarvedShare { get; private set; }
+
+        static int _starvedSamples, _samples;
+
         // Producer busy-ness is sampled by MilitaryProduction as it walks the
         // producers anyway — cheaper than looking them up again here, and it
         // cannot disagree with what production actually saw.
@@ -74,6 +83,7 @@ namespace Si_RTS_AI.Perception
             CashIdleMinutes = 0f;
             ArmyEngaged = ProducersBusy = MapHeld = 0f;
             _busySamples = _totalSamples = 0;
+            _starvedSamples = _samples = 0;
             _lastLogAt = 0f;
         }
 
@@ -90,7 +100,8 @@ namespace Si_RTS_AI.Perception
                     $"[UTIL] cash {CashIdleMinutes:F1}min idle | " +
                     $"army {ArmyEngaged * 100f:F0}% engaged | " +
                     $"producers {ProducersBusy * 100f:F0}% busy | " +
-                    $"map {MapHeld * 100f:F0}% held");
+                    $"map {MapHeld * 100f:F0}% held | " +
+                    $"eco cash-blocked {EcoStarvedShare * 100f:F0}% of the round");
             }
             catch (System.Exception ex)
             { MelonLogger.Warning("[UTIL] tick threw: " + ex.Message); }
@@ -131,6 +142,11 @@ namespace Si_RTS_AI.Perception
 
             // ---- ground -----------------------------------------------------
             try { MapHeld = ControlMap.HeldFraction; } catch { }
+
+            // ---- is the military standing on the economy's toes? ------------
+            _samples++;
+            try { if (Planning.EcoPlanner.EcoStarvedOfCash) _starvedSamples++; } catch { }
+            EcoStarvedShare = _samples > 0 ? _starvedSamples / (float)_samples : 0f;
         }
 
         /// <summary>One line for the round summary, so a soak can be read
@@ -142,7 +158,8 @@ namespace Si_RTS_AI.Perception
                    $"  cash idle: {CashIdleMinutes:F1} min of income\n" +
                    $"  army engaged: {ArmyEngaged * 100f:F0}%\n" +
                    $"  producers busy: {ProducersBusy * 100f:F0}% (round average)\n" +
-                   $"  map held: {MapHeld * 100f:F0}%\n";
+                   $"  map held: {MapHeld * 100f:F0}%\n" +
+                   $"  eco blocked for cash: {EcoStarvedShare * 100f:F0}% of samples\n";
         }
     }
 }

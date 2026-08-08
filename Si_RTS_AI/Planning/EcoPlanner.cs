@@ -1154,6 +1154,31 @@ namespace Si_RTS_AI.Planning
         static readonly Dictionary<Team, List<FiredAction>> _fired = new Dictionary<Team, List<FiredAction>>();
         // Why the fire loop declined each candidate this tick — read by PLAN/DIAG.
         static string _skipReasons = "";
+        /// <summary>
+        /// WHEN THE ECONOMY LAST WANTED MONEY IT DID NOT HAVE.
+        ///
+        /// DrMuck: "high utilized military production but not hurting eco
+        /// expansion. So we find a sweet spot between both." The sweet spot
+        /// cannot be a share, because the right share changes every minute. It
+        /// can be a RULE: the military spends what the economy cannot, and the
+        /// only honest way to know that is to hear the economy say so.
+        ///
+        /// A bank reading cannot tell you. Cash held against a reserve, cash the
+        /// planner has no placement for, and cash the planner is desperate for
+        /// all look identical from outside. This is recorded at the exact line
+        /// where a placement was refused for want of money.
+        /// </summary>
+        static float _cashBlockedAt = -999f;
+
+        static void NoteCashBlocked() { _cashBlockedAt = Time.time; }
+
+        /// <summary>True if the economy has been short of cash for a placement
+        /// recently. The window is generous: the planner only runs on its own
+        /// cadence, so "not in the last plan cycle or two" is the finest
+        /// resolution the question has.</summary>
+        internal static bool EcoStarvedOfCash =>
+            Time.time - _cashBlockedAt < 45f;
+
         static void Skip(string why)
         {
             if (_skipReasons.Length < 120) _skipReasons += why + " ";
@@ -1826,7 +1851,16 @@ namespace Si_RTS_AI.Planning
                     if (c.kind == ActionKind.PlaceNode && !rescue
                         && unbuiltNodes + nodeFiresThisTick >= MaxUnbuiltNodes)
                     { Skip("nodesInFlight"); return true; }
-                    if (c.cost > cashLeft) return true;   // skip this one, try next
+                    if (c.cost > cashLeft)
+                    {
+                        // THE ECONOMY WANTED TO SPEND AND COULD NOT. This is the
+                        // signal the military claim has to yield to — see
+                        // EcoStarvedOfCash. Recorded here rather than inferred
+                        // from a bank reading, because a full bank held against
+                        // a reserve looks identical from outside.
+                        NoteCashBlocked();
+                        return true;
+                    }
                     // Never let a Node eat the cash the next Bio Cache needs.
                     // This is what pinned Naraka at 0 cash for five minutes:
                     // every 100 that trickled in went straight into another
@@ -1850,7 +1884,12 @@ namespace Si_RTS_AI.Planning
                         // have kept three producers running is the same trade
                         // in a larger denomination.
                         floor = Mathf.Max(floor, shrimpReserve);
-                        if (floor > 0 && cashLeft - c.cost < floor) { Skip("reserve" + floor); return true; }
+                        if (floor > 0 && cashLeft - c.cost < floor)
+                        {
+                            Skip("reserve" + floor);
+                            NoteCashBlocked();
+                            return true;
+                        }
                     }
                     // These two were ABORTS ("later actions depend on this one"),
                     // and they were killing whole ticks: one unreachable action

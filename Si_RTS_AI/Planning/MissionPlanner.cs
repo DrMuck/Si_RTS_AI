@@ -327,6 +327,17 @@ namespace Si_RTS_AI.Planning
             try { if (OpenerPlanner.QueueActive) return 0; }
             catch { }
 
+            // THE ECONOMY GETS RIGHT OF WAY WHEN IT IS ACTUALLY BLOCKED.
+            //
+            // Not a budget share — the right share changes every minute and a
+            // fixed one is wrong at both ends of a round. The rule is simply
+            // that the military never takes cash on a tick where a PLACEMENT was
+            // refused for want of money. When the economy is not blocked, the
+            // money is by definition free, and DrMuck's own rule applies: money
+            // sitting is potential sitting dead.
+            try { if (EcoPlanner.EcoStarvedOfCash) return 0; }
+            catch { }
+
             int cash = 0;
             try { cash = team.TotalResources; } catch { }
             // ONE definition, in WorkerPlan. This had its own copy for a day and
