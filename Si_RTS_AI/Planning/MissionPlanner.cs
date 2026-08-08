@@ -78,7 +78,10 @@ namespace Si_RTS_AI.Planning
 
         internal static Vector3 PushObjective { get; private set; }
 
-        const float TICK_S     = 5f;
+        /// <summary>The portfolio is rebuilt from scratch each pass, so this is the
+        /// most expensive tier and the one whose inputs change slowest. A mission
+        /// that needs re-deciding twice in ten seconds was not a plan.</summary>
+        const float TICK_S     = 10f;
         const float LOG_S      = 20f;
 
         /// <summary>Window the growth rate is measured over. Long enough that a

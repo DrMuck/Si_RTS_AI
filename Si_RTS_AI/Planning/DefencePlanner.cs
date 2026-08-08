@@ -59,7 +59,9 @@ namespace Si_RTS_AI.Planning
         /// number somebody picked.</summary>
         internal static float PeakHomeThreat;
 
-        const float TICK_S              = 5f;
+        /// <summary>Which ground is earning and threatened moves slowly; the
+        /// response to it does not have to.</summary>
+        const float TICK_S              = 10f;
         const float ASSET_THREAT_RADIUS = 300f;
         const float HOME_RADIUS_M       = 600f;
 

@@ -78,6 +78,8 @@ namespace Si_RTS_AI.Planning
             _lastTickAt = _lastLogAt = 0f;
             _releasedToScouts = 0;
             StrippedFromVanillaAttack = 0;
+            OrdersIssued = 0;
+            _ordered.Clear();
         }
 
         internal static void Tick(Team team)
@@ -154,7 +156,12 @@ namespace Si_RTS_AI.Planning
                 for (int i = bat.Units.Count - 1; i >= 0; i--)
                 {
                     var u = bat.Units[i];
-                    if (u == null || u.IsDestroyed) { bat.Units.RemoveAt(i); continue; }
+                    if (u == null || u.IsDestroyed)
+                    {
+                        if (u != null) _ordered.Remove(u);
+                        bat.Units.RemoveAt(i);
+                        continue;
+                    }
                     // Conscripted away since we took it. Hand it over rather than
                     // hold a unit we are not allowed to order and still count its
                     // value toward the army.
@@ -393,9 +400,56 @@ namespace Si_RTS_AI.Planning
 
         [ThreadStatic] internal static bool PlannerOverride;
 
-        const float REISSUE_S    = 5f;
+        /// <summary>
+        /// ORDERS ARE ISSUED ON CHANGE, NOT ON A CLOCK.
+        ///
+        /// This used to restate every unit's destination every five seconds, and
+        /// DrMuck put it plainly: "doing them military planning and execution on
+        /// every tick is a bit insane." It is worse than wasteful. Measured on
+        /// the 2026-08-08 round: 25,926 move orders for 506 units built, 54.7
+        /// orders per unit.
+        ///
+        /// AND IT WAS BREAKING THE FIGHTS. A unit that stops to engage is by
+        /// definition still far from its objective, so the timer handed it a
+        /// fresh move order every five seconds and walked it out of the
+        /// engagement. The army had a good composition and traded badly, and
+        /// this is a large part of why: it was never allowed to finish anything.
+        ///
+        /// The restating existed because vanilla re-tasks units continuously.
+        /// That hole is now closed at both doors — move orders by the prefix
+        /// below, attack orders by the group patch — so the timer is no longer
+        /// paying for anything.
+        ///
+        /// A unit is now ordered when its destination MOVES, when it has drifted
+        /// off course, or when it has gone idle short of the objective. Never
+        /// while it has a target.
+        /// </summary>
         const float ARRIVED_M    = 120f;
         const float HOME_LEASH_M = 250f;
+
+        /// <summary>How far a destination must move before it is a new order
+        /// rather than the same one. Below this the unit is already walking
+        /// somewhere close enough.</summary>
+        const float ORDER_MOVED_M = 90f;
+
+        /// <summary>Backstop for an order the game silently dropped. Long,
+        /// because its only job is to catch a unit standing still for no
+        /// reason — the change tests above do the real work.</summary>
+        const float ORDER_BACKSTOP_S = 30f;
+
+        struct LastOrder { public Vector3 Dest; public float At; }
+        static readonly Dictionary<Unit, LastOrder> _ordered = new Dictionary<Unit, LastOrder>();
+
+        /// <summary>Is this unit in a fight? Nothing we want is worth
+        /// interrupting one — the order can wait until it resolves.</summary>
+        static bool IsFighting(Unit u)
+        {
+            try { return u.Target != null; } catch { return false; }
+        }
+
+        /// <summary>Orders issued this round, so the cost of the executor is
+        /// visible rather than inferred from a round summary.</summary>
+        internal static int OrdersIssued;
 
         static void IssueOrders(Team team, float now)
         {
@@ -408,8 +462,6 @@ namespace Si_RTS_AI.Planning
                     // The garrison is not sent anywhere, it is KEPT. Only units
                     // that have drifted off the leash are recalled, so a standing
                     // guard is not re-ordered into a huddle every five seconds.
-                    if (now - bat.LastOrderAt < REISSUE_S) continue;
-                    bat.LastOrderAt = now;
                     if (bat.Rally == Vector3.zero) continue;
                     for (int i = 0; i < bat.Units.Count; i++)
                     {
@@ -418,7 +470,10 @@ namespace Si_RTS_AI.Planning
                         Vector3 p;
                         try { p = u.transform.position; } catch { continue; }
                         float dx = p.x - bat.Rally.x, dz = p.z - bat.Rally.z;
-                        if (dx * dx + dz * dz > HOME_LEASH_M * HOME_LEASH_M)
+                        // Off the leash and not busy: come home. A garrison unit
+                        // that is fighting is doing its job where it stands.
+                        if (dx * dx + dz * dz > HOME_LEASH_M * HOME_LEASH_M
+                            && NeedsOrder(u, bat.Rally, now))
                             IssueMove(u, bat.Rally);
                     }
                     continue;
@@ -443,9 +498,6 @@ namespace Si_RTS_AI.Planning
                                     $"({bat.Objective.x:F0},{bat.Objective.z:F0})");
                 }
 
-                if (now - bat.LastOrderAt < REISSUE_S) continue;
-                bat.LastOrderAt = now;
-
                 Vector3 dest = bat.Phase == State.Returning ? bat.Rally : bat.Objective;
                 if (dest == Vector3.zero) continue;
                 int arrived = 0;
@@ -460,7 +512,7 @@ namespace Si_RTS_AI.Planning
                     // the same spot — a unit standing on its objective is a unit
                     // free to shoot at whatever is in front of it.
                     if (dx * dx + dz * dz < ARRIVED_M * ARRIVED_M) { arrived++; continue; }
-                    IssueMove(u, dest);
+                    if (NeedsOrder(u, dest, now)) IssueMove(u, dest);
                 }
 
                 // Home and dissolved: units return to the free pool and the next
@@ -492,8 +544,31 @@ namespace Si_RTS_AI.Planning
             return threat <= 0f;
         }
 
+        /// <summary>Does this unit need telling again?</summary>
+        static bool NeedsOrder(Unit u, Vector3 dest, float now)
+        {
+            if (IsFighting(u)) return false;
+
+            if (!_ordered.TryGetValue(u, out var last)) return true;
+
+            float dx = last.Dest.x - dest.x, dz = last.Dest.z - dest.z;
+            if (dx * dx + dz * dz > ORDER_MOVED_M * ORDER_MOVED_M) return true;
+
+            // Standing still well short of where it was sent: the order was
+            // lost, or the unit finished a fight and never resumed.
+            if (now - last.At >= ORDER_BACKSTOP_S)
+            {
+                bool moving = true;
+                try { moving = u.IsMoving; } catch { }
+                if (!moving) return true;
+            }
+            return false;
+        }
+
         static void IssueMove(Unit u, Vector3 pos)
         {
+            _ordered[u] = new LastOrder { Dest = pos, At = Time.time };
+            OrdersIssued++;
             try
             {
                 PlannerOverride = true;
@@ -710,6 +785,7 @@ namespace Si_RTS_AI.Planning
             if (_releasedToScouts > 0) sb.Append("releasedToScouts=").Append(_releasedToScouts).Append(' ');
             if (StrippedFromVanillaAttack > 0)
                 sb.Append("vanillaAttacksBlocked=").Append(StrippedFromVanillaAttack).Append(' ');
+            sb.Append("ordersIssued=").Append(OrdersIssued).Append(' ');
             if (!MilitaryConfig.Execute) sb.Append("[shadow — no orders issued]");
             MelonLogger.Msg(sb.ToString());
         }

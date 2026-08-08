@@ -67,7 +67,11 @@ namespace Si_RTS_AI.Planning
         /// <summary>Planned producer sites, best first. Read by MilitaryProduction.</summary>
         internal static readonly List<Site> Sites = new List<Site>(8);
 
-        const float TICK_S = 10f;
+        /// <summary>Producer siting changes on the timescale of an expansion being
+        /// built or lost, so planning it faster than that is arithmetic nobody
+        /// reads. PLAN SLOW, EXECUTE FAST — the executor is where responsiveness
+        /// has to live, and it is now cheap enough to afford it.</summary>
+        const float TICK_S = 20f;
         const float LOG_S  = 60f;
 
         /// <summary>How far from a Bio Cache a producer still counts as covering
