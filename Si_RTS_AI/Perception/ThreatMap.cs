@@ -325,6 +325,51 @@ namespace Si_RTS_AI.Perception
         static int _structsSeenTotal, _structsInSight, _hqTotal, _hqInSight;
         static string _hqWhere;
 
+        /// <summary>
+        /// WHAT WE HAVE ACTUALLY FOUND, BY NAME.
+        ///
+        /// DrMuck: "the enemy HQ or at least enemy structures should have been
+        /// discovered I guess. Maybe next run you check what buildings were
+        /// discovered." A count cannot answer that — known=2 is equally
+        /// consistent with two guard towers next to our own expansion and with
+        /// a broken sighting path. The names and positions distinguish them
+        /// immediately, and if the two turn out to be structures we can see
+        /// from home then nothing about the enemy base was ever discovered and
+        /// the fog test is not the suspect.
+        /// </summary>
+        static float _lastDiscoveryLogAt;
+        static readonly string NL = System.Environment.NewLine;
+
+        internal static void ReportDiscoveries(Vector3 homePos)
+        {
+            float now = Time.time;
+            if (now - _lastDiscoveryLogAt < 60f) return;
+            _lastDiscoveryLogAt = now;
+
+            if (_known.Count == 0)
+            {
+                MelonLogger.Msg("[DISCOVERED] nothing of theirs is remembered at all");
+                return;
+            }
+
+            var sb = new System.Text.StringBuilder();
+            sb.Append("[DISCOVERED] ").Append(_known.Count).Append(" enemy structures:");
+            int n = 0;
+            foreach (var kv in _known)
+            {
+                if (++n > 12) { sb.Append(" ...+").Append(_known.Count - 12).Append(" more"); break; }
+                var k = kv.Value;
+                float dHome = Vector3.Distance(new Vector3(k.Pos.x, 0f, k.Pos.z),
+                                               new Vector3(homePos.x, 0f, homePos.z));
+                sb.Append(NL).Append("    ").Append(k.Name)
+                  .Append(" (").Append(k.Pos.x.ToString("F0")).Append(',')
+                  .Append(k.Pos.z.ToString("F0")).Append(") ")
+                  .Append(dHome.ToString("F0")).Append("m from home, cost ").Append(k.Cost)
+                  .Append(", last seen ").Append((now - k.LastSeenAt).ToString("F0")).Append("s ago");
+            }
+            MelonLogger.Msg(sb.ToString());
+        }
+
         internal static string SightReport()
         {
             string r = $"structs {_structsInSight}/{_structsSeenTotal} in sight, " +
@@ -341,6 +386,7 @@ namespace Si_RTS_AI.Perception
 
         internal static void ResetForNewRound()
         {
+            _lastDiscoveryLogAt = 0f;
             _threat = new float[0];
             _value = new float[0];
             _valueScratch = new float[0];

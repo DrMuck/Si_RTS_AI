@@ -677,6 +677,12 @@ namespace Si_RTS_AI.Planning
               .Append(" known=").Append(Perception.ThreatMap.KnownCount)
               .Append(" enemyHQs=").Append(KnownEnemyHqs())
               .Append(" [").Append(Perception.ThreatMap.SightReport()).Append("] | ");
+            // Home comes off the Garrison mission rather than a team lookup —
+            // it is the same Nest position, and this scope has no team handle.
+            Vector3 home = Vector3.zero;
+            for (int i = 0; i < Missions.Count; i++)
+                if (Missions[i].Kind == Kind.Garrison) { home = Missions[i].Objective; break; }
+            try { Perception.ThreatMap.ReportDiscoveries(home); } catch { }
             for (int i = 0; i < Missions.Count; i++)
             {
                 var m = Missions[i];
