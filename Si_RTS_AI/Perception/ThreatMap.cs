@@ -99,6 +99,40 @@ namespace Si_RTS_AI.Perception
         /// <summary>Total enemy cash believed on the map.</summary>
         internal static int TotalValue { get; private set; }
 
+        // ---- The two fields, published for the viewer -------------------------
+        //
+        // DrMuck asked for "a heatmap that shows enemy army pressure". Both
+        // fields already exist per cell and were only ever read through point
+        // queries, so the whole cost is copying them into the layer type the
+        // replay writer speaks. They answer different questions and are worth
+        // seeing side by side: PRESSURE is where it is dangerous to stand, which
+        // spreads with weapon range; VALUE is where their army actually is.
+        static readonly LayerI _pressureLayer = new LayerI();
+        static readonly LayerI _valueLayer = new LayerI();
+
+        /// <summary>Danger per cell — attack rating summed over weapon reach and
+        /// decayed. Scaled to whole numbers for the layer format.</summary>
+        internal static LayerI PressureLayer()
+        {
+            EnsureSized();
+            _pressureLayer.EnsureSized();
+            var d = _pressureLayer.Data;
+            int n = Mathf.Min(d.Length, _threat.Length);
+            for (int i = 0; i < n; i++) d[i] = Mathf.RoundToInt(_threat[i]);
+            return _pressureLayer;
+        }
+
+        /// <summary>Enemy cash per cell, at the unit's own position.</summary>
+        internal static LayerI ValueLayer()
+        {
+            EnsureSized();
+            _valueLayer.EnsureSized();
+            var d = _valueLayer.Data;
+            int n = Mathf.Min(d.Length, _value.Length);
+            for (int i = 0; i < n; i++) d[i] = Mathf.RoundToInt(_value[i]);
+            return _valueLayer;
+        }
+
         // ---- WHAT KIND OF PROBLEM they are, not just how much of it -----------
         //
         // Sizing a defence needs the amount; choosing what to BUILD needs the

@@ -74,6 +74,13 @@ namespace Si_RTS_AI.Planning
         /// meet.</summary>
         internal static float HomeCapShare;
 
+        /// <summary>How many of EACH higher-tier producer the layer may build.
+        /// One was the old hard rule and it capped the whole army: a single
+        /// Greater Spawning Cyst made 41 Behemoths in forty minutes while 255
+        /// Shockers came off the Lesser Cysts, which is a throughput limit
+        /// wearing a composition's clothes.</summary>
+        internal static int MaxProducersPerType;
+
         /// <summary>Defend missions funded at once. A cap, not a score — beyond
         /// a few simultaneous responses the army is being divided into pieces
         /// that lose separately.</summary>
@@ -126,6 +133,7 @@ namespace Si_RTS_AI.Planning
             HomeShare         = RtsaiConfig.Float("military.homeShare",         0.25f);
             HomeCapShare      = RtsaiConfig.Float("military.homeCapShare",      0.5f);
             MaxDefendMissions = RtsaiConfig.Int  ("military.maxDefendMissions", 3);
+            MaxProducersPerType = RtsaiConfig.Int("military.maxProducersPerType", 3);
 
             EcoReserve      = RtsaiConfig.Int  ("military.ecoReserve",      15000);
             LesserCystShare = RtsaiConfig.Float("military.lesserCystShare", 0.25f);
@@ -143,6 +151,7 @@ namespace Si_RTS_AI.Planning
                 MelonLogger.Msg($"[MIL/CONFIG] enabled={Enabled} execute={Execute} produce={Produce} " +
                                 $"offence={Offence} | margin={StrengthMargin:F2} " +
                                 $"home={HomeShare:F2}..{HomeCapShare:F2} of army " +
+                                $"producers<={MaxProducersPerType} " +
                                 $"ecoReserve={EcoReserve} lesserCystShare={LesserCystShare:F2} " +
                                 $"push(growth<{PushGrowthFloor:F0}/s, margin {PushMargin:F2}, " +
                                 $"retreat {PushRetreatFraction:F2})");

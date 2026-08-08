@@ -360,18 +360,31 @@ namespace Si_RTS_AI.Faction
             }
             catch { }
 
-            // One of each, cheapest tier first, one placement per cadence window.
+            // HOW MANY, NOT WHETHER. One of each was the rule, and it made a
+            // single Greater Spawning Cyst the ceiling on the entire army:
+            // measured on 2026-08-08, 41 Behemoths against 255 Shockers across a
+            // forty-minute round, not because the bot preferred Shockers but
+            // because one producer cannot make more Behemoths than that.
+            //
+            // The count follows the same logic WorkerPlan uses for Cysts — how
+            // much throughput does the money we cannot spend justify. One
+            // producer converts roughly its unit cost every build time; if cash
+            // is piling up faster than the producers can consume it, the answer
+            // is another producer, not a deeper queue.
+            int want = WantedProducerCount(budget);
             foreach (var name in HigherTierProducerNames)
             {
                 if (!_producerStructureCds.TryGetValue(name, out var cd)) continue;
-                if (have.TryGetValue(name, out int c) && c > 0) continue;
+                have.TryGetValue(name, out int c);
+                if (c >= want) continue;
                 // Already asked for, and the request has not aged out.
                 if (_requestedAt.TryGetValue(name, out float askedAt) &&
                     now - askedAt < REQUEST_TTL_S) continue;
                 int cost = SafeCost(cd);
                 if (cost > budget) return;
+                Vector3 at = ProducerAnchor(team, nestPos);
                 bool fired = false;
-                try { fired = AlienConstruction.TryBuildStructureByCd(team, cd, nestPos); }
+                try { fired = AlienConstruction.TryBuildStructureByCd(team, cd, at); }
                 catch (Exception ex) { MelonLogger.Warning("[MIL/PROD] TryBuildStructureByCd threw: " + ex.Message); }
                 _lastStructurePlacementAt = now;   // rate-limit whether it fired or not
                 if (fired)
@@ -379,10 +392,75 @@ namespace Si_RTS_AI.Faction
                     budget -= cost;
                     SpentThisRound += cost;
                     _requestedAt[name] = now;
-                    MelonLogger.Msg($"[MIL/PROD] placed {name} near Nest ({nestPos.x:F0},{nestPos.z:F0})");
+                    MelonLogger.Msg($"[MIL/PROD] placed {name} #{c + 1}/{want} at " +
+                                    $"({at.x:F0},{at.z:F0})" +
+                                    (at == nestPos ? " (Nest — nothing worth covering yet)"
+                                                   : " (toward the ground we are defending)"));
                 }
                 return;
             }
+        }
+
+        /// <summary>
+        /// How many of each higher-tier producer the unspent money justifies.
+        ///
+        /// A producer is worth building when cash is arriving faster than the
+        /// producers we have can turn it into units. That is the same question
+        /// the economy asks about Cysts, and it has the same answer: count the
+        /// throughput, not the buildings.
+        ///
+        /// Deliberately crude and deliberately capped. It is a rate comparison,
+        /// not a plan — MILITARY_PRODUCTION_DESIGN describes the blueprint this
+        /// should eventually become, siting producers against the frontier
+        /// rather than counting them against the bank.
+        /// </summary>
+        static int WantedProducerCount(int budget)
+        {
+            int cap = Planning.MilitaryConfig.MaxProducersPerType;
+            if (cap <= 1) return Mathf.Max(1, cap);
+            // Roughly what one producer consumes over a build cycle. Under-spend
+            // by design: an idle producer is cheaper than a producer we built
+            // instead of an army.
+            const int THROUGHPUT_PER_PRODUCER = 6000;
+            int want = 1 + budget / THROUGHPUT_PER_PRODUCER;
+            return Mathf.Clamp(want, 1, cap);
+        }
+
+        /// <summary>
+        /// WHERE a producer goes, which decides how long its units walk before
+        /// they matter.
+        ///
+        /// DrMuck: "Military cant apply pressure from the distance ... it could
+        /// be more efficient to place producers more to the front lines or FOBs
+        /// to save delay in walking distance."
+        ///
+        /// He is right and the old rule was the worst case: everything at the
+        /// Nest, so every unit walked the full radius of the base before
+        /// reaching anything. This is the cheap version of the fix — anchor on
+        /// the highest-scoring thing DefencePlanner is already worried about,
+        /// which is by construction ground that earns and is threatened. A real
+        /// FOB siting pass belongs in the blueprint, with the frontier and the
+        /// enemy approach as inputs; this only stops us building at the back.
+        ///
+        /// Falls back to the Nest when nothing is under threat, because a
+        /// producer parked at a random expansion in peacetime is worse than one
+        /// at home.
+        /// </summary>
+        static Vector3 ProducerAnchor(Team team, Vector3 nestPos)
+        {
+            try
+            {
+                var tasks = Planning.DefencePlanner.Tasks;
+                for (int i = 0; i < tasks.Count; i++)
+                {
+                    if (tasks[i].Kind == "home") continue;
+                    // Pull back toward the Nest so it is behind the line it
+                    // covers rather than on top of it.
+                    return Vector3.Lerp(tasks[i].Pos, nestPos, 0.35f);
+                }
+            }
+            catch { }
+            return nestPos;
         }
 
         // ================================================================

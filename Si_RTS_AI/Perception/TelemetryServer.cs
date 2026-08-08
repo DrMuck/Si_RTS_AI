@@ -126,6 +126,7 @@ namespace Si_RTS_AI.Perception
                 return;
             }
             if (path == "/resources") { WriteResources(res); return; }
+            if (path == "/military")  { WriteMilitary(res);  return; }
             if (path.StartsWith("/layer/")) { WriteLayer(res, path); return; }
             if (path.StartsWith("/icon/"))  { WriteIcon(res, path);  return; }
 
@@ -180,6 +181,93 @@ namespace Si_RTS_AI.Perception
             res.ContentLength64 = bytes.LongLength;
             res.OutputStream.Write(bytes, 0, bytes.Length);
             res.OutputStream.Close();
+        }
+
+        /// <summary>
+        /// WHAT THE MILITARY LAYER INTENDS, not merely what it has done.
+        ///
+        /// DrMuck: "add a map that shows military tactics planning of rts ai.
+        /// E.g. defense here, relocate army here (also with pointing arrows
+        /// maybe)." Drawing the arrows is the viewer's job; this is the data
+        /// behind them — every mission with its objective and what it asked
+        /// for, and every battalion with where it is and where it is headed.
+        ///
+        /// A battalion's from/to IS the arrow: `from` is the centroid of its
+        /// units, `to` is the objective. State matters as much as position —
+        /// Forming means "wants to go and cannot yet", Committed means "is
+        /// going", and confusing the two is what hid an entire broken soak.
+        /// </summary>
+        static void WriteMilitary(HttpListenerResponse res)
+        {
+            var missions = new List<object>();
+            var battalions = new List<object>();
+            string posture = "?", mix = "?";
+            int armyValue = 0, enemyEstimate = 0, known = 0;
+            float? growth = null;
+
+            try
+            {
+                posture       = Planning.MissionPlanner.Current.ToString();
+                armyValue     = Planning.MissionPlanner.ArmyValue;
+                enemyEstimate = Planning.MissionPlanner.EnemyEstimate;
+                float g       = Planning.MissionPlanner.ArmyGrowthPerS;
+                growth        = g == float.MaxValue ? (float?)null : g;
+                mix           = ThreatMap.EnemyMixSummary();
+                known         = ThreatMap.KnownCount;
+
+                foreach (var m in Planning.MissionPlanner.Missions)
+                    missions.Add(new
+                    {
+                        id = m.Id,
+                        kind = m.Kind.ToString(),
+                        x = m.Objective.x,
+                        z = m.Objective.z,
+                        requiredValue = m.RequiredValue,
+                        note = m.Note ?? "",
+                    });
+
+                foreach (var b in Planning.BattalionManager.Battalions)
+                {
+                    float cx = 0f, cz = 0f;
+                    int n = 0;
+                    foreach (var u in b.Units)
+                    {
+                        try { var p = u.transform.position; cx += p.x; cz += p.z; n++; }
+                        catch { }
+                    }
+                    battalions.Add(new
+                    {
+                        name = b.Name,
+                        kind = b.Kind.ToString(),
+                        state = b.Phase.ToString(),
+                        units = b.Units.Count,
+                        value = b.Value,
+                        requiredValue = b.RequiredValue,
+                        fromX = n > 0 ? (float?)(cx / n) : null,
+                        fromZ = n > 0 ? (float?)(cz / n) : null,
+                        toX = b.Objective.x,
+                        toZ = b.Objective.z,
+                    });
+                }
+            }
+            catch (Exception ex)
+            { MelonLogger.Warning($"[RTSA/Telemetry] military build threw: {ex.Message}"); }
+
+            WriteJson(res, 200, new
+            {
+                map = MapLayers.LayerReplay.CurrentMap,
+                roundTime = MapLayers.LayerReplay.CurrentRoundTime,
+                enabled = Planning.MilitaryConfig.Enabled,
+                execute = Planning.MilitaryConfig.Execute,
+                posture,
+                armyValue,
+                enemyEstimate,
+                armyGrowthPerS = growth,
+                enemyMix = mix,
+                knownStructures = known,
+                missions,
+                battalions,
+            });
         }
 
         static void WriteState(HttpListenerResponse res)

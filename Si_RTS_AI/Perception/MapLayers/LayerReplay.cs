@@ -138,6 +138,10 @@ namespace Si_RTS_AI.Perception.MapLayers
                 WriteIntFrame (teamName, "shrimp_density",    AlienEcoLayers.GetShrimpDensity(team),     tickNo, roundTime);
                 WriteByteFrame(teamName, "fow_active",         FoWLayers.GetActive(team),                 tickNo, roundTime);
                 WriteByteFrame(teamName, "fow_explored",       FoWLayers.GetExplored(team),               tickNo, roundTime);
+                // Enemy pressure and enemy cash, so a replay shows what the
+                // military layer was reacting to and not only what it did.
+                WriteIntFrame (teamName, "enemy_pressure",     ThreatMap.PressureLayer(),                 tickNo, roundTime);
+                WriteIntFrame (teamName, "enemy_value",        ThreatMap.ValueLayer(),                    tickNo, roundTime);
                 _frameIndex++;
             }
             catch (Exception ex) { MelonLogger.Warning("[RTSA/Layers] Snapshot threw: " + ex.Message); }
