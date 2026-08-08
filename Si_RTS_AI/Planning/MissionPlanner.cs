@@ -214,12 +214,25 @@ namespace Si_RTS_AI.Planning
                 // Released by the condition that raised it, not by a timer. A
                 // push that has lost most of what it committed is a push that
                 // has failed, whatever the clock says.
-                if (ArmyValue > _pushPeakValue) _pushPeakValue = ArmyValue;
-                if (_pushPeakValue > 0 &&
-                    ArmyValue < _pushPeakValue * MilitaryConfig.PushRetreatFraction)
+                //
+                // MEASURED ON THE FORCE, NOT ON THE TEAM. This used to watch
+                // team-wide ArmyValue, which the home producers keep climbing
+                // while the push is being wiped out — so the abort fired on the
+                // round ending rather than on the push failing. The 2026-08-08
+                // soak logged "army fell to 0 of a committed peak 109688" four
+                // times, which is not a retreat, it is a post-mortem.
+                //
+                // Falls back to team value until the force actually exists, or a
+                // push would abort in the second before its battalion forms.
+                int force = 0;
+                try { force = BattalionManager.PushForceValue(); } catch { }
+                int watched = force > 0 ? force : ArmyValue;
+                if (watched > _pushPeakValue) _pushPeakValue = watched;
+                if (force > 0 && _pushPeakValue > 0 &&
+                    watched < _pushPeakValue * MilitaryConfig.PushRetreatFraction)
                 {
                     SetPosture(Posture.Hold, now,
-                               $"army fell to {ArmyValue} of a committed peak {_pushPeakValue}");
+                               $"push force fell to {watched} of its peak {_pushPeakValue}");
                     return;
                 }
                 if (!TryPickTarget(out var still, out _))
@@ -256,7 +269,7 @@ namespace Si_RTS_AI.Planning
             if (!TryPickTarget(out var objective, out string what)) return;
 
             PushObjective  = objective;
-            _pushPeakValue = ArmyValue;
+            _pushPeakValue = 0;      // the force has not formed yet
             SetPosture(Posture.Push, now,
                        $"army {ArmyValue} flat at {ArmyGrowthPerS:F1}/s with {spendable} spendable, " +
                        $"theirs ~{EnemyEstimate} → {what}");

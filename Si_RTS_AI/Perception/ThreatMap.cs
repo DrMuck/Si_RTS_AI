@@ -99,6 +99,38 @@ namespace Si_RTS_AI.Perception
         /// <summary>Total enemy cash believed on the map.</summary>
         internal static int TotalValue { get; private set; }
 
+        // ---- WHAT KIND OF PROBLEM they are, not just how much of it -----------
+        //
+        // Sizing a defence needs the amount; choosing what to BUILD needs the
+        // kind. A thousand cash of infantry and a thousand cash of gunships are
+        // answered by different units, and until now nothing recorded which one
+        // was on the map.
+        //
+        // Cash-weighted rather than counted, for the same reason the counter
+        // table is priced in cash: twenty Militia are not a bigger problem than
+        // one Dreadnought merely because there are twenty of them.
+        static readonly Dictionary<string, float> _mixNow = new Dictionary<string, float>();
+        static readonly Dictionary<string, float> _mix = new Dictionary<string, float>();
+
+        /// <summary>Enemy cash on the map by class — Infantry, Light, Heavy,
+        /// UltraHeavy, Air. Empty when we can see nothing, which callers must
+        /// read as "no opinion" rather than "no enemy".</summary>
+        internal static IDictionary<string, float> EnemyMix => _mix;
+
+        internal static string EnemyMixSummary()
+        {
+            if (_mix.Count == 0) return "nothing seen";
+            var sb = new System.Text.StringBuilder();
+            float tot = 0f;
+            foreach (var kv in _mix) tot += kv.Value;
+            if (tot <= 0f) return "nothing seen";
+            foreach (var kv in _mix)
+                if (kv.Value > 0f)
+                    sb.Append(kv.Key).Append(' ').Append((100f * kv.Value / tot).ToString("F0"))
+                      .Append("% ");
+            return sb.ToString().TrimEnd();
+        }
+
         struct Hvt { public string Name; public Vector3 Pos; public int Cost; public string Team; }
         static readonly List<Hvt> _hvt = new List<Hvt>(32);
 
@@ -158,6 +190,8 @@ namespace Si_RTS_AI.Perception
             TotalValue = 0;
             _hvt.Clear();
             _known.Clear();
+            _mix.Clear();
+            _mixNow.Clear();
         }
 
         static void EnsureSized()
@@ -248,8 +282,17 @@ namespace Si_RTS_AI.Perception
                     // Danger reaches, a tank does not. Spreading cost over a
                     // weapon-range disk is how the threat field stopped meaning
                     // anything countable.
-                    _valueScratch[cz * GridWorld.Width + cx] +=
-                        UnitValues.CostOf(u.ObjectInfo.DisplayName ?? "");
+                    string un = u.ObjectInfo.DisplayName ?? "";
+                    int ucost = UnitValues.CostOf(un);
+                    _valueScratch[cz * GridWorld.Width + cx] += ucost;
+
+                    string cls = null;
+                    try { cls = Planning.UnitPrior.ClassOf(un); } catch { }
+                    if (cls != null)
+                    {
+                        _mixNow.TryGetValue(cls, out float had);
+                        _mixNow[cls] = had + ucost;
+                    }
                 }
 
             // High-value targets are structures, and the game already prices
@@ -306,6 +349,19 @@ namespace Si_RTS_AI.Perception
                 _valueScratch[i] = 0f;
             }
             TotalValue = Mathf.RoundToInt(total);
+
+            // Same replace-what-we-see rule as the value field: the mix is what
+            // is on the map now, faded where we have stopped looking, never a
+            // running total of everything ever seen.
+            var classes = new List<string>(_mix.Keys);
+            foreach (var k in _mixNow.Keys) if (!classes.Contains(k)) classes.Add(k);
+            foreach (var k in classes)
+            {
+                _mixNow.TryGetValue(k, out float now);
+                _mix.TryGetValue(k, out float was);
+                _mix[k] = now > 0f ? now : was * keep;
+            }
+            _mixNow.Clear();
         }
 
         /// <summary>

@@ -490,6 +490,7 @@ namespace Si_RTS_AI
             Perception.UnitCaps.ResetForNewRound();
             Perception.CombatLog.ResetForNewRound();
             Planning.MilitaryConfig.Reload();
+            Planning.UnitPrior.Reload();
             Faction.AlienCommanderLock.Reload();
             Faction.AlienCommanderLock.ResetForNewRound();
             Planning.DefencePlanner.ResetForNewRound();

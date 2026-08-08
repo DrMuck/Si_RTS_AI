@@ -215,10 +215,80 @@ namespace Si_RTS_AI.Planning
         /// mission happened to be last in the list would send the reserve to the
         /// WEAKEST defence task, which is the opposite of a reserve.
         /// </summary>
+        /// <summary>
+        /// THE SURPLUS IS RE-DECIDED EVERY TICK, NOT PARKED FOREVER.
+        ///
+        /// Units past a mission's requirement used to stay where they were put,
+        /// because FreeCombatUnits only ever offers units nobody holds and
+        /// nothing took any back. Under Hold the reserve is the garrison, so the
+        /// garrison accumulated everything and never let go: measured on the
+        /// 2026-08-08 soak, 181 units worth 153,300 sitting at home against a
+        /// requirement of 39,721, while the push that wanted 65,787 was Forming
+        /// with ZERO units and two defence tasks sat at zero as well.
+        ///
+        /// Every symptom DrMuck reported from that night — only the Nest
+        /// defended, expansions uncovered, no engagement — is this one rule.
+        ///
+        /// So over-strength battalions hand the excess back before anything is
+        /// allocated, furthest-from-objective first, and the surplus then flows
+        /// to whichever mission is the reserve THIS tick. A Committed force is
+        /// left alone: pulling units out of a fight to rebalance a spreadsheet
+        /// is how a push dies halfway.
+        /// </summary>
+        static void ReleaseSurplus(List<Unit> free)
+        {
+            for (int b = 0; b < Battalions.Count; b++)
+            {
+                var bat = Battalions[b];
+                if (bat.Phase == State.Committed && bat.Kind != MissionPlanner.Kind.Garrison)
+                    continue;
+                while (bat.Units.Count > 0 && ValueOf(bat.Units) > bat.RequiredValue)
+                {
+                    var u = Furthest(bat.Units, bat.Objective);
+                    // Releasing the last unit of a mission that still wants
+                    // something would just re-take it on the next line.
+                    if (ValueOf(bat.Units) - Perception.UnitValues.CostOf(SafeName(u))
+                        < bat.RequiredValue && bat.RequiredValue > 0) break;
+                    bat.Units.Remove(u);
+                    free.Add(u);
+                }
+                bat.Value = ValueOf(bat.Units);
+            }
+        }
+
+        static string SafeName(Unit u)
+        {
+            try { return u?.ObjectInfo?.DisplayName ?? ""; } catch { return ""; }
+        }
+
+        static Unit Furthest(List<Unit> pool, Vector3 from)
+        {
+            Unit best = pool[0]; float bd = -1f;
+            for (int i = 0; i < pool.Count; i++)
+            {
+                var u = pool[i];
+                Vector3 p;
+                try { p = u.transform.position; } catch { continue; }
+                float dx = p.x - from.x, dz = p.z - from.z;
+                float d = dx * dx + dz * dz;
+                if (d > bd) { bd = d; best = u; }
+            }
+            return best;
+        }
+
         static void Fill(Team team, List<Unit> free, float now)
         {
             var missions = MissionPlanner.Missions;
             Battalion garrison = null, push = null;
+
+            // Requirements first, so ReleaseSurplus trims against THIS tick's
+            // numbers rather than last tick's.
+            for (int m = 0; m < missions.Count; m++)
+            {
+                var bat = Adopt(missions[m], now);
+                bat.RequiredValue = missions[m].RequiredValue;
+            }
+            ReleaseSurplus(free);
 
             for (int m = 0; m < missions.Count; m++)
             {
@@ -533,6 +603,18 @@ namespace Si_RTS_AI.Planning
             }
             catch { }
             return Vector3.zero;
+        }
+
+        /// <summary>Cash value of the force actually committed to the push, or 0
+        /// if there is none. The retreat rule needs THIS and not team-wide army
+        /// value: a push can lose every unit it took while production at home
+        /// keeps the team total climbing, and the abort would never fire.</summary>
+        internal static int PushForceValue()
+        {
+            for (int b = 0; b < Battalions.Count; b++)
+                if (Battalions[b].Kind == MissionPlanner.Kind.Push)
+                    return Battalions[b].Value;
+            return 0;
         }
 
         /// <summary>Units under our command right now — for the status command

@@ -1,0 +1,250 @@
+{
+  "_readme": [
+    "MEASURED PRIOR for alien unit production. Copy to <server>/UserData/.",
+    "Read at map load. Delete the file and the mod falls back to its",
+    "built-in ordering, which is the most expensive option a producer",
+    "offers \u2014 the rule this table exists to replace.",
+    "",
+    "effectiveness \u2014 kill/death with AI on BOTH sides, from replays. Not",
+    "  the aggregate: the aggregate is dominated by units players pilot.",
+    "counters \u2014 cash destroyed per cash lost against each class of enemy,",
+    "  under AI control. Cash rather than kills, because a Scorpion kills",
+    "  Militia 367:1 and that says infantry are cheap, not that Scorpions",
+    "  counter them. Priced properly the same matchup is 0.97.",
+    "cap \u2014 the scarce resource once the bank runs 100k unspent. The mod",
+    "  scores per cap point, not per cash.",
+    "",
+    "Classes are the game's own factories: Barracks, Light, Heavy, Ultra",
+    "Heavy, Air. A missing counter entry means UNMEASURED, never bad \u2014",
+    "below the thresholds there was not enough of that matchup to price.",
+    "",
+    "This is a starting opinion, meant to be overwritten by what the bot",
+    "measures itself. Edit any number; it takes effect next map load."
+  ],
+  "_source": {
+    "generated": "2026-08-08",
+    "replays": 2619,
+    "min_ai_kills_per_pair": 25,
+    "min_loss_cash_per_class": 2000,
+    "note": "unit-kill outage 2026-07-15..07-31 excluded"
+  },
+  "enemyClasses": {
+    "Juggernaut": "Infantry",
+    "Marksman": "Infantry",
+    "Militia": "Infantry",
+    "Templar": "Infantry",
+    "Trooper": "Infantry",
+    "Commando": "Infantry",
+    "Heavy": "Infantry",
+    "Rifleman": "Infantry",
+    "Scout": "Infantry",
+    "Sniper": "Infantry",
+    "Dreadnought": "Air",
+    "Freighter": "Air",
+    "Interceptor": "Air",
+    "Shuttle": "Air",
+    "Combat Tank": "Heavy",
+    "Heavy Tank": "Heavy",
+    "Pyro Tank": "Heavy",
+    "Rocket Tank": "Heavy",
+    "Assault Car": "Light",
+    "Flak Car": "Light",
+    "Heavy Raider": "Light",
+    "Light Raider": "Light",
+    "Squad Transport": "Light",
+    "Strike Tank": "Light",
+    "Crimson Tank": "UltraHeavy",
+    "Bomber": "Air",
+    "Dropship": "Air",
+    "Fighter": "Air",
+    "Gunship": "Air",
+    "Barrage Truck": "Heavy",
+    "Hover Tank": "Heavy",
+    "Pulse Truck": "Heavy",
+    "Railgun Tank": "Heavy",
+    "AA Truck": "Light",
+    "Heavy Quad": "Light",
+    "Heavy Striker": "Light",
+    "Light Quad": "Light",
+    "Light Striker": "Light",
+    "Platoon Hauler": "Light",
+    "Siege Tank": "UltraHeavy"
+  },
+  "units": {
+    "Defiler": {
+      "cost": 4200,
+      "capType": "Primary",
+      "cap": 8,
+      "effectiveness": 4.8,
+      "built": 3750,
+      "rounds": 518,
+      "counters": {
+        "Infantry": 0.795,
+        "Light": 1.54,
+        "Heavy": 1.058,
+        "UltraHeavy": 0.405,
+        "Air": 7.905
+      }
+    },
+    "Scorpion": {
+      "cost": 1600,
+      "capType": "Primary",
+      "cap": 3,
+      "effectiveness": 2.76,
+      "built": 20972,
+      "rounds": 1269,
+      "counters": {
+        "Infantry": 0.974,
+        "Light": 1.179,
+        "Heavy": 0.831,
+        "UltraHeavy": 0.509,
+        "Air": 3.77
+      }
+    },
+    "Behemoth": {
+      "cost": 1200,
+      "capType": "Primary",
+      "cap": 2,
+      "effectiveness": 2.42,
+      "built": 29646,
+      "rounds": 933,
+      "counters": {
+        "Infantry": 1.732,
+        "Light": 2.259,
+        "Heavy": 2.153,
+        "UltraHeavy": 1.003,
+        "Air": 10.718
+      }
+    },
+    "Goliath": {
+      "cost": 4000,
+      "capType": "Primary",
+      "cap": 4,
+      "effectiveness": 1.7,
+      "built": 8911,
+      "rounds": 839,
+      "counters": {
+        "Infantry": 0.209,
+        "Light": 0.621,
+        "Heavy": 0.227
+      }
+    },
+    "Colossus": {
+      "cost": 6000,
+      "capType": "Primary",
+      "cap": 15,
+      "effectiveness": 1.18,
+      "built": 3088,
+      "rounds": 524,
+      "counters": {
+        "Infantry": 0.049,
+        "Light": 0.021
+      }
+    },
+    "Firebug": {
+      "cost": 2400,
+      "capType": "Primary",
+      "cap": 3,
+      "effectiveness": 0.81,
+      "built": 6092,
+      "rounds": 684,
+      "counters": {
+        "Infantry": 0.085,
+        "Light": 0.047
+      }
+    },
+    "Shocker": {
+      "cost": 220,
+      "capType": "Secondary",
+      "cap": 2,
+      "effectiveness": 0.62,
+      "built": 108896,
+      "rounds": 2094,
+      "counters": {
+        "Infantry": 0.864,
+        "Light": 1.095,
+        "Heavy": 2.152,
+        "UltraHeavy": 1.709,
+        "Air": 5.269
+      }
+    },
+    "Hunter": {
+      "cost": 500,
+      "capType": "Primary",
+      "cap": 1,
+      "effectiveness": 0.41,
+      "built": 20041,
+      "rounds": 2094,
+      "counters": {
+        "Infantry": 0.142,
+        "Light": 0.24,
+        "Heavy": 0.063
+      }
+    },
+    "Dragonfly": {
+      "cost": 400,
+      "capType": "Secondary",
+      "cap": 2,
+      "effectiveness": 0.2,
+      "built": 16235,
+      "rounds": 677,
+      "counters": {
+        "Infantry": 0.247,
+        "Air": 0.82
+      }
+    },
+    "Squid": {
+      "cost": 120,
+      "capType": "Secondary",
+      "cap": 1,
+      "effectiveness": 0.16,
+      "built": 21742,
+      "rounds": 2092,
+      "counters": {
+        "Infantry": 0.204,
+        "Light": 0.093,
+        "Air": 6.679
+      }
+    },
+    "Wasp": {
+      "cost": 200,
+      "capType": "Secondary",
+      "cap": 1,
+      "effectiveness": 0.11,
+      "built": 25233,
+      "rounds": 1368,
+      "counters": {
+        "Infantry": 0.143,
+        "Light": 0.065,
+        "Heavy": 0.563,
+        "UltraHeavy": 2.708,
+        "Air": 2.164
+      }
+    },
+    "Crab": {
+      "cost": 80,
+      "capType": "Secondary",
+      "cap": 1,
+      "effectiveness": 0.06,
+      "built": 138568,
+      "rounds": 2094,
+      "counters": {
+        "Infantry": 0.184,
+        "Light": 0.18,
+        "Heavy": 0.219
+      }
+    },
+    "Horned Crab": {
+      "cost": 160,
+      "capType": "Secondary",
+      "cap": 2,
+      "effectiveness": 0.06,
+      "built": 28278,
+      "rounds": 2091,
+      "counters": {
+        "Infantry": 0.076,
+        "Light": 0.031
+      }
+    }
+  }
+}

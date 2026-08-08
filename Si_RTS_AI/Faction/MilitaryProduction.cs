@@ -128,6 +128,7 @@ namespace Si_RTS_AI.Faction
             _catalogLogged = false;
             _claimed.Clear();
             _requestedAt.Clear();
+            _pickLogged.Clear();
             _failuresLogged.Clear();
             _producerStructureCds.Clear();
         }
@@ -241,10 +242,36 @@ namespace Si_RTS_AI.Faction
                         continue;
                     }
 
-                    // Highest cost = highest tier, the game's own ranking. If
-                    // Construct refuses (tech locked, cash short) fall to the
-                    // next one down rather than skipping the producer.
-                    opts.Sort((a, b) => SafeCost(b).CompareTo(SafeCost(a)));
+                    // WHAT THE ARCHIVE SAYS IS WORTH A CAP SLOT, not what costs
+                    // the most.
+                    //
+                    // Cost was standing in for tier, and tier is not usefulness:
+                    // at a Lesser Spawning Cyst the most expensive option is the
+                    // Dragonfly, which trades at 0.20 under commander AI, and the
+                    // first played round duly bought twenty-six of them. The
+                    // ordering now comes from 2,619 recorded games, scored per
+                    // cap point and weighted by what we can currently SEE — see
+                    // Planning.UnitPrior.
+                    //
+                    // Falls back to the old rule with no file present, because a
+                    // missing prior must not stop the bot building an army.
+                    var mix = Planning.UnitPrior.Loaded
+                        ? Perception.ThreatMap.EnemyMix : null;
+                    if (Planning.UnitPrior.Loaded)
+                    {
+                        opts.Sort((a, b) =>
+                        {
+                            string why;
+                            float sa = Planning.UnitPrior.Score(a.ObjectInfo?.DisplayName, mix, out why);
+                            float sb = Planning.UnitPrior.Score(b.ObjectInfo?.DisplayName, mix, out why);
+                            int c = sb.CompareTo(sa);
+                            // Ties broken by price, so a tie between two
+                            // unmeasured options still prefers the better tier.
+                            return c != 0 ? c : SafeCost(b).CompareTo(SafeCost(a));
+                        });
+                        LogPickOnce(kv.Key, opts, mix);
+                    }
+                    else opts.Sort((a, b) => SafeCost(b).CompareTo(SafeCost(a)));
                     var reasons = new System.Text.StringBuilder();
                     bool queued = false;
                     foreach (var opt in opts)
@@ -405,6 +432,34 @@ namespace Si_RTS_AI.Faction
                     if (opt?.ObjectInfo == null) continue;
                     sb.Append(opt.ObjectInfo.DisplayName).Append('(').Append(SafeCost(opt)).Append(") ");
                 }
+            }
+            MelonLogger.Msg(sb.ToString());
+        }
+
+        /// <summary>
+        /// The ranking, once per producer type per enemy mix, so a round shows
+        /// WHY it built what it built. Re-logged when the mix changes class, not
+        /// on every tick — the point is to catch the bot preferring something
+        /// indefensible, and that is visible at the moment the ordering changes.
+        /// </summary>
+        static readonly Dictionary<string, string> _pickLogged =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        static void LogPickOnce(string producer, List<ConstructionData> ordered,
+                                IDictionary<string, float> mix)
+        {
+            string mixKey = Perception.ThreatMap.EnemyMixSummary();
+            if (_pickLogged.TryGetValue(producer, out var had) && had == mixKey) return;
+            _pickLogged[producer] = mixKey;
+
+            var sb = new System.Text.StringBuilder("[MIL/PROD] ").Append(producer)
+                .Append(" ranking vs [").Append(mixKey).Append("]: ");
+            for (int i = 0; i < ordered.Count && i < 4; i++)
+            {
+                string name = ordered[i].ObjectInfo?.DisplayName ?? "?";
+                string why;
+                Planning.UnitPrior.Score(name, mix, out why);
+                sb.Append(i + 1).Append('.').Append(name).Append(" (").Append(why).Append(") ");
             }
             MelonLogger.Msg(sb.ToString());
         }
