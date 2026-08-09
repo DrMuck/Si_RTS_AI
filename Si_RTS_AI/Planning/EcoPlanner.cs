@@ -1080,7 +1080,42 @@ namespace Si_RTS_AI.Planning
         /// is the only form of it a chain cannot walk around: the planner may ask
         /// for another node exactly when a node it already ordered has finished.
         /// </summary>
-        static int MaxUnbuiltNodes => Mathf.Max(1, RtsaiConfig.Int("maxUnbuiltNodes", 3));
+        /// <summary>
+        /// HOW MANY NODES MAY BE IN FLIGHT AT ONCE — PER DIRECTION, NOT IN TOTAL.
+        ///
+        /// The cap exists because of a real failure DrMuck reported: "there were
+        /// built to many nodes upfront. Like more 8+ nodes placed for a chain,
+        /// but nodes in a chain build one by one." Queuing eight nodes along one
+        /// line buys nothing, because the eighth cannot start until the seventh
+        /// finishes — it only freezes cash.
+        ///
+        /// But a flat global cap of three answers that with the wrong quantity.
+        /// Nodes in DIFFERENT directions build in PARALLEL, so three shared
+        /// across every front throttles expansion everywhere the moment we
+        /// expand in more than one direction. Measured on 2026-08-09:
+        /// nodesInFlight was the single most common reason nothing fired, with
+        /// 29k, 33k and 38k cash sitting idle at the time, and the gap between
+        /// node placements reaching 209s at the tail against a 9s median.
+        ///
+        /// DrMuck: "here like node is ready but next node not fired timely ...
+        /// Might need to allow a bit more frontnoding as the settings rn."
+        ///
+        /// So the budget scales with how many fronts we are allowed to run. Per
+        /// front it stays small — a chain still builds one by one and stacking
+        /// it deeper is still waste — but two fronts get two chains' worth
+        /// instead of sharing one.
+        /// </summary>
+        static int MaxUnbuiltNodes
+        {
+            get
+            {
+                int perFront = Mathf.Max(1, RtsaiConfig.Int("maxUnbuiltNodesPerFront", 3));
+                int fronts   = Mathf.Max(1, RtsaiConfig.Int("maxFronts", 2));
+                // Legacy knob still wins if someone set it explicitly.
+                int flat = RtsaiConfig.Int("maxUnbuiltNodes", 0);
+                return flat > 0 ? flat : perFront * fronts;
+            }
+        }
 
         /// <summary>Hops of a REPAIR line that may be laid in one plan cycle.
         /// Higher than the expansion equivalent because a break is losing
@@ -1850,7 +1885,10 @@ namespace Si_RTS_AI.Planning
                     // behind the very stubs it is trying to reach could never run.
                     if (c.kind == ActionKind.PlaceNode && !rescue
                         && unbuiltNodes + nodeFiresThisTick >= MaxUnbuiltNodes)
-                    { Skip("nodesInFlight"); return true; }
+                    {
+                        Skip($"nodesInFlight{unbuiltNodes + nodeFiresThisTick}/{MaxUnbuiltNodes}");
+                        return true;
+                    }
                     if (c.cost > cashLeft)
                     {
                         // THE ECONOMY WANTED TO SPEND AND COULD NOT. This is the
