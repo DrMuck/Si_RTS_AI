@@ -41,7 +41,7 @@ namespace Si_RTS_AI.Planning
     /// </summary>
     internal static class MissionPlanner
     {
-        internal enum Kind { Garrison, Defend, Push }
+        internal enum Kind { Garrison, Defend, Forward, Push }
 
         internal class Mission
         {
@@ -570,15 +570,20 @@ namespace Si_RTS_AI.Planning
             //
             // Holding forward ground halves the share. Not zero: the Queen is
             // still a loss condition and a forward hold can break.
-            float share = MilitaryConfig.HomeShare;
             bool forward = false;
             try { forward = MilitaryBlueprint.HoldingForward; } catch { }
-            if (forward) share *= 0.5f;
 
-            int wanted = Mathf.Max(DefencePlanner.GarrisonValue,
-                                   Mathf.CeilToInt(ArmyValue * share));
+            // The floor is a FIXED amount of defence, scaled down when we are
+            // holding forward ground, and never a share of our own army. See
+            // MilitaryConfig.HomeFloorCash for why the share was wrong: it grew
+            // with the army, so the home requirement rose every time we built
+            // anything and the army could never be released.
+            int floorCash = Mathf.CeilToInt(MilitaryConfig.HomeFloorCash * (forward ? 0.5f : 1f));
+            int wanted = Mathf.Max(DefencePlanner.GarrisonValue, floorCash);
+            // The cap still scales with the army, because a huge army CAN
+            // spare more for home — but it is a ceiling, never a demand.
             int homeCap = Mathf.Max(Mathf.CeilToInt(ArmyValue * MilitaryConfig.HomeCapShare),
-                                    Mathf.CeilToInt(ArmyValue * MilitaryConfig.HomeShare));
+                                    floorCash);
             int homeFloor = Mathf.Min(wanted, homeCap);
 
             Missions.Add(new Mission
@@ -588,9 +593,37 @@ namespace Si_RTS_AI.Planning
                 Note = (forward ? "forward hold, half share; " : "") +
                        (wanted > homeFloor
                      ? $"home, wanted {wanted} capped to {homeFloor} of army {ArmyValue}"
-                     : $"home (enemy near nest {DefencePlanner.GarrisonValue})"),
+                     : $"home (enemy near nest {DefencePlanner.GarrisonValue}, floor {floorCash})"),
                 CreatedAt = now,
             });
+
+            // 1b) THE ARMY WAITS AT THE FRONT, NOT AT HOME.
+            //
+            // DrMuck: "Fob towards enemy base needs more producers and behes
+            // there." Two reasons this is not merely tidier. A FOB holding
+            // producers and no defenders is a gift to the first raid that finds
+            // it. And an army that masses at the Nest has to walk the whole map
+            // when the push finally triggers, arriving strung out and late —
+            // which is the "sent in one by one" failure wearing a different hat.
+            //
+            // So the staging point is the forward site. Everything above the
+            // home floor and the defence tasks gathers there and waits, which
+            // means the push begins from the front rather than from spawn.
+            if (MilitaryBlueprint.TryForwardPos(out var fob))
+            {
+                // Whatever is left after home and defence. Deliberately larger
+                // than the army so it never stops accepting units — it is a
+                // staging area, not a quota.
+                Missions.Add(new Mission
+                {
+                    Id = IdFor(Kind.Forward, fob), Kind = Kind.Forward, Objective = fob,
+                    RequiredValue = Mathf.Max(1, ArmyValue),
+                    Score = 1f,
+                    Note = $"stage at the FOB ({fob.x:F0},{fob.z:F0}) — " +
+                           "hold the front and start the push from there",
+                    CreatedAt = now,
+                });
+            }
 
             // 2) Defence, in DefencePlanner's order — recent income times threat.
             //    A Bio Cache on a drained patch scores zero however much it cost.

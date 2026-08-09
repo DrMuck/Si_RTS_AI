@@ -247,12 +247,27 @@ namespace Si_RTS_AI.Planning
         /// left alone: pulling units out of a fight to rebalance a spreadsheet
         /// is how a push dies halfway.
         /// </summary>
+        /// <summary>
+        /// KINDS THAT STAND ON GROUND RATHER THAN ATTACK IT.
+        ///
+        /// Garrison and Forward share their whole mechanic — units are KEPT at a
+        /// rally point, not formed up and sent — and differ only in which ground
+        /// that is. Home holds the loss condition; the FOB holds the front, and
+        /// DrMuck wants the Behemoths at the second rather than the first.
+        ///
+        /// Without this a Forward battalion sits in Forming forever, because its
+        /// requirement is deliberately the size of the whole army so it never
+        /// stops accepting units, and a requirement that large is never met.
+        /// </summary>
+        static bool Standing(MissionPlanner.Kind k) =>
+            k == MissionPlanner.Kind.Garrison || k == MissionPlanner.Kind.Forward;
+
         static void ReleaseSurplus(List<Unit> free)
         {
             for (int b = 0; b < Battalions.Count; b++)
             {
                 var bat = Battalions[b];
-                if (bat.Phase == State.Committed && bat.Kind != MissionPlanner.Kind.Garrison)
+                if (bat.Phase == State.Committed && !Standing(bat.Kind))
                     continue;
                 while (bat.Units.Count > 0 && ValueOf(bat.Units) > bat.RequiredValue)
                 {
@@ -384,7 +399,7 @@ namespace Si_RTS_AI.Planning
             for (int b = 0; b < Battalions.Count; b++)
             {
                 var bat = Battalions[b];
-                if (bat.Kind == MissionPlanner.Kind.Garrison) { bat.Phase = State.Ready; continue; }
+                if (Standing(bat.Kind)) { bat.Phase = State.Ready; continue; }
                 if (bat.Phase == State.Committed || bat.Phase == State.Returning) continue;
                 bat.Phase = bat.Value >= bat.RequiredValue && bat.Units.Count > 0
                           ? State.Ready : State.Forming;
@@ -507,7 +522,7 @@ namespace Si_RTS_AI.Planning
             {
                 var bat = Battalions[b];
 
-                if (bat.Kind == MissionPlanner.Kind.Garrison)
+                if (Standing(bat.Kind))
                 {
                     // The garrison is not sent anywhere, it is KEPT. Only units
                     // that have drifted off the leash are recalled, so a standing

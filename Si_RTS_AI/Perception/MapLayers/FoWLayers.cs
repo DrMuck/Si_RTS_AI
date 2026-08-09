@@ -65,10 +65,34 @@ namespace Si_RTS_AI.Perception.MapLayers
             return fallbackM;
         }
 
+        /// <summary>
+        /// WHAT THE LAST REBUILD ACTUALLY MANAGED TO SEE WITH.
+        ///
+        /// The round of 2026-08-09 reported "structs 0/380 in sight, HQ 0/20"
+        /// — not a few enemy buildings missed, every single one, all round,
+        /// with twenty enemy headquarters standing in the open. Enemy UNITS
+        /// registered normally through the identical check, and the rejected
+        /// cell index was in bounds and sane.
+        ///
+        /// Seen near our own base but never at theirs is the signature of
+        /// vision coming from STRUCTURES ONLY: our Nest and nodes light up our
+        /// own ground, and the twenty scouts contribute nothing. Both loops
+        /// below sat behind a bare catch{}, so a throw on team.Units would
+        /// produce exactly that and say nothing about it for the whole round.
+        ///
+        /// These counters make the next round answer it outright instead of
+        /// leaving it to inference.
+        /// </summary>
+        public static int LastStructSources { get; private set; }
+        public static int LastUnitSources   { get; private set; }
+        public static string LastFailure    { get; private set; }
+        static bool _loggedFailure;
+
         static void RebuildActive(Team team, LayerB active)
         {
             active.Clear();
             if (team == null) return;
+            int nStruct = 0, nUnit = 0;
 
             try
             {
@@ -79,9 +103,10 @@ namespace Si_RTS_AI.Perception.MapLayers
                         var s = structs[i];
                         if (s == null || s.ObjectInfo == null || s.IsDestroyed) continue;
                         active.SetDiskAtWorld(s.transform.position, VisionOf(s, STRUCT_VISION_M));
+                        nStruct++;
                     }
             }
-            catch { }
+            catch (System.Exception ex) { Note("structures: " + ex.Message); }
 
             try
             {
@@ -96,9 +121,25 @@ namespace Si_RTS_AI.Perception.MapLayers
                                           || name == "HeavyHarvester") ? HARV_VISION_M : UNIT_VISION_M;
                         float r = VisionOf(u, fallback);
                         active.SetDiskAtWorld(u.transform.position, r);
+                        nUnit++;
                     }
             }
-            catch { }
+            catch (System.Exception ex) { Note("units: " + ex.Message); }
+
+            LastStructSources = nStruct;
+            LastUnitSources   = nUnit;
+        }
+
+        /// <summary>A vision source that throws is not a detail to swallow — it
+        /// blinds the whole planner. Logged once so it cannot spam, kept so the
+        /// sight report can carry it.</summary>
+        static void Note(string what)
+        {
+            LastFailure = what;
+            if (_loggedFailure) return;
+            _loggedFailure = true;
+            MelonLoader.MelonLogger.Warning(
+                "[FOW] a vision source threw and every later pass will be blind to it — " + what);
         }
 
         public static LayerB GetActive(Team team)
@@ -122,6 +163,9 @@ namespace Si_RTS_AI.Perception.MapLayers
             // new map, so keeping stale byte[] would cause size mismatches.
             _active.Clear();
             _explored.Clear();
+            LastStructSources = LastUnitSources = 0;
+            LastFailure = null;
+            _loggedFailure = false;
         }
     }
 }

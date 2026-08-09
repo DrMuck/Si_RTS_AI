@@ -318,6 +318,22 @@ namespace Si_RTS_AI.Planning
 
         /// <summary>True while we hold ground forward of the Nest — which is
         /// what lets the home garrison be smaller. MissionPlanner reads it.</summary>
+        /// <summary>The forward site itself, so the army can be staged on it.
+        /// DrMuck: "Fob towards enemy base needs more producers and behes
+        /// there." A FOB with producers and no defenders is a gift.</summary>
+        internal static bool TryForwardPos(out Vector3 pos)
+        {
+            pos = Vector3.zero;
+            try
+            {
+                for (int i = 0; i < Sites.Count; i++)
+                    if (Sites[i].Purpose == Purpose.Forward)
+                    { pos = Sites[i].Pos; return true; }
+            }
+            catch { }
+            return false;
+        }
+
         internal static bool HoldingForward
         {
             get

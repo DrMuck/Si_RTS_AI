@@ -90,6 +90,26 @@ namespace Si_RTS_AI.Planning
         /// meet.</summary>
         internal static float HomeCapShare;
 
+        /// <summary>
+        /// BASE DEFENCE IS AN ABSOLUTE AMOUNT, NOT A SHARE OF OUR ARMY.
+        ///
+        /// DrMuck: "A lot of behemoth were build near nest. too many. Only a few
+        /// needed for base defense, but Fob towards enemy base needs more
+        /// producers and behes there."
+        ///
+        /// The garrison floor was a SHARE of ArmyValue, which makes the home
+        /// requirement grow without limit alongside the army — 73,896 asked for
+        /// at home last round, and rising every time we produced anything. That
+        /// is a formula that can never let a big army leave, and it is the
+        /// structural reason the Behemoths piled at the Nest.
+        ///
+        /// What a base actually needs is enough to survive a raid until help
+        /// arrives, which is a quantity of cash, not a percentage. Roughly three
+        /// Behemoths. Above that, the enemy's real presence at home decides —
+        /// and if they commit a serious force, DefencePlanner sizes against it.
+        /// </summary>
+        internal static int HomeFloorCash;
+
         /// <summary>How many of EACH higher-tier producer the layer may build.
         /// One was the old hard rule and it capped the whole army: a single
         /// Greater Spawning Cyst made 41 Behemoths in forty minutes while 255
@@ -164,6 +184,7 @@ namespace Si_RTS_AI.Planning
 
             HomeShare         = RtsaiConfig.Float("military.homeShare",         0.25f);
             HomeCapShare      = RtsaiConfig.Float("military.homeCapShare",      0.5f);
+            HomeFloorCash     = RtsaiConfig.Int  ("military.homeFloorCash",     12000);
             MaxDefendMissions = RtsaiConfig.Int  ("military.maxDefendMissions", 3);
             MaxProducersPerType = RtsaiConfig.Int("military.maxProducersPerType", 3);
 

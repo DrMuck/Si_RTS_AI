@@ -373,7 +373,11 @@ namespace Si_RTS_AI.Perception
         internal static string SightReport()
         {
             string r = $"structs {_structsInSight}/{_structsSeenTotal} in sight, " +
-                       $"HQ {_hqInSight}/{_hqTotal}, known={_known.Count}";
+                       $"HQ {_hqInSight}/{_hqTotal}, known={_known.Count}, " +
+                       $"vision from {MapLayers.FoWLayers.LastStructSources} structures " +
+                       $"+ {MapLayers.FoWLayers.LastUnitSources} units";
+            if (MapLayers.FoWLayers.LastFailure != null)
+                r += " [FOW THREW: " + MapLayers.FoWLayers.LastFailure + "]";
             if (_hqTotal > 0 && _hqInSight == 0 && _hqWhere != null)
                 r += " — nearest rejected: " + _hqWhere;
             _structsSeenTotal = _structsInSight = _hqTotal = _hqInSight = 0;
