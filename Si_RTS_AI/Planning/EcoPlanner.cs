@@ -1105,6 +1105,12 @@ namespace Si_RTS_AI.Planning
         /// it deeper is still waste — but two fronts get two chains' worth
         /// instead of sharing one.
         /// </summary>
+        /// <summary>What the opening was tuned against, before the per-front
+        /// budget existed. Kept as a constant rather than a knob: it is not a
+        /// tuning parameter, it is the shape the committed opener was chosen
+        /// under.</summary>
+        const int OPENER_UNBUILT_NODES = 3;
+
         static int MaxUnbuiltNodes
         {
             get
@@ -1883,10 +1889,32 @@ namespace Si_RTS_AI.Planning
                     // case where the nodes ahead of it are not speculative — they
                     // are already built and dying — and a rescue that queued
                     // behind the very stubs it is trying to reach could never run.
+                    // THE OPENER KEEPS THE OLD, TIGHTER BUDGET.
+                    //
+                    // DrMuck: "hmm the eco opener is not the one used to be ...
+                    // something must disturb it." It was me. v0.68 widened this
+                    // budget from a flat 3 to 3 per front — correctly, for the
+                    // stall it was aimed at, which was measured MID-GAME: 29k to
+                    // 38k cash idle, node gaps reaching 209s against a 9s median,
+                    // Bio Caches queued behind it on bcAnchor.
+                    //
+                    // None of that evidence came from the opening, and the wider
+                    // budget changed the opening as collateral: seven nodes fired
+                    // in the first nine seconds, cash 8000 -> 6600 on chain before
+                    // the first Bio Cache had finished, and the Cyst steps then
+                    // sat on "no finished BC anywhere yet".
+                    //
+                    // The opener is a COMMITTED plan — 728 candidates evaluated
+                    // and one sequence chosen — and its pacing was part of what
+                    // was chosen. Widening a budget underneath a vetted plan is
+                    // not the same as giving it room. It keeps the budget it was
+                    // planned against; Phase 2 gets the wider one.
+                    int nodeBudget = openerFiring ? OPENER_UNBUILT_NODES : MaxUnbuiltNodes;
                     if (c.kind == ActionKind.PlaceNode && !rescue
-                        && unbuiltNodes + nodeFiresThisTick >= MaxUnbuiltNodes)
+                        && unbuiltNodes + nodeFiresThisTick >= nodeBudget)
                     {
-                        Skip($"nodesInFlight{unbuiltNodes + nodeFiresThisTick}/{MaxUnbuiltNodes}");
+                        Skip($"nodesInFlight{unbuiltNodes + nodeFiresThisTick}/{nodeBudget}" +
+                             (openerFiring ? "opener" : ""));
                         return true;
                     }
                     if (c.cost > cashLeft)
