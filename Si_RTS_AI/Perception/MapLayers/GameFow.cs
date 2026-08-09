@@ -77,10 +77,131 @@ namespace Si_RTS_AI.Perception.MapLayers
             }
         }
 
+        // ---- THE FIELDS, NOT JUST THE POINTS --------------------------------
+        //
+        // DrMuck: "did we replace all relevant layers? also the one we used for
+        // eco?" No, and eco was the one that mattered most. EcoPlanner gates
+        // buildability on the explored layer — unexplored ground is unbuildable
+        // ground — so a reconstruction that is too GENEROUS marks ground
+        // explored that nobody ever looked at, and the planner commits to
+        // building somewhere it has never seen. FoWLayers' own header records
+        // that failure being observed on MonumentValley on 2026-08-01 and calls
+        // it "the damaging direction"; the cause was the same guessed disks.
+        //
+        // The game keeps the real thing per team as a byte per fog pixel, so
+        // there is nothing to approximate. Our grid is coarser than the fog
+        // texture, so a cell takes the reading at its centre.
+        //
+        // Cached per tick: several planners ask for this each pass and the
+        // answer cannot change between them within one frame.
+
+        /// <summary>How stale a fog field may be. Explored only ever grows and
+        /// active moves at walking pace, so a second is finer than any decision
+        /// that reads it, and it keeps the per-cell sweep off the hot path.</summary>
+        const float REFRESH_S = 1f;
+
+        static readonly System.Collections.Generic.Dictionary<Team, (float at, LayerB ex, LayerB ac)>
+            _cache = new System.Collections.Generic.Dictionary<Team, (float, LayerB, LayerB)>();
+
+        internal static bool TryFill(Team team, out LayerB explored, out LayerB active)
+        {
+            explored = active = null;
+            if (team == null) return false;
+            if (_cache.TryGetValue(team, out var c) && Time.time - c.at < REFRESH_S)
+            { explored = c.ex; active = c.ac; return true; }
+
+            try
+            {
+                var fow = FogOfWar.Instance;
+                if (fow == null) return false;
+                var data = fow.GetTeamData(team);
+                if (data == null) return false;
+
+                var exPix = data.ExploredPixels;
+                var acPix = data.ActivePixels;
+                int pw = fow.PixelWidth, ph = fow.PixelHeight;
+                if (pw <= 0 || ph <= 0) return false;
+
+                var ex = c.ex ?? new LayerB();
+                var ac = c.ac ?? new LayerB();
+                ex.Clear(); ac.Clear();
+
+                // World-to-pixel is an affine transform, so derive it ONCE
+                // rather than paying an interop call per cell — the grid is
+                // tens of thousands of cells and this runs several times a
+                // second. Calibrated against the game's own conversion at two
+                // points and abandoned entirely if it disagrees, because a
+                // silently wrong mapping here would read the fog of the wrong
+                // ground, which is a worse failure than being slow.
+                Vector3 p0 = GridWorld.CellCenter(0, 0);
+                Vector3 p1 = GridWorld.CellCenter(GridWorld.Width - 1, GridWorld.Height - 1);
+                FogOfWar.GetRegionAtPosition(p0, out int x0, out int y0);
+                FogOfWar.GetRegionAtPosition(p1, out int x1, out int y1);
+
+                float sx = (p1.x - p0.x) == 0f ? 0f : (x1 - x0) / (p1.x - p0.x);
+                float sz = (p1.z - p0.z) == 0f ? 0f : (y1 - y0) / (p1.z - p0.z);
+
+                Vector3 pm = GridWorld.CellCenter(GridWorld.Width / 2, GridWorld.Height / 2);
+                FogOfWar.GetRegionAtPosition(pm, out int xm, out int ym);
+                int predX = Mathf.RoundToInt(x0 + (pm.x - p0.x) * sx);
+                int predZ = Mathf.RoundToInt(y0 + (pm.z - p0.z) * sz);
+                if (Mathf.Abs(predX - xm) > 1 || Mathf.Abs(predZ - ym) > 1)
+                {
+                    if (!_warnedFields)
+                    {
+                        _warnedFields = true;
+                        MelonLogger.Warning(
+                            "[FOW] world-to-pixel is not affine as assumed " +
+                            $"(mid cell predicted ({predX},{predZ}), game says ({xm},{ym})) — " +
+                            "not reading the fog texture rather than reading the wrong ground");
+                    }
+                    return false;
+                }
+
+                for (int cz = 0; cz < GridWorld.Height; cz++)
+                {
+                    float wz = GridWorld.CellCenter(0, cz).z;
+                    int py = Mathf.RoundToInt(y0 + (wz - p0.z) * sz);
+                    if (py < 0 || py >= ph) continue;
+                    int row = py * pw;
+                    for (int cx = 0; cx < GridWorld.Width; cx++)
+                    {
+                        float wx = GridWorld.CellCenter(cx, 0).x;
+                        int px = Mathf.RoundToInt(x0 + (wx - p0.x) * sx);
+                        if (px < 0 || px >= pw) continue;
+                        int idx = row + px;
+                        if (idx < exPix.Length && exPix[idx] != 0) ex.SetOne(cx, cz);
+                        if (idx < acPix.Length && acPix[idx] != 0) ac.SetOne(cx, cz);
+                    }
+                }
+
+                _cache[team] = (Time.time, ex, ac);
+                explored = ex; active = ac;
+                return true;
+            }
+            catch (System.Exception ex2)
+            {
+                if (!_warnedFields)
+                {
+                    _warnedFields = true;
+                    MelonLogger.Warning(
+                        "[FOW] could not read the game's fog pixels, falling back to the " +
+                        "reconstruction for FIELD queries (point queries are unaffected): "
+                        + ex2.Message);
+                }
+                return false;
+            }
+        }
+
+        static bool _warnedFields;
+
+        internal static bool FieldsAvailable => !_warnedFields;
+
         internal static string Report()
         {
             string r = $"game-fow {(Available ? "live" : "MISSING")} " +
-                       $"{_visible}/{_calls} visible";
+                       $"{_visible}/{_calls} visible" +
+                       (_warnedFields ? ", FIELDS FELL BACK to the reconstruction" : ", fields live");
             _calls = _visible = 0;
             return r;
         }
@@ -88,7 +209,9 @@ namespace Si_RTS_AI.Perception.MapLayers
         internal static void ResetForNewRound()
         {
             _warned = false;
+            _warnedFields = false;
             _calls = _visible = 0;
+            _cache.Clear();
         }
     }
 }

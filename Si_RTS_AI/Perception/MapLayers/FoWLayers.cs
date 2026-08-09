@@ -142,17 +142,28 @@ namespace Si_RTS_AI.Perception.MapLayers
                 "[FOW] a vision source threw and every later pass will be blind to it — " + what);
         }
 
+        // THE GAME'S ANSWER FIRST, ALWAYS. The disk reconstruction below stays
+        // only for the case where the fog pixels cannot be read at all — it is
+        // the model that reported 99.1% explored while never once seeing an
+        // enemy building, so it is a last resort and says so in the log.
         public static LayerB GetActive(Team team)
         {
+            if (GameFow.TryFill(team, out _, out var gameActive) && gameActive != null)
+            {
+                var (_, e0) = EnsureLayers(team);
+                e0.OrFrom(gameActive);
+                return gameActive;
+            }
             var (a, e) = EnsureLayers(team);
             RebuildActive(team, a);
-            e.OrFrom(a);   // cheap, and keeps explored consistent with the just-rebuilt active
+            e.OrFrom(a);
             return a;
         }
 
         public static LayerB GetExplored(Team team)
         {
-            // Rebuild active + OR into explored, then return explored.
+            if (GameFow.TryFill(team, out var gameExplored, out _) && gameExplored != null)
+                return gameExplored;
             GetActive(team);
             return _explored[team];
         }
