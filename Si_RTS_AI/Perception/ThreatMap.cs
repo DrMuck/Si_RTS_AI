@@ -46,6 +46,10 @@ namespace Si_RTS_AI.Perception
         /// enough that a cleared area stops looking dangerous.</summary>
         const float HALF_LIFE_S   = 45f;
         const float TICK_S        = 1f;
+
+        /// <summary>How often enemy positions are re-stamped. See Observe.</summary>
+        const float STAMP_S       = 0.25f;
+        static readonly Dictionary<string, float> _lastStampAt = new Dictionary<string, float>(4);
         const float REPORT_S      = 20f;
         const int   HVT_REPORTED  = 3;
 
@@ -397,6 +401,7 @@ namespace Si_RTS_AI.Perception
             _value = new float[0];
             _valueScratch = new float[0];
             _lastTickAt = _lastReportAt = 0f;
+            _lastStampAt.Clear();
             _self = null;
             Total = 0f;
             TotalValue = 0;
@@ -437,6 +442,23 @@ namespace Si_RTS_AI.Perception
             if (tn.Contains("Alien")) { _self = team; return; }
 
             EnsureSized();
+
+            // STAMPING FASTER THAN THE FIELD DECAYS BUYS NOTHING.
+            //
+            // This ran once per frame per enemy team, walking every unit and
+            // every structure each time, while the field it feeds decays at 1Hz
+            // — so most of that work was overwritten before anything read it.
+            //
+            // Not throttled all the way to 1s: the throttle was REMOVED once
+            // because sightings were being missed, and a scout that crosses
+            // enemy ground briefly is exactly the sighting that matters most.
+            // Four times a second keeps that and drops the rest.
+            float nowS = Time.time;
+            string key = team.name ?? "?";
+            _lastStampAt.TryGetValue(key, out float last);
+            if (nowS - last < STAMP_S) return;
+            _lastStampAt[key] = nowS;
+
             try { Stamp(team); }
             catch (Exception ex) { MelonLogger.Warning("[THREAT] stamp threw: " + ex.Message); }
         }
@@ -475,6 +497,21 @@ namespace Si_RTS_AI.Perception
 
         static void Stamp(Team enemy)
         {
+            // FETCHED ONCE PER PASS, READ AS AN ARRAY.
+            //
+            // DrMuck: "what we doing a call for all unit and structures per tick?
+            // lol that is crazy. And why cannot we get this from already cached
+            // data that the game should have?" Both halves correct. The previous
+            // version called the game's point query once per enemy unit AND once
+            // per structure, every tick, for every team — several thousand Il2Cpp
+            // crossings a second to answer a question the game already holds as a
+            // finished bitmap. Server FPS went 142 -> 50, worst frames to 4.
+            //
+            // FogOfWarData.ActivePixels IS that cached data. GameFow copies it
+            // whole, on an interval, and everything here reads managed memory.
+            LayerB visible = null;
+            try { if (_self != null) visible = MapLayers.GameFow.ActiveLayer(_self); } catch { }
+
             var units = enemy.Units;
             if (units != null)
                 for (int i = 0; i < units.Count; i++)
@@ -484,7 +521,7 @@ namespace Si_RTS_AI.Perception
                     Vector3 p = u.transform.position;
                     int cx = GridWorld.CellX(p.x), cz = GridWorld.CellZ(p.z);
                     if (cx < 0 || cz < 0 || cx >= GridWorld.Width || cz >= GridWorld.Height) continue;
-                    if (!MapLayers.GameFow.IsVisible(_self, p)) continue;   // the GAME's sight
+                    if (visible != null && !visible.IsSet(cx, cz)) continue;   // the GAME's sight
 
                     float weight = Mathf.Max(1, u.ObjectInfo.UIAttackRating);
                     float reachM = 0f;
@@ -522,7 +559,7 @@ namespace Si_RTS_AI.Perception
                 int cx = GridWorld.CellX(p.x), cz = GridWorld.CellZ(p.z);
                 if (cx < 0 || cz < 0 || cx >= GridWorld.Width || cz >= GridWorld.Height) continue;
                 _structsSeenTotal++;
-                bool inSight = MapLayers.GameFow.IsVisible(_self, p);
+                bool inSight = visible == null || visible.IsSet(cx, cz);
                 string sname0 = st.ObjectInfo.DisplayName ?? "?";
                 if (sname0.IndexOf("Headquarters", StringComparison.OrdinalIgnoreCase) >= 0)
                 {
@@ -568,6 +605,8 @@ namespace Si_RTS_AI.Perception
             // nothing seen this pass is zero either way, whatever the fog says.
             // Everywhere that could change is a cell where we saw something or
             // remember something — a few dozen, not the whole map.
+            LayerB vis = null;
+            try { if (_self != null) vis = MapLayers.GameFow.ActiveLayer(_self); } catch { }
             float total = 0f;
             int w = GridWorld.Width;
             for (int i = 0; i < _value.Length; i++)
@@ -575,8 +614,7 @@ namespace Si_RTS_AI.Perception
                 float now = _valueScratch[i], was = _value[i];
                 if (now <= 0f && was <= 0f) { _valueScratch[i] = 0f; continue; }
 
-                Vector3 at = GridWorld.CellCenter(i % w, i / w);
-                bool seen = MapLayers.GameFow.IsVisible(_self, at);
+                bool seen = vis != null && vis.IsSet(i % w, i / w);
                 _value[i] = seen ? now : was * keep;
                 total += _value[i];
                 _valueScratch[i] = 0f;
@@ -608,6 +646,8 @@ namespace Si_RTS_AI.Perception
         static void ForgetWhatWeCanSeeIsGone(float now)
         {
             if (_known.Count == 0 || _self == null) return;
+            LayerB fog = null;
+            try { fog = MapLayers.GameFow.ActiveLayer(_self); } catch { }
             List<string> gone = null;
             foreach (var kv in _known)
             {
@@ -616,7 +656,7 @@ namespace Si_RTS_AI.Perception
                 if (now - kv.Value.LastSeenAt < TICK_S * 3f) continue;
                 int cx = GridWorld.CellX(kv.Value.Pos.x), cz = GridWorld.CellZ(kv.Value.Pos.z);
                 if (cx < 0 || cz < 0 || cx >= GridWorld.Width || cz >= GridWorld.Height) continue;
-                if (!MapLayers.GameFow.IsVisible(_self, kv.Value.Pos)) continue;  // unseen, still believed
+                if (fog == null || !fog.IsSet(cx, cz)) continue;   // unseen, still believed
                 (gone ??= new List<string>()).Add(kv.Key);
             }
             if (gone == null) return;

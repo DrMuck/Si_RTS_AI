@@ -8,7 +8,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 
-[assembly: MelonInfo(typeof(Si_RTS_AI.Si_RTS_AI), "Si_RTS_AI", "0.69.0-production-goes-forward", "DrMuck")]
+[assembly: MelonInfo(typeof(Si_RTS_AI.Si_RTS_AI), "Si_RTS_AI", "0.70.0-one-copy-not-ten-thousand-calls", "DrMuck")]
 [assembly: MelonGame("Bohemia Interactive", "Silica")]
 
 namespace Si_RTS_AI
@@ -283,9 +283,9 @@ namespace Si_RTS_AI
                     tShrimpState = TimedMs(() => Perception.ShrimpStateSampler.Tick(team));
                     Perception.BuildTimeline.Tick(team);
                     if ((team.name ?? "").Contains("Alien")) Perception.QueenStatus.Evaluate(team);
-                    Perception.ThreatMap.Observe(team);
-                    Perception.ThreatMap.Tick(team);
-                    Perception.ControlMap.Rebuild(team);
+                    long tThreat = TimedMs(() => { Perception.ThreatMap.Observe(team);
+                                                    Perception.ThreatMap.Tick(team); });
+                    long tControl = TimedMs(() => Perception.ControlMap.Rebuild(team));
                     Planning.NodeManager.Tick(team);
                     tEcoRate     = TimedMs(() => Perception.EcoRateSampler.Tick(team));
                     RecentModWork.AddLayer(tLayer);
@@ -357,13 +357,15 @@ namespace Si_RTS_AI
                     }
                     RecentModWork.AddPlanKick(tPlan);
 
-                    long total = tLayer + tBcMetrics + tShrimpState + tEcoRate + tPlan;
+                    long total = tLayer + tBcMetrics + tShrimpState + tEcoRate + tPlan
+                               + tThreat + tControl;
                     if (total >= SLOW_TICK_LOG_THRESHOLD_MS)
                     {
                         MelonLogger.Msg("[RTSA/PERF] slow tick team=" + tn +
                                         " total=" + total + "ms  layer=" + tLayer +
                                         " bcmetrics=" + tBcMetrics + " shrimpstate=" + tShrimpState +
-                                        " ecorate=" + tEcoRate + " plan=" + tPlan);
+                                        " ecorate=" + tEcoRate + " plan=" + tPlan +
+                                        " threat=" + tThreat + " control=" + tControl);
                     }
                 }
             }

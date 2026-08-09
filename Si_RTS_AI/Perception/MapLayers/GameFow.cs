@@ -98,10 +98,32 @@ namespace Si_RTS_AI.Perception.MapLayers
         /// <summary>How stale a fog field may be. Explored only ever grows and
         /// active moves at walking pace, so a second is finer than any decision
         /// that reads it, and it keeps the per-cell sweep off the hot path.</summary>
-        const float REFRESH_S = 1f;
+        const float REFRESH_S = 2f;
+
+        static byte[] _exBuf, _acBuf;
+
+        static byte[] Rent(ref byte[] buf, int need)
+        {
+            if (buf == null || buf.Length < need) buf = new byte[need];
+            return buf;
+        }
 
         static readonly System.Collections.Generic.Dictionary<Team, (float at, LayerB ex, LayerB ac)>
             _cache = new System.Collections.Generic.Dictionary<Team, (float, LayerB, LayerB)>();
+
+        /// <summary>
+        /// THE ACTIVE FOG AS A MANAGED ARRAY, refreshed on the cache interval.
+        ///
+        /// Hot paths must read THIS, never IsVisible. The point query is honest
+        /// and correct and costs an interop call, which is fine for a handful of
+        /// positions a second and catastrophic for a few thousand — see the FPS
+        /// numbers above. Stamp walks every enemy unit and structure every tick,
+        /// so it reads the layer.
+        /// </summary>
+        internal static LayerB ActiveLayer(Team team)
+        {
+            return TryFill(team, out _, out var ac) ? ac : null;
+        }
 
         internal static bool TryFill(Team team, out LayerB explored, out LayerB active)
         {
@@ -117,8 +139,21 @@ namespace Si_RTS_AI.Perception.MapLayers
                 var data = fow.GetTeamData(team);
                 if (data == null) return false;
 
-                var exPix = data.ExploredPixels;
-                var acPix = data.ActivePixels;
+                // ONE INTEROP CALL, NOT TWENTY THOUSAND.
+                //
+                // Indexing a NativeArray from managed code crosses the Il2Cpp
+                // boundary EVERY TIME, and this loop touched two of them per
+                // cell over a 150x150 grid, per team, every second. Measured
+                // cost of getting that wrong: mean server FPS 142 -> 50, worst
+                // frames 4 fps, 1353 frames over 100ms against 32 before, and
+                // 56 slow ticks from this mod against 2.
+                //
+                // CopyTo moves the whole buffer in one call and the sweep then
+                // runs entirely on managed arrays.
+                var exPix = Rent(ref _exBuf, data.ExploredPixels.Length);
+                var acPix = Rent(ref _acBuf, data.ActivePixels.Length);
+                data.ExploredPixels.CopyTo(exPix);
+                data.ActivePixels.CopyTo(acPix);
                 int pw = fow.PixelWidth, ph = fow.PixelHeight;
                 if (pw <= 0 || ph <= 0) return false;
 
