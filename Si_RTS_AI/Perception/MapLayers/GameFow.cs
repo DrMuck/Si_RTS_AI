@@ -197,11 +197,34 @@ namespace Si_RTS_AI.Perception.MapLayers
 
         internal static bool FieldsAvailable => !_warnedFields;
 
+        /// <summary>
+        /// IS THE SERVER EVEN RUNNING FOG?
+        ///
+        /// A dedicated server has nothing to render, so fog can be switched off
+        /// entirely — and then GetPositionVisible answers true everywhere and we
+        /// quietly become omniscient. That is the opposite of the bug we just
+        /// fixed and considerably worse: the bot would play well for reasons it
+        /// could never justify from what a commander can see, and every
+        /// conclusion drawn from the round would be worthless.
+        ///
+        /// So it is checked and stated rather than assumed. If this ever reads
+        /// DISABLED, nothing measured that round means anything.
+        /// </summary>
+        internal static bool FogDisabled
+        {
+            get
+            {
+                try { return FogOfWar.FogOfWarDisabled; }
+                catch { return false; }
+            }
+        }
+
         internal static string Report()
         {
             string r = $"game-fow {(Available ? "live" : "MISSING")} " +
                        $"{_visible}/{_calls} visible" +
-                       (_warnedFields ? ", FIELDS FELL BACK to the reconstruction" : ", fields live");
+                       (_warnedFields ? ", FIELDS FELL BACK to the reconstruction" : ", fields live") +
+                       (FogDisabled ? "  ** FOG IS DISABLED SERVER-SIDE — WE ARE OMNISCIENT **" : "");
             _calls = _visible = 0;
             return r;
         }

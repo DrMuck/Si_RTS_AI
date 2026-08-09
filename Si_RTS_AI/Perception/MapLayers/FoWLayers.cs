@@ -10,6 +10,12 @@ namespace Si_RTS_AI.Perception.MapLayers
     ///   active   — cells currently within vision of any owned unit/structure
     ///   explored — cumulative union of active since round start (passive memory)
     ///
+    /// SUPERSEDED — THIS IS NOW A FALLBACK ONLY. See GameFow: every consumer
+    /// takes the game's real per-team fog, and this disk reconstruction runs
+    /// only if those pixels cannot be read. It measured 0 of 380 enemy
+    /// structures visible on a map it claimed was 99.1% explored, so it is not
+    /// to be trusted with anything and its use is announced in the log.
+    ///
     /// This is an AI-side FoW approximation. Silica also exposes a native FoW
     /// texture via <c>FogOfWar.GetTeamFogTexture(team)</c>, but reading it
     /// requires Il2Cpp interop and matches what the RENDER shows, not what the
