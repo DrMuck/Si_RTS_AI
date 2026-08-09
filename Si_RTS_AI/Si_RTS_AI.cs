@@ -8,7 +8,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 
-[assembly: MelonInfo(typeof(Si_RTS_AI.Si_RTS_AI), "Si_RTS_AI", "0.62.0-blind-scouts-and-a-manned-fob", "DrMuck")]
+[assembly: MelonInfo(typeof(Si_RTS_AI.Si_RTS_AI), "Si_RTS_AI", "0.63.0-the-games-own-fog", "DrMuck")]
 [assembly: MelonGame("Bohemia Interactive", "Silica")]
 
 namespace Si_RTS_AI

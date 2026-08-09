@@ -323,6 +323,7 @@ namespace Si_RTS_AI.Perception
         // how many enemy structures exist, how many our fog layer accepts, and
         // where the HQ is when we reject it.
         static int _structsSeenTotal, _structsInSight, _hqTotal, _hqInSight;
+        static int _structsOnExploredGround;
         static string _hqWhere;
 
         /// <summary>
@@ -374,13 +375,13 @@ namespace Si_RTS_AI.Perception
         {
             string r = $"structs {_structsInSight}/{_structsSeenTotal} in sight, " +
                        $"HQ {_hqInSight}/{_hqTotal}, known={_known.Count}, " +
-                       $"vision from {MapLayers.FoWLayers.LastStructSources} structures " +
-                       $"+ {MapLayers.FoWLayers.LastUnitSources} units";
+                       $"{MapLayers.GameFow.Report()}";
             if (MapLayers.FoWLayers.LastFailure != null)
                 r += " [FOW THREW: " + MapLayers.FoWLayers.LastFailure + "]";
             if (_hqTotal > 0 && _hqInSight == 0 && _hqWhere != null)
                 r += " — nearest rejected: " + _hqWhere;
             _structsSeenTotal = _structsInSight = _hqTotal = _hqInSight = 0;
+            _structsOnExploredGround = 0;
             _hqWhere = null;
             return r;
         }
@@ -391,6 +392,7 @@ namespace Si_RTS_AI.Perception
         internal static void ResetForNewRound()
         {
             _lastDiscoveryLogAt = 0f;
+            MapLayers.GameFow.ResetForNewRound();
             _threat = new float[0];
             _value = new float[0];
             _valueScratch = new float[0];
@@ -473,9 +475,6 @@ namespace Si_RTS_AI.Perception
 
         static void Stamp(Team enemy)
         {
-            LayerB visible = null;
-            try { if (_self != null) visible = FoWLayers.GetActive(_self); } catch { }
-
             var units = enemy.Units;
             if (units != null)
                 for (int i = 0; i < units.Count; i++)
@@ -485,7 +484,7 @@ namespace Si_RTS_AI.Perception
                     Vector3 p = u.transform.position;
                     int cx = GridWorld.CellX(p.x), cz = GridWorld.CellZ(p.z);
                     if (cx < 0 || cz < 0 || cx >= GridWorld.Width || cz >= GridWorld.Height) continue;
-                    if (visible != null && !visible.IsSet(cx, cz)) continue;   // not our sight
+                    if (!MapLayers.GameFow.IsVisible(_self, p)) continue;   // the GAME's sight
 
                     float weight = Mathf.Max(1, u.ObjectInfo.UIAttackRating);
                     float reachM = 0f;
@@ -523,14 +522,14 @@ namespace Si_RTS_AI.Perception
                 int cx = GridWorld.CellX(p.x), cz = GridWorld.CellZ(p.z);
                 if (cx < 0 || cz < 0 || cx >= GridWorld.Width || cz >= GridWorld.Height) continue;
                 _structsSeenTotal++;
-                bool inSight = visible == null || visible.IsSet(cx, cz);
+                bool inSight = MapLayers.GameFow.IsVisible(_self, p);
                 string sname0 = st.ObjectInfo.DisplayName ?? "?";
                 if (sname0.IndexOf("Headquarters", StringComparison.OrdinalIgnoreCase) >= 0)
                 {
                     _hqTotal++;
                     if (inSight) _hqInSight++;
                     else if (_hqWhere == null)
-                        _hqWhere = $"{sname0} at ({p.x:F0},{p.z:F0}) cell({cx},{cz})";
+                        _hqWhere = $"{sname0} at ({p.x:F0},{p.z:F0})";
                 }
                 if (!inSight) continue;
                 _structsInSight++;
@@ -561,16 +560,24 @@ namespace Si_RTS_AI.Perception
         /// </summary>
         static void CommitValue(float keep)
         {
-            LayerB visible = null;
-            try { if (_self != null) visible = FoWLayers.GetActive(_self); } catch { }
-
+            // ONLY EMPTY CELLS ARE FREE TO SKIP.
+            //
+            // This is a field operation and the game's fog is a point query, so
+            // asking per cell would be tens of thousands of interop calls a
+            // tick. It does not have to be: a cell with no believed value and
+            // nothing seen this pass is zero either way, whatever the fog says.
+            // Everywhere that could change is a cell where we saw something or
+            // remember something — a few dozen, not the whole map.
             float total = 0f;
             int w = GridWorld.Width;
             for (int i = 0; i < _value.Length; i++)
             {
-                bool seen = visible == null ? false : visible.IsSet(i % w, i / w);
-                _value[i] = seen ? _valueScratch[i] : _value[i] * keep;
-                if (visible == null && _valueScratch[i] > 0f) _value[i] = _valueScratch[i];
+                float now = _valueScratch[i], was = _value[i];
+                if (now <= 0f && was <= 0f) { _valueScratch[i] = 0f; continue; }
+
+                Vector3 at = GridWorld.CellCenter(i % w, i / w);
+                bool seen = MapLayers.GameFow.IsVisible(_self, at);
+                _value[i] = seen ? now : was * keep;
                 total += _value[i];
                 _valueScratch[i] = 0f;
             }
@@ -601,10 +608,6 @@ namespace Si_RTS_AI.Perception
         static void ForgetWhatWeCanSeeIsGone(float now)
         {
             if (_known.Count == 0 || _self == null) return;
-            LayerB visible = null;
-            try { visible = FoWLayers.GetActive(_self); } catch { }
-            if (visible == null) return;
-
             List<string> gone = null;
             foreach (var kv in _known)
             {
@@ -613,7 +616,7 @@ namespace Si_RTS_AI.Perception
                 if (now - kv.Value.LastSeenAt < TICK_S * 3f) continue;
                 int cx = GridWorld.CellX(kv.Value.Pos.x), cz = GridWorld.CellZ(kv.Value.Pos.z);
                 if (cx < 0 || cz < 0 || cx >= GridWorld.Width || cz >= GridWorld.Height) continue;
-                if (!visible.IsSet(cx, cz)) continue;         // out of sight, still believed
+                if (!MapLayers.GameFow.IsVisible(_self, kv.Value.Pos)) continue;  // unseen, still believed
                 (gone ??= new List<string>()).Add(kv.Key);
             }
             if (gone == null) return;
