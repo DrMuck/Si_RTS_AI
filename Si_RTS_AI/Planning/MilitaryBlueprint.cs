@@ -207,6 +207,23 @@ namespace Si_RTS_AI.Planning
             // z=150, -290, -370, -810, which is the crawl working.
             if (TryForward(team, nest, existing, out var fwd)) Sites.Add(fwd);
 
+            // FORWARDNESS DECIDES, KIND ONLY BREAKS TIES.
+            //
+            // Cover used to score 10 + earnings/1000, so a rear expansion
+            // earning 4050 scored 14 and outranked nothing — but it still got
+            // built, because it was the only site left once the front was
+            // covered. Ranking every site on one axis means the most forward
+            // ground is always taken first and the rear is reached only if
+            // nothing ahead of it is left, which is the order DrMuck asked for:
+            // "build only production as close as possible to enemy lines".
+            if (TryEnemyRef(out var enemyRef))
+                for (int i = 0; i < Sites.Count; i++)
+                {
+                    var st = Sites[i];
+                    float toward = Forwardness(st.Pos, nest, enemyRef);
+                    st.Score = toward * 100f + (st.Purpose == Purpose.Forward ? 10f : 0f);
+                    st.Why = $"{st.Why} [{toward * 100f:F0}% of the way to them]";
+                }
             Sites.Sort((a, b) => b.Score.CompareTo(a.Score));
         }
 
@@ -227,23 +244,70 @@ namespace Si_RTS_AI.Planning
         /// honest default is yes — refusing to cover anything at all because we
         /// have not scouted would be a worse failure than covering too much.
         /// </summary>
+        /// <summary>
+        /// WHICH WAY IS THE ENEMY? Falls through everything we might know,
+        /// cheapest and most certain first.
+        ///
+        /// The old exposure test asked only ThreatMap.Bases and returned TRUE
+        /// when it knew nothing — "no idea, do not refuse". But knowing nothing
+        /// was the NORMAL state for most of a round (enemyHQs=0 for 29 minutes),
+        /// so the fail-open branch was the branch that actually ran, and every
+        /// rear site passed. A gate whose default is "yes" is not a gate.
+        ///
+        /// Scout graves are the fallback that makes this work before anything is
+        /// scouted: 35 Crabs died last round telling us where they live, and
+        /// that is a direction even when it is not yet a base.
+        /// </summary>
+        internal static bool TryEnemyRef(out Vector3 at)
+        {
+            at = Vector3.zero;
+            try
+            {
+                if (MissionPlanner.PushObjective != Vector3.zero)
+                { at = MissionPlanner.PushObjective; return true; }
+
+                var bases = Perception.ThreatMap.Bases;
+                if (bases.Count > 0) { at = bases[0].Centre; return true; }
+
+                if (ScoutPlanner.DeathGround(out var grave, out _)) { at = grave; return true; }
+            }
+            catch { }
+            return false;
+        }
+
+        /// <summary>
+        /// How far FORWARD of the Nest this ground is, as a fraction of the way
+        /// to the enemy. 0 at the Nest, 1 at their door, negative behind us.
+        ///
+        /// DrMuck: "Our objective is to build only production as close as
+        /// possible to enemy lines and to support eco expansion with that."
+        /// That is a single quantity, so it is measured as one and every site is
+        /// ranked by it — rather than three purposes each with a hand-set score
+        /// that let a rich rear expansion outrank the front.
+        /// </summary>
+        static float Forwardness(Vector3 pos, Vector3 nest, Vector3 enemy)
+        {
+            Vector3 axis = enemy - nest; axis.y = 0f;
+            float len = axis.magnitude;
+            if (len < 1f) return 0f;
+            Vector3 rel = pos - nest; rel.y = 0f;
+            return Vector3.Dot(rel, axis / len) / len;
+        }
+
+        /// <summary>Ground behind this fraction of the way to the enemy is rear
+        /// area. Slightly negative so a producer level with the Nest but off to
+        /// one side is not refused on rounding.</summary>
+        const float REAR_CUTOFF = -0.05f;
+
         static bool Exposed(Vector3 pos, Vector3 nest)
         {
             try
             {
                 if (Perception.ThreatMap.ValueNear(pos, COVER_RADIUS_M) > 0) return true;
-
-                var bases = Perception.ThreatMap.Bases;
-                if (bases.Count == 0) return true;      // no idea; do not refuse
-
-                for (int i = 0; i < bases.Count; i++)
-                {
-                    Vector3 e = bases[i].Centre;
-                    if (Vector3.Distance(pos, e) < Vector3.Distance(nest, e)) return true;
-                }
-                return false;
+                if (!TryEnemyRef(out var enemy)) return false;   // FAIL CLOSED
+                return Forwardness(pos, nest, enemy) > REAR_CUTOFF;
             }
-            catch { return true; }
+            catch { return false; }
         }
 
         /// <summary>
