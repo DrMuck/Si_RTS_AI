@@ -657,6 +657,35 @@ namespace Si_RTS_AI.Planning
             return false;
         }
 
+        /// <summary>
+        /// HOW MUCH ORDER TRAFFIC WE ACTUALLY GENERATE.
+        ///
+        /// DrMuck: "serverfps tanks. How many re-orders are done to the alien
+        /// military units?" A fair suspicion — an earlier round issued 25,926
+        /// move orders across 506 units, and re-ordering a unit that has stopped
+        /// to fight is both a performance cost and a tactical one. There was no
+        /// counter, so the question could only be answered by inference.
+        ///
+        /// Counted per minute and against the size of the army, because the raw
+        /// total says nothing: two hundred orders a minute is nothing for four
+        /// hundred units and a great deal for twenty.
+        /// </summary>
+        static int _ordersIssued, _ordersTotal;
+        static float _orderWindowAt;
+
+        internal static string OrderRateReport(int armyUnits)
+        {
+            float now = Time.time;
+            float span = Mathf.Max(1f, now - _orderWindowAt);
+            float perMin = _ordersIssued * 60f / span;
+            float perUnitMin = armyUnits > 0 ? perMin / armyUnits : 0f;
+            _ordersIssued = 0;
+            _orderWindowAt = now;
+            return $"orders {perMin:F0}/min ({perUnitMin:F2} per unit per min, {_ordersTotal} total)";
+        }
+
+        internal static void ResetOrderStats() { _ordersIssued = _ordersTotal = 0; _orderWindowAt = 0f; }
+
         static void IssueMove(Unit u, Vector3 pos)
         {
             _ordered[u] = new LastOrder { Dest = pos, At = Time.time };
@@ -665,6 +694,7 @@ namespace Si_RTS_AI.Planning
             {
                 PlannerOverride = true;
                 u.OnMoveOrder(pos, AgentMoveSpeed.Fast);
+                _ordersIssued++; _ordersTotal++;
             }
             catch (Exception ex) { MelonLogger.Warning("[BATTALION] OnMoveOrder threw: " + ex.Message); }
             finally { PlannerOverride = false; }

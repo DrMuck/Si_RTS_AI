@@ -125,6 +125,16 @@ namespace Si_RTS_AI.Planning
             // It is the floor rather than the goal. A producer at the Nest has
             // the longest walk to anywhere that matters, and it exists so the
             // layer is never without one.
+            // ONE. It is a floor, and a floor is satisfied once.
+            //
+            // DrMuck: "3 greater cysts at nest 2548.6, 1237.8: one would be more
+            // than enough." All three were placed at the identical coordinate by
+            // this site, on three separate cycles, because Home never checked
+            // whether it had already been built — Cover and Forward both test
+            // against existing producers and Home did not. A producer at the
+            // Nest has the longest walk to anywhere that matters, so the second
+            // one is pure waste and the third is worse.
+            if (!NearAny(existing, nest, HOME_SATISFIED_M))
             Sites.Add(new Site
             {
                 Pos = nest, Purpose = Purpose.Home, Score = 1f,
@@ -143,6 +153,28 @@ namespace Si_RTS_AI.Planning
                 float dHome = Vector3.Distance(pos, nest);
                 if (dHome < COVER_RADIUS_M) return;                   // the Nest covers it
 
+                // EARNINGS ARE A REASON TO DEFEND GROUND. THEY ARE NOT A REASON
+                // TO DEFEND *THIS* GROUND.
+                //
+                // DrMuck: "some of the fobs are in the north, where no enemy
+                // is", and "At 2646.7, 1986.0 unecessary greater cyst. No enemy
+                // pressure there. A lot of behemoth Idle there."
+                //
+                // The old rule ranked purely by what a site earns, on the
+                // argument that chasing the last raid chases noise. That half is
+                // still right — but the other half was missing, and it put four
+                // Cyst factories behind our own base where nothing can reach
+                // them, each then filling with Behemoths that stand idle a full
+                // map away from the fighting.
+                //
+                // Exposure is not the same as recent damage. It is whether the
+                // enemy can GET here: ground further from them than our own Nest
+                // is behind us, and they have to come through everything else
+                // first. Cheap, stable, and it does not chase noise — but a real
+                // sighting on the ground still overrides it, because rear raids
+                // do happen and being wrong about that is expensive.
+                if (!Exposed(pos, nest)) return;
+
                 // A short step behind the Bio Cache rather than a quarter of the
                 // way home: the Cache is ON the network, and open ground between
                 // it and the Nest may not be. Same lesson as the Forward site.
@@ -160,9 +192,58 @@ namespace Si_RTS_AI.Planning
             });
 
             // ---- Forward. Toward their base, if the ground allows it ---------
+            //
+            // ONE AXIS, CRAWLING. DrMuck: "we will handle flanking guerilla
+            // enemies (e.g. via fast units) differently. Currently we want base
+            // fob crawling to defend forward moving expansion and push enemy at
+            // the same time."
+            //
+            // So this is deliberately NOT a second front toward whichever other
+            // base happens to be known — that answers the flanking problem with
+            // buildings, which is the expensive way and not the one being asked
+            // for. TryAnchorToward already re-anchors to the FRONT of our own
+            // network each cycle, so as the economy expands toward them the
+            // forward base advances with it; last round that produced a chain at
+            // z=150, -290, -370, -810, which is the crawl working.
             if (TryForward(team, nest, existing, out var fwd)) Sites.Add(fwd);
 
             Sites.Sort((a, b) => b.Score.CompareTo(a.Score));
+        }
+
+        /// <summary>How near the Nest counts as "the Nest already has one".
+        /// Generous, because two producers a few hundred metres apart at home
+        /// are the same producer for every purpose that matters.</summary>
+        const float HOME_SATISFIED_M = 500f;
+
+        /// <summary>
+        /// CAN THE ENEMY ACTUALLY REACH THIS GROUND BEFORE OUR BASE?
+        ///
+        /// True when the site sits between us and them, or when something of
+        /// theirs has actually been seen near it. Everything strictly behind the
+        /// Nest relative to every known enemy base is rear area: worth money,
+        /// not worth a barracks.
+        ///
+        /// With nothing known about where they are we cannot answer, and the
+        /// honest default is yes — refusing to cover anything at all because we
+        /// have not scouted would be a worse failure than covering too much.
+        /// </summary>
+        static bool Exposed(Vector3 pos, Vector3 nest)
+        {
+            try
+            {
+                if (Perception.ThreatMap.ValueNear(pos, COVER_RADIUS_M) > 0) return true;
+
+                var bases = Perception.ThreatMap.Bases;
+                if (bases.Count == 0) return true;      // no idea; do not refuse
+
+                for (int i = 0; i < bases.Count; i++)
+                {
+                    Vector3 e = bases[i].Centre;
+                    if (Vector3.Distance(pos, e) < Vector3.Distance(nest, e)) return true;
+                }
+                return false;
+            }
+            catch { return true; }
         }
 
         /// <summary>

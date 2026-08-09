@@ -63,6 +63,7 @@ namespace Si_RTS_AI.Perception
         internal static float EcoStarvedShare { get; private set; }
 
         static int _starvedSamples, _samples;
+        static int _armyUnits;
 
         // Producer busy-ness is sampled by MilitaryProduction as it walks the
         // producers anyway — cheaper than looking them up again here, and it
@@ -101,7 +102,8 @@ namespace Si_RTS_AI.Perception
                     $"army {ArmyEngaged * 100f:F0}% engaged | " +
                     $"producers {ProducersBusy * 100f:F0}% busy | " +
                     $"map {MapHeld * 100f:F0}% held | " +
-                    $"eco cash-blocked {EcoStarvedShare * 100f:F0}% of the round");
+                    $"eco cash-blocked {EcoStarvedShare * 100f:F0}% of the round | " +
+                    Planning.BattalionManager.OrderRateReport(_armyUnits));
             }
             catch (System.Exception ex)
             { MelonLogger.Warning("[UTIL] tick threw: " + ex.Message); }
@@ -123,11 +125,13 @@ namespace Si_RTS_AI.Perception
             // counting that as "engaged" would hide exactly the failure this
             // meter exists to show.
             int engaged = 0, total = 0;
+            _armyUnits = 0;
             try
             {
                 foreach (var b in Planning.BattalionManager.Battalions)
                 {
                     total += b.Value;
+                    _armyUnits += b.Units.Count;
                     if (b.Kind == Planning.MissionPlanner.Kind.Garrison)
                         engaged += Mathf.Min(b.Value, b.RequiredValue);
                     else if (b.Phase == Planning.BattalionManager.State.Committed)
