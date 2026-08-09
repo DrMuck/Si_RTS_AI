@@ -428,10 +428,22 @@ namespace Si_RTS_AI.Planning
 
         /// <summary>Where the next producer should go, or the Nest if nothing is
         /// planned. Purpose comes back with it so the log can say why.</summary>
+        /// <summary>
+        /// The best planned site, or NOTHING.
+        ///
+        /// This used to answer "the Nest" whenever the plan was empty, which
+        /// reads as harmless and is the third of three separate paths that all
+        /// defaulted to the same coordinate. Once Plan() correctly stops
+        /// offering Home after one is built, an empty plan is the NORMAL state
+        /// — nothing exposed to cover, no forward anchor yet — and this turned
+        /// that into "build another one at the Nest" every single cycle.
+        ///
+        /// An empty plan means there is nowhere worth putting a producer. That
+        /// is an answer, and the caller must be allowed to hear it.
+        /// </summary>
         internal static Site NextSite(Team team)
         {
-            if (Sites.Count > 0) return Sites[0];
-            return new Site { Pos = HomeOf(team), Purpose = Purpose.Home, Why = "no plan yet" };
+            return Sites.Count > 0 ? Sites[0] : null;
         }
 
         static List<Vector3> ProducerPositions(Team team)

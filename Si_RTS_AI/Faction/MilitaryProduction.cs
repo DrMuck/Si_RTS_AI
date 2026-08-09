@@ -502,8 +502,45 @@ namespace Si_RTS_AI.Faction
                     now - askedAt < REQUEST_TTL_S) continue;
                 int cost = SafeCost(cd);
                 if (cost > budget) return;
+                // NO PLANNED SITE MEANS NO BUILDING. THE NEST IS NOT A DEFAULT.
+                //
+                // DrMuck, twice: "3 greater cysts at nest ... one would be more
+                // than enough", then "still 3 greater cyst and nest! need to
+                // make a check if there already some around."
+                //
+                // He was right that a check was missing, and the first attempt
+                // put it in the wrong place. MilitaryBlueprint now refuses to
+                // offer the Home site once one stands there — but this line
+                // silently substituted nestPos whenever no site came back, so
+                // suppressing the site did not suppress the building. It made
+                // it certain: no site, therefore the Nest.
+                //
+                // A producer whose position nothing planned is a producer we
+                // have no reason to build. Wait for the blueprint to find
+                // ground worth standing on.
                 var site = ProducerSite(team);
-                Vector3 at = site.Pos == Vector3.zero ? nestPos : site.Pos;
+                if (site == null || site.Pos == Vector3.zero)
+                {
+                    LogFailureOnce(name + ":nosite",
+                        $"[MIL/PROD] {name} is affordable and wanted ({c}/{want}) but the " +
+                        "blueprint has no site for it — not defaulting to the Nest.");
+                    continue;
+                }
+                Vector3 at = site.Pos;
+
+                // Belt and braces against the gap between ORDERING one and it
+                // appearing in team.Structures: the blueprint re-plans every 20s
+                // and cannot see a building that does not exist yet, so without
+                // this the same ground gets ordered twice before the first
+                // arrives. This is how three landed on the identical coordinate.
+                if (NearAnyExisting(team, at, SAME_SPOT_M))
+                {
+                    LogFailureOnce(name + ":dup",
+                        $"[MIL/PROD] {name} planned at ({at.x:F0},{at.z:F0}) but one already " +
+                        "stands within " + SAME_SPOT_M + "m — skipping the duplicate.");
+                    continue;
+                }
+
                 bool fired = false;
                 try { fired = AlienConstruction.TryBuildStructureByCd(team, cd, at); }
                 catch (Exception ex) { MelonLogger.Warning("[MIL/PROD] TryBuildStructureByCd threw: " + ex.Message); }
@@ -639,6 +676,10 @@ namespace Si_RTS_AI.Faction
         /// income-driven count has any say. Enough to be a base rather than a
         /// gesture; few enough that a lost FOB is not a lost army.</summary>
         const int FORWARD_PRODUCERS = 3;
+
+        /// <summary>Two producers closer than this are the same producer for
+        /// every purpose that matters, and the second is waste.</summary>
+        const float SAME_SPOT_M = 450f;
 
         static int CountProducersNear(Team team, Vector3 pos, float radiusM)
         {
