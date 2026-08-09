@@ -1110,7 +1110,7 @@ namespace Si_RTS_AI.Planning
             get
             {
                 int perFront = Mathf.Max(1, RtsaiConfig.Int("maxUnbuiltNodesPerFront", 3));
-                int fronts   = Mathf.Max(1, RtsaiConfig.Int("maxFronts", 2));
+                int fronts   = Mathf.Max(1, RtsaiConfig.Int("maxNodeFronts", 2));
                 // Legacy knob still wins if someone set it explicitly.
                 int flat = RtsaiConfig.Int("maxUnbuiltNodes", 0);
                 return flat > 0 ? flat : perFront * fronts;
