@@ -1037,6 +1037,10 @@ namespace Si_RTS_AI.Planning
             public float ReserveBonus;
             public bool  DoubledCyst;
             public float TerminalValue;
+            /// <summary>Rollout time at which each site finished being placed —
+            /// the number the tail's rate projection silently assumed was 0 for
+            /// every site regardless of how far away it was.</summary>
+            public readonly List<float> SiteAtS = new List<float>();
             public readonly List<Step> Steps = new List<Step>();
 
             public string Describe()
@@ -1062,6 +1066,7 @@ namespace Si_RTS_AI.Planning
                     var s = MapProfile.Sites[SiteIdx[i]];
                     if (i > 0) sb.Append(' ');
                     sb.Append(s.Patches).Append("p@").Append((int)s.DistFromNest).Append('m');
+                    if (i < SiteAtS.Count) sb.Append('/').Append((int)SiteAtS[i]).Append('s');
                 }
                 sb.Append(']');
                 return sb.ToString();
@@ -1292,6 +1297,7 @@ namespace Si_RTS_AI.Planning
             var s = root.Clone();
             var plan = new Plan { CystCount = cystCount };
             plan.SiteIdx.AddRange(siteIdx);
+            _layoutEarned = 0f;
 
             float hop = Mathf.Max(1f, EcoSimulator.NODE_REACH_M - 15f);
             float bcAnchorReach = EcoSimulator.BcPlaceReachM + 40f;   // sign: see BC_TIGHT_GAP_M
@@ -1309,7 +1315,8 @@ namespace Si_RTS_AI.Planning
                     Vector3 dir = site.Centroid - from;
                     float len = Mathf.Sqrt(dir.x * dir.x + dir.z * dir.z);
                     if (len < 1f) break;
-                    if (!Afford(s, EcoSimulator.NODE_COST)) return null;
+                    if (!Afford(s, EcoSimulator.NODE_COST + CystFloor(plan, cystCount))) return null;
+                    Advance(s, NODE_HOP_ORDER_S);
                     Vector3 np = from + dir * (hop / len);
                     s.nodes.Add(new EcoState.Node { pos = np, finished = false,
                                                     readyAt = s.t + EcoSimulator.NODE_BUILD_S });
@@ -1357,6 +1364,7 @@ namespace Si_RTS_AI.Planning
                 bool cystFirstHere = k >= CYST_FIRST_FROM_SITE;
                 if (cystFirstHere && k < cystCount)
                 {
+                    if (!AdvanceUntilBcFinished(s)) return null;
                     if (!Afford(s, EcoSimulator.CYST_COST)) return null;
                     Vector3 ct = OffsetCystBeside(site.Centroid, bcPos, CYST_BESIDE_M);
                     s.cysts.Add(new EcoState.Cyst { pos = ct, finished = false,
@@ -1382,10 +1390,12 @@ namespace Si_RTS_AI.Planning
                 // path. The cash advantage of deferring the BC is real but
                 // secondary to getting Cysts down early — revisit only once
                 // timing is solid.
-                if (!PlaceBcStep(s, plan, site, bcPos, ref cost)) return null;
+                if (!PlaceBcStep(s, plan, site, bcPos, ref cost,
+                                 CystFloor(plan, cystCount))) return null;
 
                 if (k < cystCount && !cystFirstHere)
                 {
+                    if (!AdvanceUntilBcFinished(s)) return null;
                     if (!Afford(s, EcoSimulator.CYST_COST)) return null;
                     s.cysts.Add(new EcoState.Cyst { pos = bcPos, finished = false,
                         readyAt = s.t + EcoSimulator.CYST_BUILD_S,
@@ -1423,6 +1433,7 @@ namespace Si_RTS_AI.Planning
                 // own Cyst to finish, so the Cyst's shrimp is already building
                 // while the BC goes up.
 
+                plan.SiteAtS.Add(s.t);
             }
 
             // The extra Cyst, when this candidate doubles up. It goes on the
@@ -1431,6 +1442,7 @@ namespace Si_RTS_AI.Planning
             plan.DoubledCyst = cystCount > siteIdx.Count;
             if (plan.DoubledCyst && siteIdx.Count > 0)
             {
+                if (!AdvanceUntilBcFinished(s)) return null;
                 if (!Afford(s, EcoSimulator.CYST_COST)) return null;
                 var site0 = MapProfile.Sites[siteIdx[0]];
                 Vector3 bc0 = OffsetFromSite(s, site0.Centroid, BC_PATCH_STANDOFF_M);
@@ -1471,7 +1483,9 @@ namespace Si_RTS_AI.Planning
             EcoSimulator.SimulateForward(s, RATE_WINDOW_S);
             float rateAtHandoff = s.grossEarned / RATE_WINDOW_S;
 
-            plan.IncomeToHandoff = earnedBeforeWindow + s.grossEarned;
+            // _layoutEarned is what came in WHILE the opening was going down.
+            // Nonzero from v0.73 on, because layout now takes time.
+            plan.IncomeToHandoff = (int)_layoutEarned + earnedBeforeWindow + s.grossEarned;
             plan.RateAtHandoff   = rateAtHandoff;
 
             // WHY income+rate ALONE CANNOT CHOOSE.
@@ -1539,10 +1553,33 @@ namespace Si_RTS_AI.Planning
             return plan;
         }
 
-        /// <summary>Queue the Bio Cache for a site. False if unaffordable in the window.</summary>
-        static bool PlaceBcStep(EcoState s, Plan plan, MapProfile.Site site, Vector3 bcPos, ref int cost)
+        /// <summary>
+        /// Ground yields to the opening's own unplaced Cysts.
+        ///
+        /// Mirrors the executor exactly: TryFireAction refuses a PlaceBc or
+        /// PlaceNode whose payment would drop cash below OpenerPlanner
+        /// .PendingCystCash, and logs it as "reserve1500". The rollout did not
+        /// model that floor, so it costed openings the executor would then
+        /// refuse — NarakaCity 2026-08-09, the 4th site's Bio Cache was refused
+        /// four times over 24s for exactly this reason while the plan had
+        /// declared the whole 9,000 affordable at t=0.
+        ///
+        /// A Cyst placement is exempt, as it is in the executor — the floor
+        /// exists to protect Cysts, not to block them.
+        /// </summary>
+        static int CystFloor(Plan plan, int cystCount)
         {
-            if (!Afford(s, EcoSimulator.BC_COST)) return false;
+            int placed = 0;
+            for (int i = 0; i < plan.Steps.Count; i++)
+                if (plan.Steps[i].Kind == StepKind.Cyst) placed++;
+            return placed < cystCount ? EcoSimulator.CYST_COST : 0;
+        }
+
+        /// <summary>Queue the Bio Cache for a site. False if unaffordable in the window.</summary>
+        static bool PlaceBcStep(EcoState s, Plan plan, MapProfile.Site site, Vector3 bcPos,
+                                ref int cost, int cystFloor)
+        {
+            if (!Afford(s, EcoSimulator.BC_COST + cystFloor)) return false;
             s.bcs.Add(new EcoState.Bc { pos = bcPos, finished = false,
                                         readyAt = s.t + EcoSimulator.BC_BUILD_S,
                                         storage = 0, storageCap = 4000 });
@@ -1598,10 +1635,62 @@ namespace Si_RTS_AI.Planning
             while (s.cash < cost)
             {
                 if (s.t >= SCORE_HORIZON_S - RATE_WINDOW_S) return false;
-                EcoSimulator.SimulateForward(s, STEP_S);
+                Advance(s, STEP_S);
             }
             return true;
         }
+
+        /// <summary>
+        /// Income earned while the opening is being LAID OUT, as opposed to
+        /// after it. Accumulated here because EcoSimulator.SimulateForward
+        /// zeroes s.grossEarned on entry, so it reports only the last window it
+        /// ran — every earlier window is lost unless it is banked as it goes.
+        ///
+        /// Harmless until v0.73: layout took no time, so Afford never advanced
+        /// the clock and there was never more than one window. The moment
+        /// layout is sequenced this becomes the difference between scoring an
+        /// opening's whole 240s and scoring only its last few seconds.
+        /// </summary>
+        static float _layoutEarned;
+
+        /// <summary>Run the rollout forward, banking what it earns.</summary>
+        static void Advance(EcoState s, float dt)
+        {
+            if (dt <= 0f) return;
+            EcoSimulator.SimulateForward(s, dt);
+            _layoutEarned += s.grossEarned;
+        }
+
+        /// <summary>
+        /// Hold until some Bio Cache has FINISHED building.
+        ///
+        /// The game gates Cyst construction on a finished Bio Cache anywhere on
+        /// the team — TickFast's "no finished BC anywhere yet" is that refusal
+        /// observed from the outside. The rollout placed Cysts at t=0 regardless,
+        /// which is not a placement the game would ever have accepted.
+        /// </summary>
+        static bool AdvanceUntilBcFinished(EcoState s)
+        {
+            const float STEP_S = 2f;
+            while (true)
+            {
+                for (int i = 0; i < s.bcs.Count; i++) if (s.bcs[i].finished) return true;
+                if (s.bcs.Count == 0) return false;               // nothing coming
+                if (s.t >= SCORE_HORIZON_S - RATE_WINDOW_S) return false;
+                Advance(s, STEP_S);
+            }
+        }
+
+        /// <summary>
+        /// Wall-clock cost of ordering one node hop.
+        ///
+        /// Not the 12s build time: TickChain measures its hop from the nearest
+        /// structure INCLUDING accepted orders (see NearestFinished), so the
+        /// chain does not wait for each node to finish. Measured on NarakaCity
+        /// 2026-08-09, the north-west chain placed hops at 22:24:22, :23, :24,
+        /// :25, :26, :27 and :30 — one per second, seven of them.
+        /// </summary>
+        const float NODE_HOP_ORDER_S = 1f;
 
         // Lateral offset from the PATCH, perpendicular to the BC direction —
         // far enough to clear the Bio Cache footprint, close enough that the
