@@ -98,7 +98,24 @@ namespace Si_RTS_AI.Perception.MapLayers
         /// <summary>How stale a fog field may be. Explored only ever grows and
         /// active moves at walking pace, so a second is finer than any decision
         /// that reads it, and it keeps the per-cell sweep off the hot path.</summary>
-        const float REFRESH_S = 2f;
+        // TEST 2026-08-09 — back to 1s to isolate the opener regression.
+        //
+        // sameDir (DirectionRedundancy) held 1.18 for every version v0.39 to
+        // v0.68 and jumped to 1.87 at v0.70, stable across ten rounds either
+        // side. OpenerPlanner.cs and MapProfile.cs are byte-identical to
+        // known-good-eco-20260807, so the site choice cannot have changed by
+        // code — only by INPUT, and the only input on that path is the explored
+        // layer.
+        //
+        // v0.70 raised this from 1s to 2s. The opener evaluates at round start
+        // and takes ~1566ms, which sits inside that window: at 1s the cache
+        // refreshed mid-evaluation, at 2s the opener plans against whatever the
+        // very first fill captured, before the game's fog is populated.
+        //
+        // If sameDir returns to 1.18 this is confirmed, and the real fix is to
+        // force a fresh fill before the opener evaluates rather than to depend
+        // on cache timing at all.
+        const float REFRESH_S = 1f;
 
         static byte[] _exBuf, _acBuf;
 
