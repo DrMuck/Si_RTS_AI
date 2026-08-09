@@ -1105,17 +1105,17 @@ namespace Si_RTS_AI.Planning
         /// it deeper is still waste — but two fronts get two chains' worth
         /// instead of sharing one.
         /// </summary>
-        /// <summary>What the opening was tuned against, before the per-front
-        /// budget existed. Kept as a constant rather than a knob: it is not a
-        /// tuning parameter, it is the shape the committed opener was chosen
-        /// under.</summary>
-        const int OPENER_UNBUILT_NODES = 3;
+        /// <summary>One chain's worth of nodes in flight. A chain builds one
+        /// node at a time, so stacking it deeper only freezes cash — this is the
+        /// depth, and the number of fronts is what multiplies it.</summary>
+        static int UnbuiltNodesPerFront =>
+            Mathf.Max(1, RtsaiConfig.Int("maxUnbuiltNodesPerFront", 3));
 
         static int MaxUnbuiltNodes
         {
             get
             {
-                int perFront = Mathf.Max(1, RtsaiConfig.Int("maxUnbuiltNodesPerFront", 3));
+                int perFront = UnbuiltNodesPerFront;
                 int fronts   = Mathf.Max(1, RtsaiConfig.Int("maxNodeFronts", 2));
                 // Legacy knob still wins if someone set it explicitly.
                 int flat = RtsaiConfig.Int("maxUnbuiltNodes", 0);
@@ -1907,9 +1907,21 @@ namespace Si_RTS_AI.Planning
                     // The opener is a COMMITTED plan — 728 candidates evaluated
                     // and one sequence chosen — and its pacing was part of what
                     // was chosen. Widening a budget underneath a vetted plan is
-                    // not the same as giving it room. It keeps the budget it was
-                    // planned against; Phase 2 gets the wider one.
-                    int nodeBudget = openerFiring ? OPENER_UNBUILT_NODES : MaxUnbuiltNodes;
+                    // not the same as giving it room.
+                    //
+                    // DrMuck, on being told this: "did the opener even had any
+                    // front noding setting before? I guess it was all done by the
+                    // planner and executer?" Right — there was none. The flat
+                    // maxUnbuiltNodes applied everywhere and the opener simply
+                    // inherited it, so this splits them for the first time.
+                    //
+                    // Which is why it is NOT a new constant. The opener builds
+                    // ONE committed chain, so it gets ONE front's worth of the
+                    // knob that already exists. Same number the flat cap used to
+                    // be, and it follows the knob if that is ever retuned —
+                    // rather than being a fifteenth hand-set value in a layer
+                    // that already has too many.
+                    int nodeBudget = openerFiring ? UnbuiltNodesPerFront : MaxUnbuiltNodes;
                     if (c.kind == ActionKind.PlaceNode && !rescue
                         && unbuiltNodes + nodeFiresThisTick >= nodeBudget)
                     {
