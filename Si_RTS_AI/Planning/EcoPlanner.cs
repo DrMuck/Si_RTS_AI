@@ -2172,9 +2172,16 @@ namespace Si_RTS_AI.Planning
                             // single line to attribute it to — cash was flat at
                             // 3,800 across four ticks and there was no refusal,
                             // so the delay could only be inferred by elimination.
-                            if (Time.time - _lastBcHoldLogAt > 8f)
+                            // Throttled PER STEP. A single shared timestamp
+                            // let step 12's hold suppress step 8's, which is
+                            // exactly the line that was missing when the 70s
+                            // southern stall had to be attributed by
+                            // elimination — the diagnostic hid the case it was
+                            // added for.
+                            _bcHoldLogAt.TryGetValue(si, out float lastHold);
+                            if (Time.time - lastHold > 8f)
                             {
-                                _lastBcHoldLogAt = Time.time;
+                                _bcHoldLogAt[si] = Time.time;
                                 float g = NearestFinishedGapTo(st.Target, state);
                                 MelonLogger.Msg($"[OPENER] step {si + 1}/{OpenerPlanner.StepCount} " +
                                     $"Bc at ({st.Target.x:F0},{st.Target.z:F0}) held: no FINISHED anchor " +
@@ -5153,7 +5160,8 @@ namespace Si_RTS_AI.Planning
             return best;
         }
 
-        static float _lastBcHoldLogAt;
+        static readonly System.Collections.Generic.Dictionary<int, float> _bcHoldLogAt =
+            new System.Collections.Generic.Dictionary<int, float>();
 
         static bool IsChainReachable(Vector3 pos, EcoState s, float reachM = -1f,
                                     bool unfinishedNodesAnchor = false)

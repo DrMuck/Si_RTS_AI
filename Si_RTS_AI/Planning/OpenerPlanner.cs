@@ -593,26 +593,25 @@ namespace Si_RTS_AI.Planning
                 if (_queue[i].Kind != StepKind.Bc) continue;
                 Vector3 goal = _queue[i].Target;
 
-                // STOP HOPPING SHORT OF THE LIMIT, NOT AT IT.
+                // STOP AT THE LIMIT. AN EXTRA HOP IS NOT FREE MARGIN.
                 //
-                // The Bio Cache may be placed at BcPlaceReachM + BC_TIGHT_GAP_M
-                // from a FINISHED anchor. This loop measured the same number
-                // against NearestFinished, which counts accepted orders too, so
-                // the chain stopped as soon as an ORDERED node was barely inside
-                // the limit and the Bio Cache then waited on it finishing with
-                // no slack for the slide the placement search applies.
+                // v0.73.3 shortened this to BcPlaceReachM - 40 on the theory
+                // that the Bio Cache stalled for want of reach: the chain stops
+                // measuring against NearestFinished, which counts accepted
+                // orders, while CanPlaceBcTightNow needs a FINISHED anchor, so
+                // the chain could stop with the Bio Cache only 15m inside.
                 //
-                // NarakaCity 2026-08-10: the southern chain's last hop went out
-                // at 10:33:27 leaving 234m against a 249m limit — 15m of margin
-                // — and the Bio Cache was not requested until 10:34:37. Seventy
-                // seconds, with cash flat at 3,800 across four eco ticks, so
-                // neither money nor the reserve. Note BC_RADIUS_M resolved to 9
-                // here, not the 37 the constant's comment assumes, which is what
-                // makes the limit tight enough for 15m to matter.
+                // The next round measured it and the theory was wrong. The
+                // southern node was ordered at 10:49:40.6 and did not COMPLETE
+                // until 10:50:38.7 — 58s, sixth in a node queue that retires
+                // about one every ten seconds — and the Bio Cache was requested
+                // at 10:50:50.9, the first eco tick after. Reach was never the
+                // constraint and the executor added no latency at all.
                 //
-                // One more hop costs 200 and buys 40m. The stall costs a minute
-                // of a 240s opening.
-                float reach = EcoSimulator.BcPlaceReachM - CHAIN_STOP_MARGIN_M;
+                // So an extra hop would not have bought margin, it would have
+                // put one more node in front of the Bio Cache and delayed it
+                // another ten seconds. Back to the limit.
+                float reach = EcoSimulator.BcPlaceReachM + 40f;
                 if (!NearestFinished(team, goal, out Vector3 from, out float gap)) return;
                 if (gap <= reach) continue;          // this one can build; try the next
 
@@ -684,13 +683,6 @@ namespace Si_RTS_AI.Planning
 
         /// <summary>Two chain hops closer than this are the same chain drawn
         /// twice, not two chains.</summary>
-        /// <summary>
-        /// How far inside the Bio Cache's placement limit the chain stops.
-        /// Slack against the placement slide and against the difference between
-        /// "ordered" and "finished" anchors. See the comment in TickChain.
-        /// </summary>
-        const float CHAIN_STOP_MARGIN_M = 40f;
-
         const float CHAIN_SEPARATION_M = 200f;
         const int   MAX_CHAINS_AT_ONCE = 2;
         static readonly List<Vector3> _hopsThisTick = new List<Vector3>(4);
