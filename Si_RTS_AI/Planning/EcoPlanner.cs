@@ -2166,6 +2166,21 @@ namespace Si_RTS_AI.Planning
                         if (st.Kind == OpenerPlanner.StepKind.Bc
                             && !CanPlaceBcTightNow(st.Target, state))
                         {
+                            // SAY SO. This was the one hold in the whole opener
+                            // that reported nothing, and it cost 70s of a 240s
+                            // opening on NarakaCity 2026-08-10 without leaving a
+                            // single line to attribute it to — cash was flat at
+                            // 3,800 across four ticks and there was no refusal,
+                            // so the delay could only be inferred by elimination.
+                            if (Time.time - _lastBcHoldLogAt > 8f)
+                            {
+                                _lastBcHoldLogAt = Time.time;
+                                float g = NearestFinishedGapTo(st.Target, state);
+                                MelonLogger.Msg($"[OPENER] step {si + 1}/{OpenerPlanner.StepCount} " +
+                                    $"Bc at ({st.Target.x:F0},{st.Target.z:F0}) held: no FINISHED anchor " +
+                                    $"in reach — gap={g:F0}m limit=" +
+                                    $"{EcoSimulator.BcPlaceReachM + BC_TIGHT_GAP_M:F0}m");
+                            }
                             openerWaiting = true;
                             continue;
                         }
@@ -5115,6 +5130,30 @@ namespace Si_RTS_AI.Planning
             }
             return BEARING_SPREAD_BONUS / (1f + sameSector);
         }
+
+        /// <summary>
+        /// Distance to the nearest FINISHED thing that could anchor a Bio Cache.
+        /// Diagnostic only — the number the tight reach test compares against,
+        /// so a held Bio Cache step can say how far short it is instead of
+        /// holding silently. float.MaxValue when nothing is finished yet.
+        /// </summary>
+        static float NearestFinishedGapTo(Vector3 pos, EcoState s)
+        {
+            float best = float.MaxValue;
+            void take(Vector3 p)
+            {
+                float dx = pos.x - p.x, dz = pos.z - p.z;
+                float d = Mathf.Sqrt(dx * dx + dz * dz);
+                if (d < best) best = d;
+            }
+            if (s.nestPos != Vector3.zero) take(s.nestPos);
+            for (int i = 0; i < s.bcs.Count; i++)   if (s.bcs[i].finished)   take(s.bcs[i].pos);
+            for (int i = 0; i < s.cysts.Count; i++) if (s.cysts[i].finished) take(s.cysts[i].pos);
+            for (int i = 0; i < s.nodes.Count; i++) if (s.nodes[i].finished) take(s.nodes[i].pos);
+            return best;
+        }
+
+        static float _lastBcHoldLogAt;
 
         static bool IsChainReachable(Vector3 pos, EcoState s, float reachM = -1f,
                                     bool unfinishedNodesAnchor = false)

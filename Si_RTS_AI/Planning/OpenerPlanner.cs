@@ -593,7 +593,26 @@ namespace Si_RTS_AI.Planning
                 if (_queue[i].Kind != StepKind.Bc) continue;
                 Vector3 goal = _queue[i].Target;
 
-                float reach = EcoSimulator.BcPlaceReachM + 40f;
+                // STOP HOPPING SHORT OF THE LIMIT, NOT AT IT.
+                //
+                // The Bio Cache may be placed at BcPlaceReachM + BC_TIGHT_GAP_M
+                // from a FINISHED anchor. This loop measured the same number
+                // against NearestFinished, which counts accepted orders too, so
+                // the chain stopped as soon as an ORDERED node was barely inside
+                // the limit and the Bio Cache then waited on it finishing with
+                // no slack for the slide the placement search applies.
+                //
+                // NarakaCity 2026-08-10: the southern chain's last hop went out
+                // at 10:33:27 leaving 234m against a 249m limit — 15m of margin
+                // — and the Bio Cache was not requested until 10:34:37. Seventy
+                // seconds, with cash flat at 3,800 across four eco ticks, so
+                // neither money nor the reserve. Note BC_RADIUS_M resolved to 9
+                // here, not the 37 the constant's comment assumes, which is what
+                // makes the limit tight enough for 15m to matter.
+                //
+                // One more hop costs 200 and buys 40m. The stall costs a minute
+                // of a 240s opening.
+                float reach = EcoSimulator.BcPlaceReachM - CHAIN_STOP_MARGIN_M;
                 if (!NearestFinished(team, goal, out Vector3 from, out float gap)) return;
                 if (gap <= reach) continue;          // this one can build; try the next
 
@@ -665,6 +684,13 @@ namespace Si_RTS_AI.Planning
 
         /// <summary>Two chain hops closer than this are the same chain drawn
         /// twice, not two chains.</summary>
+        /// <summary>
+        /// How far inside the Bio Cache's placement limit the chain stops.
+        /// Slack against the placement slide and against the difference between
+        /// "ordered" and "finished" anchors. See the comment in TickChain.
+        /// </summary>
+        const float CHAIN_STOP_MARGIN_M = 40f;
+
         const float CHAIN_SEPARATION_M = 200f;
         const int   MAX_CHAINS_AT_ONCE = 2;
         static readonly List<Vector3> _hopsThisTick = new List<Vector3>(4);
