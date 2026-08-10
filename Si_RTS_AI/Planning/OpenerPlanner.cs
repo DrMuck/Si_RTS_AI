@@ -1692,8 +1692,36 @@ namespace Si_RTS_AI.Planning
             // about 1.93 per cash, and unmined biotics is valued here at 0.04 —
             // roughly two percent of that — because it is far off and depends on
             // shrimps that may never be built.
+            // ONLY GROUND WE CAN ACTUALLY WORK COUNTS AS RESERVE.
+            //
+            // This summed every chosen site, cysted or not. A Bio Cache with no
+            // Cyst on it harvests nothing -- the rollout says so itself -- yet
+            // it was still paid RESERVE_VALUE_PER_BIOTIC for the tonnage
+            // underneath it. On a 42,000 map that was a rounding error. On the
+            // 90,000 layout it is decisive.
+            //
+            // NarakaCity layout (3), 2026-08-10 23:52. The winner took 4 sites
+            // with 3 Cysts and 8 nodes; the runner-up took 3 sites, a doubled
+            // Cyst and 5 nodes, finishing 62s sooner:
+            //
+            //   income  +76      the 4th site is worth 0.4% more income
+            //   tail    +528
+            //   nodes  -1200     three extra hops
+            //   sameDir-1145     and it breaks the tight direction
+            //   reserve+3600     <- paid for ore it has no producer to mine
+            //   -------------
+            //   total  +1859     so it won
+            //
+            // Every term except reserve said take the doubled Cyst. DrMuck, on
+            // seeing it: "double spawner and noding only to one would have been
+            // probably better."
+            //
+            // Sites take a Cyst in order, so the first cystCount of them are
+            // the producing ones; a doubled plan has cystCount > siteIdx.Count
+            // and every site counts.
             long bioticsTapped = 0;
-            for (int i = 0; i < siteIdx.Count; i++) bioticsTapped += MapProfile.Sites[siteIdx[i]].Biotics;
+            int cystedSites = Mathf.Min(cystCount, siteIdx.Count);
+            for (int i = 0; i < cystedSites; i++) bioticsTapped += MapProfile.Sites[siteIdx[i]].Biotics;
             plan.BioticsTapped = bioticsTapped;
             plan.ReserveBonus  = RESERVE_VALUE_PER_BIOTIC * bioticsTapped;
 
