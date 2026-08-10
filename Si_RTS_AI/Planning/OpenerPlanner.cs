@@ -1160,12 +1160,23 @@ namespace Si_RTS_AI.Planning
             if (sites == null || sites.Count == 0) return null;
             int evalCount = 0;
 
-            // CANDIDATES BY WORTH, NOT BY DISTANCE ALONE.
+            // CANDIDATES BY DISTANCE, EXCEPT WHERE CLUSTERS MAKE THAT WRONG.
+            //
+            // The worth ranking below was adopted on the belief that it was a
+            // no-op off cluster maps: "on NarakaCity all 107 hold 22,000, so
+            // worth/distance collapses to distance and this changes nothing."
+            // That reading came from headless TEST MODE, which never applies
+            // UserData\Spawns — the live map runs Si_MapBalance's 42,000 with
+            // per-patch overrides, so worth/distance does NOT collapse and the
+            // ranking quietly reorders the pool on the only map that matters.
+            //
+            // So rank by distance, which is what the opener can actually see
+            // from spawn (DrMuck, 2026-08-09), and keep the worth ranking for
+            // the case it was really built for — genuine clusters.
             //
             // Sites arrive sorted by distance, and taking the nearest
             // CANDIDATE_SITES is fine on a map where every patch holds the same
-            // amount — on NarakaCity all 107 hold 22,000, so worth/distance
-            // collapses to distance and this changes nothing.
+            // amount.
             //
             // It fails badly where clusters exist. IndustrialQuarter has 172
             // patches in 123 sites at clusterSize 2.1, and the nearest 8 covers
@@ -1180,12 +1191,27 @@ namespace Si_RTS_AI.Planning
             // chain, four patches.
             var pool = new List<int>(sites.Count);
             for (int i = 0; i < sites.Count; i++) pool.Add(i);
-            pool.Sort((a, b) =>
+            if (MapProfile.ClusterMode)
             {
-                float va = sites[a].Biotics / Mathf.Max(1f, sites[a].DistFromNest);
-                float vb = sites[b].Biotics / Mathf.Max(1f, sites[b].DistFromNest);
-                return vb.CompareTo(va);
-            });
+                // Cluster map. A Site here already aggregates several patches,
+                // so biotics per metre is asking "how much ground does one Bio
+                // Cache and one chain open" — the trade IndustrialQuarter turns
+                // on. Ranking it by distance is what put 17 Nodes under 5 Bio
+                // Caches there.
+                pool.Sort((a, b) =>
+                {
+                    float va = sites[a].Biotics / Mathf.Max(1f, sites[a].DistFromNest);
+                    float vb = sites[b].Biotics / Mathf.Max(1f, sites[b].DistFromNest);
+                    return vb.CompareTo(va);
+                });
+            }
+            else
+            {
+                // Scattered map. One patch per Site, so worth per metre is just
+                // tonnage per metre, and tonnage is not something the opener can
+                // see from spawn — distance is.
+                pool.Sort((a, b) => sites[a].DistFromNest.CompareTo(sites[b].DistFromNest));
+            }
             int n = Mathf.Min(CANDIDATE_SITES, pool.Count);
             pool.RemoveRange(n, pool.Count - n);
             // Back into distance order: the recursion builds combinations in the
