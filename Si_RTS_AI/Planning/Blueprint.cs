@@ -67,6 +67,10 @@ namespace Si_RTS_AI.Planning
         internal static int   SiteCount;          // Bio Caches in the plan
         internal static int   NodeCount;          // Nodes in the plan
         internal static int   CystCount;
+        /// <summary>Producer budget the Cyst pass ran with, and which of the
+        /// stacked limiters set it. Diagnostic only.</summary>
+        internal static int    _lastCystBudget;
+        internal static string _lastCystBudgetWhy = "";
         internal static int   PlanCost;           // total cash the plan asks for
         internal static float PlannedAtRoundS;
 
@@ -853,9 +857,28 @@ namespace Si_RTS_AI.Planning
             // gets a Lesser". Expressed as a density rather than as literal
             // every-Nth-in-build-order so it composes with worst-supplied-first
             // placement instead of fighting it.
+            int budgetSweep = budget;
             int perSites = BlueprintConfig.ProducerPerSites;
             if (perSites > 0)
                 budget = Mathf.Max(1, Mathf.CeilToInt(sites.Count / (float)perSites));
+
+            // SAY WHICH LIMITER BOUND, AND WHAT IT COST.
+            //
+            // Three of these stack -- the sweep, the worker-curve override and
+            // the forced ratio -- and the last one OVERWRITES rather than caps,
+            // so reading the config tells you nothing about what actually
+            // applied. NarakaCity 2026-08-10: producerPerSites=3 over 44..94
+            // sites gives a budget of 15..32, maxCystsPerPlan was 4 and bypassed
+            // because CystStrategyAuto was on, and every one of thirteen
+            // revisions still planned exactly 8. None of the three explains 8,
+            // and nothing in the log said so.
+            _lastCystBudget = budget;
+            _lastCystBudgetWhy = perSites > 0
+                ? $"ratio(1 per {perSites} of {sites.Count})"
+                : (WorkerPlan.BehindSchedule && WorkerPlan.ProducersNeeded >= budget
+                    ? "workerCurve"
+                    : (BlueprintConfig.CystStrategyAuto ? "sweep" : "maxCystsPerPlan"))
+                  + $"[sweep={budgetSweep}]";
 
             // PRODUCERS GO WHERE MIGRATION DOES NOT REACH — WHICH IS OUTWARD.
             //
@@ -1403,6 +1426,8 @@ namespace Si_RTS_AI.Planning
               .Append(" sites=").Append(SiteCount)
               .Append(" nodes=").Append(NodeCount)
               .Append(" cysts=").Append(CystCount)
+              .Append("/budget").Append(_lastCystBudget)
+              .Append("(").Append(_lastCystBudgetWhy).Append(")")
               .Append(" cost=").Append(PlanCost)
               .Append(" cash=").Append(s.cash);
             int shown = 0;
