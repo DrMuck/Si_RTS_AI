@@ -978,6 +978,20 @@ namespace Si_RTS_AI.Faction
             catch { return false; }
         }
 
+        /// <summary>Name a pre-Construct refusal, throttled per structure+reason
+        /// so a 1Hz retry loop reports once every few seconds rather than
+        ///every tick. Diagnostic only.</summary>
+        static readonly Dictionary<string, float> _refusalLogAt = new Dictionary<string, float>();
+        const float REFUSAL_LOG_EVERY_S = 5f;
+        static void NoteRefusal(string name, Vector3 pos, string why)
+        {
+            string key = name + "|" + why;
+            _refusalLogAt.TryGetValue(key, out float last);
+            if (Time.time - last < REFUSAL_LOG_EVERY_S) return;
+            _refusalLogAt[key] = Time.time;
+            MelonLogger.Msg($"[PLAN/EXEC] {name} at ({pos.x:F0},{pos.z:F0}) not requested: {why}");
+        }
+
         internal static bool TryBuildStructureByCd(
             Team team,
             ConstructionData cd,
@@ -985,14 +999,32 @@ namespace Si_RTS_AI.Faction
         {
             if (cd == null) return false;
             string cdName = cd.ObjectInfo?.DisplayName ?? "?";
-            if (SearchInFlightNear(cdName, targetPos)) return false;
-            if (Time.time < _placementBackoffUntil) return false;
+            // EVERY REFUSAL HERE USED TO BE SILENT.
+            //
+            // Four early returns, none of them logged, all of them before
+            // Construct is ever called. So a caller retrying on a timer saw
+            // nothing at all: NarakaCity 2026-08-10, the opener's doubled Cyst
+            // logged ten "attempt N/10" lines at (2688,1138) with 4,400 in the
+            // bank, produced no [PLAN/EXEC] line whatsoever, and gave up. The
+            // absence of evidence sent me to the wrong constant twice — first
+            // the opener's own 130m dedup (which was real, and fixed in
+            // v0.75.2), then IsDuplicateNow's 90m rule (which was NOT the
+            // cause; it runs after the search and logs "SKIP stale", and that
+            // line never appeared).
+            //
+            // Throttled per name+reason so a 1Hz retry loop cannot flood.
+            if (SearchInFlightNear(cdName, targetPos))
+            { NoteRefusal(cdName, targetPos, "searchInFlight<120m"); return false; }
+            if (Time.time < _placementBackoffUntil)
+            { NoteRefusal(cdName, targetPos, $"backoff {_placementBackoffUntil - Time.time:F0}s"); return false; }
             // Direct read of the state the game enforces: no docked Queen, no
             // construction. Cheaper and far more honest than the failure
             // counting below, which only infers it after six refusals.
-            if (!Perception.QueenStatus.CanBuild(team)) return false;
+            if (!Perception.QueenStatus.CanBuild(team))
+            { NoteRefusal(cdName, targetPos, "queenAway"); return false; }
             var anchor = FindClosestStructureThatCanBuild(team, cd, targetPos);
-            if (anchor == null) return false;
+            if (anchor == null)
+            { NoteRefusal(cdName, targetPos, "noAnchorInReach"); return false; }
             _inFlight.Add(new InFlight { Name = cdName, Want = targetPos, At = Time.time });
             FirePlacement(cd, team, anchor, targetPos,
                 onSuccess: (thisCd, cbTeam, cbStruct, gotPos, gotRot) =>
