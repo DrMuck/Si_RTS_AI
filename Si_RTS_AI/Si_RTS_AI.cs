@@ -8,7 +8,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 
-[assembly: MelonInfo(typeof(Si_RTS_AI.Si_RTS_AI), "Si_RTS_AI", "0.77.1", "DrMuck")]
+[assembly: MelonInfo(typeof(Si_RTS_AI.Si_RTS_AI), "Si_RTS_AI", "0.78.0", "DrMuck")]
 [assembly: MelonGame("Bohemia Interactive", "Silica")]
 
 namespace Si_RTS_AI
@@ -259,6 +259,7 @@ namespace Si_RTS_AI
                 // BEFORE the per-team work, because standing the planner down for
                 // a seat we are about to take back would waste the tick.
                 Faction.AlienCommanderLock.Tick(gm);
+                Faction.VanillaOrderGate.Report();
                 var setups = gm.TeamSetups;
                 if (setups == null) return;
 
@@ -518,6 +519,7 @@ namespace Si_RTS_AI
             Planning.MoneyBroker.ResetForNewRound();
             Planning.TechPlanner.ResetForNewRound();
             Faction.SuppressHumanAI.ResetForNewRound();
+            Faction.VanillaOrderGate.ResetForNewRound();
             Faction.MilitaryProduction.ResetForNewRound();
             Perception.MapLayers.LayerReplay.OnNewRound(sceneName);
             _sceneReady = true;
