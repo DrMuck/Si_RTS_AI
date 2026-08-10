@@ -535,8 +535,20 @@ namespace Si_RTS_AI.Planning
                                     $"/{MAX_CYST_ATTEMPTS} at ({_queue[i].Target.x:F0},{_queue[i].Target.z:F0}) " +
                                     $"cash={team.TotalResources} nearby='{nearby}'");
                     // Straight at the game, bypassing the planner dedup.
+                    //
+                    // DECLARE A DELIBERATE PAIR. AlienConstruction refuses a
+                    // second Cyst within 90m of one already ordered, and it is
+                    // right to: queued searches stack. But the opener's doubled
+                    // Cyst IS a second Cyst beside the first, 70m away by
+                    // construction, so it was refused every time and never once
+                    // built. Distance cannot separate the two cases -- a search
+                    // for the SAME target can slide just as far -- so the caller
+                    // says which it meant. HasCystSibling is the same test that
+                    // shrinks this step's own dedup radius, so the two guards
+                    // cannot disagree about what a pair is.
                     Faction.AlienConstruction.TryBuildStructureForPlanner(
-                        team, EcoPlanner.ActionKind.PlaceCyst, _queue[i].Target);
+                        team, EcoPlanner.ActionKind.PlaceCyst, _queue[i].Target,
+                        deliberatePair: HasCystSibling(i));
 
                     // ONE PER TICK. Every pending Cyst becomes legal at the same
                     // instant — when the first Bio Cache finishes and the unlock
@@ -1859,6 +1871,12 @@ namespace Si_RTS_AI.Planning
         /// deliberate neighbour. No special case for the doubled step — any
         /// plan that puts two Cysts close gets the same protection.
         /// </summary>
+        /// <summary>Does another Cyst step in this plan sit close enough that
+        /// the two are a deliberate pair rather than a duplicate? Same measure
+        /// CystDedupRadiusFor uses, so the opener's dedup and the construction
+        /// guard agree by construction.</summary>
+        static bool HasCystSibling(int i) => CystDedupRadiusFor(i) < CYST_DEDUP_M;
+
         static float CystDedupRadiusFor(int i)
         {
             float r = CYST_DEDUP_M;

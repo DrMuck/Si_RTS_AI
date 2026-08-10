@@ -762,32 +762,40 @@ namespace Si_RTS_AI.Faction
         const float DUP_RADIUS_M = 90f;
 
         /// <summary>
-        /// Cysts get a tighter radius than Bio Caches, because unlike a Bio
-        /// Cache a second Cyst on one site is a DELIBERATE opening.
+        /// Radius used when the CALLER has said this placement is a deliberate
+        /// second structure beside an existing one.
         ///
-        /// 90m was protecting against queued placement searches stacking — the
-        /// case in the comment above, "three Cysts 20m apart on one patch". At
-        /// 90m it also refused the opener's doubled Cyst, which lands 74m from
-        /// its sibling: NarakaCity 2026-08-10 16:13, ten attempts at
-        /// (2688,1138), search succeeded each time and returned (2690,1140),
-        /// and every one was skipped as stale with 4,400 in the bank. That is
-        /// why a doubled Cyst has never been built in any round.
+        /// DISTANCE CANNOT TELL THE TWO CASES APART, WHICH IS WHY THIS IS AN
+        /// INTENT FLAG AND NOT A SMALLER NUMBER.
         ///
-        /// 55m sits between the two: still four times the observed accidental
-        /// stacking distance, comfortably under the 70m the opener plans a pair
-        /// at (2 x CYST_BESIDE_M). Bio Caches keep 90m — one per patch is right
-        /// for them and nothing plans two.
+        /// The guard above exists because queued searches stack — measured as
+        /// "three Cysts 20m apart on one patch". It also refused the opener's
+        /// doubled Cyst, which lands 74m from its sibling: NarakaCity
+        /// 2026-08-10 16:13, ten attempts at (2688,1138), the search succeeding
+        /// every time and returning (2690,1140), every one skipped as stale
+        /// with 4,400 in the bank. That is why a doubled Cyst had never been
+        /// built.
+        ///
+        /// Lowering the radius to sit between 20m and 74m would work today and
+        /// is not sound: the whole premise of the guard is that the placement
+        /// search slides a request unpredictably, so two searches for the SAME
+        /// target can land 74m apart exactly as a deliberate pair does. Only
+        /// the caller knows which it asked for.
+        ///
+        /// So the radius stays 90m for everything, and a caller that means it
+        /// says so. It is still guarded — 30m keeps the accidental stacking
+        /// case, which was measured at 20m — just not at a distance that
+        /// swallows an intended neighbour.
         /// </summary>
-        const float DUP_RADIUS_CYST_M = 55f;
+        const float DUP_RADIUS_PAIR_M = 30f;
 
-        static bool IsDuplicateNow(Team team, string name, Vector3 pos)
+        static bool IsDuplicateNow(Team team, string name, Vector3 pos, bool deliberatePair = false)
         {
-            bool isCyst = string.Equals(name, "Lesser Spawning Cyst", StringComparison.OrdinalIgnoreCase);
-            if (!isCyst
+            if (!string.Equals(name, "Lesser Spawning Cyst", StringComparison.OrdinalIgnoreCase)
                 && !string.Equals(name, "Bio Cache", StringComparison.OrdinalIgnoreCase))
                 return false;
 
-            float dupR = isCyst ? DUP_RADIUS_CYST_M : DUP_RADIUS_M;
+            float dupR = deliberatePair ? DUP_RADIUS_PAIR_M : DUP_RADIUS_M;
             if (WasOrderedNear(name, pos, dupR)) return true;
 
             try
@@ -867,7 +875,8 @@ namespace Si_RTS_AI.Faction
         internal static bool TryBuildStructureForPlanner(
             Team team,
             Planning.EcoPlanner.ActionKind kind,
-            Vector3 targetPos)
+            Vector3 targetPos,
+            bool deliberatePair = false)
         {
             EnsureConstructionDataFromTeam(team);
             ConstructionData? cd =
@@ -875,7 +884,7 @@ namespace Si_RTS_AI.Faction
                 kind == Planning.EcoPlanner.ActionKind.PlaceCyst ? _cystCd :
                 kind == Planning.EcoPlanner.ActionKind.PlaceNode ? _nodeCd : null;
             if (cd == null) return false;
-            return TryBuildStructureByCd(team, cd, targetPos);
+            return TryBuildStructureByCd(team, cd, targetPos, deliberatePair);
         }
 
         // Same as above but takes a raw ConstructionData — used by
@@ -1016,7 +1025,8 @@ namespace Si_RTS_AI.Faction
         internal static bool TryBuildStructureByCd(
             Team team,
             ConstructionData cd,
-            Vector3 targetPos)
+            Vector3 targetPos,
+            bool deliberatePair = false)
         {
             if (cd == null) return false;
             string cdName = cd.ObjectInfo?.DisplayName ?? "?";
@@ -1074,7 +1084,7 @@ namespace Si_RTS_AI.Faction
                         // against gotPos — where the search actually chose to
                         // put it — rather than where we asked for it.
                         string dupName = thisCd.ObjectInfo?.DisplayName ?? "?";
-                        if (IsDuplicateNow(cbTeam, dupName, gotPos))
+                        if (IsDuplicateNow(cbTeam, dupName, gotPos, deliberatePair))
                         {
                             MelonLogger.Msg("[PLAN/EXEC] team=" + cbTeam.name +
                                             " SKIP stale " + dupName +
