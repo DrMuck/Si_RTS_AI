@@ -761,19 +761,40 @@ namespace Si_RTS_AI.Faction
         /// </summary>
         const float DUP_RADIUS_M = 90f;
 
+        /// <summary>
+        /// Cysts get a tighter radius than Bio Caches, because unlike a Bio
+        /// Cache a second Cyst on one site is a DELIBERATE opening.
+        ///
+        /// 90m was protecting against queued placement searches stacking — the
+        /// case in the comment above, "three Cysts 20m apart on one patch". At
+        /// 90m it also refused the opener's doubled Cyst, which lands 74m from
+        /// its sibling: NarakaCity 2026-08-10 16:13, ten attempts at
+        /// (2688,1138), search succeeded each time and returned (2690,1140),
+        /// and every one was skipped as stale with 4,400 in the bank. That is
+        /// why a doubled Cyst has never been built in any round.
+        ///
+        /// 55m sits between the two: still four times the observed accidental
+        /// stacking distance, comfortably under the 70m the opener plans a pair
+        /// at (2 x CYST_BESIDE_M). Bio Caches keep 90m — one per patch is right
+        /// for them and nothing plans two.
+        /// </summary>
+        const float DUP_RADIUS_CYST_M = 55f;
+
         static bool IsDuplicateNow(Team team, string name, Vector3 pos)
         {
-            if (!string.Equals(name, "Lesser Spawning Cyst", StringComparison.OrdinalIgnoreCase)
+            bool isCyst = string.Equals(name, "Lesser Spawning Cyst", StringComparison.OrdinalIgnoreCase);
+            if (!isCyst
                 && !string.Equals(name, "Bio Cache", StringComparison.OrdinalIgnoreCase))
                 return false;
 
-            if (WasOrderedNear(name, pos, DUP_RADIUS_M)) return true;
+            float dupR = isCyst ? DUP_RADIUS_CYST_M : DUP_RADIUS_M;
+            if (WasOrderedNear(name, pos, dupR)) return true;
 
             try
             {
                 var structs = team?.Structures;
                 if (structs == null) return false;
-                float r2 = DUP_RADIUS_M * DUP_RADIUS_M;
+                float r2 = dupR * dupR;
                 for (int i = 0; i < structs.Count; i++)
                 {
                     var st = structs[i];
