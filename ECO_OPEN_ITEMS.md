@@ -189,9 +189,9 @@ projection with something that decays.
 
 ---
 
-## 6. TechPlanner spends through `OpenerPlanner.OutstandingCost`
+## 6. TechPlanner spends through `OpenerPlanner.OutstandingCost` — FIXED v0.81.0
 
-Untouched all session. The **reserve** honours `openerOwes`
+Fixed in v0.81.0 after it stalled a third opening. The **reserve** honoured `openerOwes`
 ([TechPlanner.cs:143](Si_RTS_AI/Planning/TechPlanner.cs#L143)); the **spend
 gate** ([:296](Si_RTS_AI/Planning/TechPlanner.cs#L296)) never looks at it.
 

@@ -292,8 +292,27 @@ namespace Si_RTS_AI.Planning
             }
             if (cheapestCd == null) return proposals;
 
-            // Cash gate — must afford AND leave eco reserve.
-            if (ctx.Cash < cheapestCost + MIN_ECO_RESERVE) return proposals;
+            // Cash gate — must afford AND leave eco reserve AND not spend what
+            // the opening has already committed.
+            //
+            // OPENEROWES WAS HONOURED BY THE RESERVE AND IGNORED BY THE SPEND.
+            //
+            // The reservation above caps what tech HOLDS BACK. It never capped
+            // what tech PAYS OUT, so the Cortex could take money the opening
+            // had already costed and was waiting to place. Twice measured:
+            //
+            //   2026-08-09 22:27:04  cash 2460, openerOwes 2000 -> 460
+            //                        step 12 Bc refused reserve1500 x4
+            //   2026-08-11 00:09:08  cash 2305, openerOwes 2000 -> 305
+            //                        step 9 Bc refused reserve1500, still
+            //                        refused a minute later
+            //
+            // The second is DrMuck's "stalled expansion to -1432,-1908" -- the
+            // opening's third Bio Cache, fully planned and affordable, unable to
+            // go down because tech had emptied the bank a few seconds earlier.
+            int openerOwesNow = 0;
+            try { openerOwesNow = OpenerPlanner.OutstandingCost; } catch { }
+            if (ctx.Cash - openerOwesNow < cheapestCost + MIN_ECO_RESERVE) return proposals;
 
             // Payback gate REMOVED 2026-07-07 per user: "Cortex could be built
             // earlier". In Phase 2 base eco is stable, income is by definition
@@ -580,8 +599,13 @@ namespace Si_RTS_AI.Planning
                 int cost = TryGetCost(researchCd);
                 if (cost <= 0) return null;
 
-                // Cash gate — leave the small eco reserve.
-                if (ctx.Cash < cost + MIN_ECO_RESERVE) return null;
+                // Cash gate — leave the small eco reserve, and leave the
+                // opening's committed cash alone. Same reason as the placement
+                // gate above: research is not more urgent than a Bio Cache the
+                // opening has already costed and is waiting to place.
+                int owes = 0;
+                try { owes = OpenerPlanner.OutstandingCost; } catch { }
+                if (ctx.Cash - owes < cost + MIN_ECO_RESERVE) return null;
 
                 string name = researchCd.ObjectInfo.DisplayName ?? "Research";
                 var pos = cortex.transform.position;
