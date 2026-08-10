@@ -1351,19 +1351,44 @@ namespace Si_RTS_AI.Planning
             {
                 var site = MapProfile.Sites[siteIdx[k]];
 
+                // A CHAIN IS SERIAL. ORDERING A HOP EARLY BUYS NOTHING.
+                //
+                // Measured on NarakaCity 2026-08-10, six links across two
+                // chains, every one exact to under 20ms:
+                //
+                //     usableAt = max(orderTime, anchorUsableAt) + Total
+                //
+                //   (2475,1165) ordered 38.700  ready  58.718   anchor: Nest
+                //   (2415,1040) ordered 39.807  ready  78.731 = 58.718 + 20
+                //   (2380, 935) ordered 40.619  ready  98.733 = 78.731 + 20
+                //   (2370,1535) ordered 39.614  ready  88.952 = 68.940 + 20
+                //   (2330,1640) ordered 40.615  ready 108.956 = 88.952 + 20
+                //   (2290,1745) ordered 41.625  ready 128.974 = 108.956 + 20
+                //
+                // The rollout charged one second per hop, which is what
+                // ORDERING costs and is beside the point — all six went out
+                // within three seconds of each other and the last was not
+                // usable for another 87. A five-hop chain is a hundred seconds,
+                // and until this landed a long shared chain looked nearly free,
+                // which is why the opener started preferring to string four
+                // sites along one bearing (DrMuck: "the opener looks strange
+                // now! In particular the noding").
                 float anchorDist = NearestAnchorDist(s, site.Centroid);
+                NearestAnchor(s, site.Centroid, out float anchorReady);
                 int nodes = 0;
                 while (anchorDist > bcAnchorReach && nodes < 40)
                 {
-                    Vector3 from = NearestAnchorPos(s, site.Centroid);
+                    Vector3 from = NearestAnchor(s, site.Centroid, out anchorReady);
                     Vector3 dir = site.Centroid - from;
                     float len = Mathf.Sqrt(dir.x * dir.x + dir.z * dir.z);
                     if (len < 1f) break;
                     if (!Afford(s, EcoSimulator.NODE_COST + GroundFloor(s, plan, cystCount))) return null;
                     Advance(s, NODE_HOP_ORDER_S);
                     Vector3 np = from + dir * (hop / len);
+                    // Starts when its anchor is up, not when it is ordered.
+                    anchorReady = Mathf.Max(s.t, anchorReady) + EcoSimulator.NODE_BUILD_S;
                     s.nodes.Add(new EcoState.Node { pos = np, finished = false,
-                                                    readyAt = s.t + EcoSimulator.NODE_BUILD_S });
+                                                    readyAt = anchorReady });
                     plan.Steps.Add(new Step { Kind = StepKind.Node, Target = np,
                                               Goal = site.Centroid, Cost = EcoSimulator.NODE_COST });
                     s.cash -= EcoSimulator.NODE_COST;
@@ -1434,6 +1459,15 @@ namespace Si_RTS_AI.Planning
                 // path. The cash advantage of deferring the BC is real but
                 // secondary to getting Cysts down early — revisit only once
                 // timing is solid.
+                // The Bio Cache needs a FINISHED anchor -- the game refuses it
+                // otherwise, which is what CanPlaceBcTightNow reports at fire
+                // time. NarakaCity 2026-08-10: the southern chain's last node
+                // completed at 10:50:38.7 and the Bio Cache was requested at
+                // 10:50:50.9, the very next eco tick. So the wait is real, and
+                // the rollout has to sit through it rather than place on top of
+                // a node that is still going up.
+                if (anchorReady > s.t) Advance(s, anchorReady - s.t);
+
                 if (!PlaceBcStep(s, plan, site, bcPos, ref cost,
                                  GroundFloor(s, plan, cystCount))) return null;
 
@@ -1819,18 +1853,28 @@ namespace Si_RTS_AI.Planning
         }
 
         static Vector3 NearestAnchorPos(EcoState s, Vector3 to)
+            => NearestAnchor(s, to, out _);
+
+        /// <summary>
+        /// Nearest anchor AND the time it becomes usable. The readyAt is the
+        /// half that was missing: a chain hop cannot start building until the
+        /// thing it hangs off has finished, so the anchor's clock is the hop's
+        /// start.
+        /// </summary>
+        static Vector3 NearestAnchor(EcoState s, Vector3 to, out float readyAt)
         {
-            Vector3 best = s.nestPos; float bd = float.MaxValue;
-            void consider(Vector3 q)
+            Vector3 best = s.nestPos; float bd = float.MaxValue; float bReady = 0f;
+            void consider(Vector3 q, bool finished, float ready)
             {
                 float dx = q.x - to.x, dz = q.z - to.z;
                 float d = dx * dx + dz * dz;
-                if (d < bd) { bd = d; best = q; }
+                if (d < bd) { bd = d; best = q; bReady = finished ? 0f : ready; }
             }
-            if (s.nestPos != Vector3.zero) consider(s.nestPos);
-            for (int i = 0; i < s.bcs.Count; i++)   consider(s.bcs[i].pos);
-            for (int i = 0; i < s.cysts.Count; i++) consider(s.cysts[i].pos);
-            for (int i = 0; i < s.nodes.Count; i++) consider(s.nodes[i].pos);
+            if (s.nestPos != Vector3.zero) consider(s.nestPos, true, 0f);
+            for (int i = 0; i < s.bcs.Count; i++)   consider(s.bcs[i].pos,   s.bcs[i].finished,   s.bcs[i].readyAt);
+            for (int i = 0; i < s.cysts.Count; i++) consider(s.cysts[i].pos, s.cysts[i].finished, s.cysts[i].readyAt);
+            for (int i = 0; i < s.nodes.Count; i++) consider(s.nodes[i].pos, s.nodes[i].finished, s.nodes[i].readyAt);
+            readyAt = bReady;
             return best;
         }
     }
