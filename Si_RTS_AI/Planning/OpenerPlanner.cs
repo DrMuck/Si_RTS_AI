@@ -1204,13 +1204,35 @@ namespace Si_RTS_AI.Planning
         {
             if (siteIdx.Count < 2) return 0;
             Vector3 lastTap = MapProfile.Sites[siteIdx[siteIdx.Count - 1]].Centroid;
+
+            // A MARGIN, BECAUSE THE DISTANCES ARE OFTEN A TIE.
+            //
+            // Maximising raw distance made this degenerate. NarakaCity layout
+            // (3), 2026-08-11: hosts at (-1120.9,-2573.2) and (-1430.6,-2636.4)
+            // measured 711.94m and 711.77m from the last tap -- SEVENTEEN
+            // CENTIMETRES apart -- so the rule was choosing on rounding, and it
+            // chose the one that comes online 22s later.
+            //
+            // Being further from the next tap only matters when it is far
+            // enough to change whether migration reaches. Below that, the
+            // question is which host starts producing sooner, and sites are
+            // ordered nearest-first so the earliest is simply the lowest index.
+            //
+            // The margin is twenty seconds of shrimp walking rather than a
+            // round number, so it tracks SHRIMP_SPEED if the balance mod moves
+            // it. DrMuck picked the 84m site over the 352m one by eye; this is
+            // the reason that is right.
+            float margin = EcoSimulator.SHRIMP_SPEED * 20f;
+
             int best = 0; float bestD = -1f;
             for (int k = 0; k < siteIdx.Count - 1; k++)
             {
                 Vector3 c = MapProfile.Sites[siteIdx[k]].Centroid;
                 float dx = c.x - lastTap.x, dz = c.z - lastTap.z;
-                float d = dx * dx + dz * dz;
-                if (d > bestD) { bestD = d; best = k; }
+                float d = Mathf.Sqrt(dx * dx + dz * dz);
+                // Strictly further by a margin that matters, or it does not win.
+                if (d > bestD + margin) { bestD = d; best = k; }
+                else if (bestD < 0f)    { bestD = d; best = k; }
             }
             return best;
         }

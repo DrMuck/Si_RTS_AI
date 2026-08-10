@@ -335,6 +335,18 @@ completely silent — which is how the `BuildUpTime` error survived so long.
 
 Headless `TestMode` never calls `DistributeAllResources`, so Si_MapBalance's
 resource config is ignored and the map runs vanilla uniform **22,000**/patch.
+
+VERIFIED 2026-08-11 that it is the same MAP either way — only the config
+differs. Identical resource-area positions, re-amounted:
+
+```
+vanilla    amount=36000  pos=-103 -2957 186      amount=47600  pos=-774 -2225 215
+mapbalance amount=39989  pos=-103 -2957 186      amount=39988  pos=-774 -2225 215
+```
+
+So patches never move; the config changes amounts and the SPAWN POINT. The
+`nearest=214m` vs `86m` difference between modes is the Nest moving, not the
+patches.
 Live runs get the configured **42,000** (`biotics_amount: 42000` plus four
 `patch_overrides` at 40,000 — reconciles exactly to the 4,486,000 in
 `MAPPROF`).
