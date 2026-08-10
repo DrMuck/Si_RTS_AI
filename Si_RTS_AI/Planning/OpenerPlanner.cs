@@ -1341,7 +1341,7 @@ namespace Si_RTS_AI.Planning
                     Vector3 dir = site.Centroid - from;
                     float len = Mathf.Sqrt(dir.x * dir.x + dir.z * dir.z);
                     if (len < 1f) break;
-                    if (!Afford(s, EcoSimulator.NODE_COST + CystFloor(plan, cystCount))) return null;
+                    if (!Afford(s, EcoSimulator.NODE_COST + GroundFloor(s, plan, cystCount))) return null;
                     Advance(s, NODE_HOP_ORDER_S);
                     Vector3 np = from + dir * (hop / len);
                     s.nodes.Add(new EcoState.Node { pos = np, finished = false,
@@ -1417,7 +1417,7 @@ namespace Si_RTS_AI.Planning
                 // secondary to getting Cysts down early — revisit only once
                 // timing is solid.
                 if (!PlaceBcStep(s, plan, site, bcPos, ref cost,
-                                 CystFloor(plan, cystCount))) return null;
+                                 GroundFloor(s, plan, cystCount))) return null;
 
                 if (k < cystCount && !cystFirstHere)
                 {
@@ -1592,20 +1592,33 @@ namespace Si_RTS_AI.Planning
         ///
         /// A Cyst placement is exempt, as it is in the executor — the floor
         /// exists to protect Cysts, not to block them.
+        ///
+        /// THE SECOND TERM IS WHAT A CYST COSTS AFTER YOU HAVE BOUGHT IT.
+        ///
+        /// A Cyst is 1,500 once and then 160 per shrimp for as long as it runs,
+        /// so a 4-Cyst opening carries an ongoing draw a 2-Cyst opening does
+        /// not — and buying ground with that money is what stops the producers
+        /// (DrMuck, 2026-08-09: "you need to consider the upfront costs to pump
+        /// out shrimps from more cysts"). The executor already holds it back as
+        /// min(cysts,10) x SHRIMP_COST, logged as "reserve640" at four Cysts;
+        /// the rollout costed openings as though it did not, so a plan with more
+        /// Cysts looked no more expensive to keep running than one with fewer.
         /// </summary>
-        static int CystFloor(Plan plan, int cystCount)
+        static int GroundFloor(EcoState s, Plan plan, int cystCount)
         {
             int placed = 0;
             for (int i = 0; i < plan.Steps.Count; i++)
                 if (plan.Steps[i].Kind == StepKind.Cyst) placed++;
-            return placed < cystCount ? EcoSimulator.CYST_COST : 0;
+            int pendingCyst   = placed < cystCount ? EcoSimulator.CYST_COST : 0;
+            int shrimpReserve = Mathf.Min(s.cysts.Count, 10) * EcoSimulator.SHRIMP_COST;
+            return Mathf.Max(pendingCyst, shrimpReserve);
         }
 
         /// <summary>Queue the Bio Cache for a site. False if unaffordable in the window.</summary>
         static bool PlaceBcStep(EcoState s, Plan plan, MapProfile.Site site, Vector3 bcPos,
-                                ref int cost, int cystFloor)
+                                ref int cost, int groundFloor)
         {
-            if (!Afford(s, EcoSimulator.BC_COST + cystFloor)) return false;
+            if (!Afford(s, EcoSimulator.BC_COST + groundFloor)) return false;
             s.bcs.Add(new EcoState.Bc { pos = bcPos, finished = false,
                                         readyAt = s.t + EcoSimulator.BC_BUILD_S,
                                         storage = 0, storageCap = 4000 });

@@ -239,7 +239,24 @@ namespace Si_RTS_AI.Planning
                     sum += n;
                 }
                 MeanClusterSize = (float)sum / _positions.Count;
-                ClusterMode = MeanClusterSize >= CLUSTER_MODE_MIN_MEAN;
+                // CLUSTER MODE IS AN OPT-IN, NOT A DERIVED PROPERTY — YET.
+                //
+                // The threshold alone would switch it on for any map that
+                // happens to measure above 1.9, and what cluster mode does is
+                // not cheap: it softens the direction penalty and ranks opener
+                // candidates by biotics per metre instead of distance. Both were
+                // derived from ONE measured map. IndustrialQuarter is the only
+                // one with real clusters (2.10 against 1.61 next), and the only
+                // one where clustering was shown to be better rather than
+                // merely present.
+                //
+                // So it stays named until another map is measured (DrMuck,
+                // 2026-08-09: "Cluster Mode should be only valid for Industrial
+                // quarter yet"). The override file can still force it on for a
+                // deliberate experiment.
+                ClusterMode = MeanClusterSize >= CLUSTER_MODE_MIN_MEAN
+                           && string.Equals(MapName, "IndustrialQuarter",
+                                            StringComparison.OrdinalIgnoreCase);
             }
 
             BuildSites(nest, _amounts);
