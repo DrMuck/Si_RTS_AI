@@ -1173,6 +1173,48 @@ namespace Si_RTS_AI.Planning
         /// Biotics still in the ground under this plan's Bio Caches at handoff.
         /// The ceiling on anything the terminal tail can credit.
         /// </summary>
+        /// <summary>
+        /// Which of the chosen sites hosts the second Cyst.
+        ///
+        /// SEARCHING FOR THIS DID NOT WORK, SO IT IS A RULE.
+        ///
+        /// v0.77.0 scored the doubled Cyst on each of the two nearest sites and
+        /// let the rollout pick. The rollout cannot see the thing that matters:
+        /// the value of a doubled Cyst is partly that its shrimps RELOCATE onto
+        /// ground tapped later, and "later" is mostly past the 240s horizon the
+        /// opening is scored over. So the two hosts came out within noise and
+        /// the choice was being made on rounding.
+        ///
+        /// The rule instead, and it is one the blueprint already applies to its
+        /// own producers: extra production goes where migration will NOT reach.
+        /// The site nearest the next tap feeds it for free on a short walk, so
+        /// doubling there buys ground that was covered anyway; the site
+        /// furthest from it is the one whose shrimps would otherwise have
+        /// nowhere better to go.
+        ///
+        /// DrMuck, 2026-08-10, on [213m 215m 600m]: the 215m site at
+        /// (2388,1450) is 741m from the southern tap against the 213m site's
+        /// 537m, so 215m takes the pair — "do the double spawner at the
+        /// furthest biotics from that".
+        ///
+        /// The last site is excluded as a host: it comes online last, so
+        /// doubling there lands both Cysts late.
+        /// </summary>
+        static int DoublingHost(List<int> siteIdx)
+        {
+            if (siteIdx.Count < 2) return 0;
+            Vector3 lastTap = MapProfile.Sites[siteIdx[siteIdx.Count - 1]].Centroid;
+            int best = 0; float bestD = -1f;
+            for (int k = 0; k < siteIdx.Count - 1; k++)
+            {
+                Vector3 c = MapProfile.Sites[siteIdx[k]].Centroid;
+                float dx = c.x - lastTap.x, dz = c.z - lastTap.z;
+                float d = dx * dx + dz * dz;
+                if (d > bestD) { bestD = d; best = k; }
+            }
+            return best;
+        }
+
         static float RemainingUnderPlan(EcoState s)
         {
             // Same radius the shrimp grouping uses to decide which patches a
@@ -1311,25 +1353,13 @@ namespace Si_RTS_AI.Planning
                     int cystMax = chosen.Count + (DoubleCystEnabled ? 1 : 0);
                     for (int cysts = 2; cysts <= cystMax; cysts++)
                     {
-                        // For a doubled plan, try the second Cyst on each of
-                        // the two NEAREST sites and let the rollout choose.
-                        // Bounded at two on purpose: those are the sites already
-                        // reachable and productive early, it is the comparison
-                        // DrMuck actually asked about, and opening it to every
-                        // site would take the search from 728 evaluations to
-                        // ~1,270 on a tick that has already been seen at 3.9s.
-                        bool doubling = cysts > chosen.Count;
-                        int dTries = doubling ? Mathf.Min(2, chosen.Count) : 1;
-                        for (int d = 0; d < dTries; d++)
-                        {
-                            var p = Evaluate(root, chosen, cysts, d);
-                            evalCount++;
-                            if (p == null) continue;
-                            Consider(p);
-                            if (p.DoubledCyst) { if (bestDoubled == null || p.Score > bestDoubled.Score) bestDoubled = p; }
-                            else               { if (bestSingle  == null || p.Score > bestSingle.Score)  bestSingle  = p; }
-                            if (best == null || p.Score > best.Score) best = p;
-                        }
+                        var p = Evaluate(root, chosen, cysts, DoublingHost(chosen));
+                        evalCount++;
+                        if (p == null) continue;
+                        Consider(p);
+                        if (p.DoubledCyst) { if (bestDoubled == null || p.Score > bestDoubled.Score) bestDoubled = p; }
+                        else               { if (bestSingle  == null || p.Score > bestSingle.Score)  bestSingle  = p; }
+                        if (best == null || p.Score > best.Score) best = p;
                     }
                     return;
                 }
