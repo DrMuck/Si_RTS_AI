@@ -77,39 +77,85 @@ namespace Si_RTS_AI.Planning
         // "how far can we place from the chain".
         public static float CHAIN_REACH_M   = 200f;
 
-        // Build times — CD.BuildUpTime, NOT TotalConstructionTime.
+        // Build times — CD.TotalConstructionTime. See ReadUsableTime.
         //
-        // Each ConstructionData carries both, and they answer different
-        // questions. Measured live:
+        // This block used to say the opposite: that a structure is usable after
+        // BuildUpTime and clean-up is only the site tearing itself down. It read
+        // plausibly and it was wrong. The game's own construction_complete
+        // events land at Total, not BuildUp:
         //
-        //              BuildUpTime  CleanUpTime  TotalConstructionTime
-        //   Bio Cache      20s          10s              30s
-        //   Cyst           20s          15s              35s
-        //   Node           12s           8s              20s
+        //              BuildUpTime  CleanUpTime  Total    MEASURED
+        //   Bio Cache      20s          10s        30s     30.11s
+        //   Cyst           20s          15s        35s     34.99s
+        //   Node           12s           8s        20s     20.02s
         //
-        // A structure becomes USABLE after build-up; clean-up is the
-        // construction site tearing itself down afterwards. Everything we use
-        // these numbers for is "when does it start working", so BuildUpTime is
-        // the right field. Using Total made the planner wait 10s too long on
-        // every Bio Cache and 15s on every Cyst — and, via the Cyst-needs-a-
-        // finished-BC test, delayed every Cyst by that margin.
-        public static float BC_BUILD_S      = 20f;
-        public static float CYST_BUILD_S    = 20f;
-        public static float NODE_BUILD_S    = 12f;
+        // So every timing the planner produced was optimistic by 50-75%, and
+        // the error compounded: the Cyst gate keys off a FINISHED Bio Cache, so
+        // a Bio Cache modelled 10s early pulled every Cyst 10s early too, and
+        // the shrimp ramp with it.
+        //
+        // These four are LAST-RESORT fallbacks only, used when the read off the
+        // live ConstructionData fails. They carry the modded totals measured on
+        // 2026-08-10 rather than vanilla numbers, because a wrong fallback that
+        // looks reasonable is how the previous error survived so long.
+        public static float BC_BUILD_S      = 30f;
+        public static float CYST_BUILD_S    = 35f;
+        public static float NODE_BUILD_S    = 20f;
         public static float SHRIMP_BUILD_S  = 15f;
 
-        /// <summary>BuildUpTime off a ConstructionData — the time until usable.</summary>
-        static float ReadBuildUpTime(ConstructionData cd, float fallback)
+        /// <summary>One numeric field or property off a ConstructionData.</summary>
+        static float ReadField(ConstructionData cd, string name, out bool ok)
         {
+            ok = false;
             try
             {
                 var t = cd.GetType();
-                var f = t.GetField("BuildUpTime");
-                if (f != null) return System.Convert.ToSingle(f.GetValue(cd));
-                var p2 = t.GetProperty("BuildUpTime");
-                if (p2 != null) return System.Convert.ToSingle(p2.GetValue(cd));
+                var f = t.GetField(name);
+                if (f != null) { ok = true; return System.Convert.ToSingle(f.GetValue(cd)); }
+                var p = t.GetProperty(name);
+                if (p != null) { ok = true; return System.Convert.ToSingle(p.GetValue(cd)); }
             }
             catch { }
+            return 0f;
+        }
+
+        /// <summary>
+        /// Seconds from placement to the structure being USABLE — anchoring a
+        /// chain, unlocking a Cyst, taking a deposit.
+        ///
+        /// This is TotalConstructionTime, not BuildUpTime. An older comment here
+        /// dismissed TotalConstructionTime as "the build-up plus the site
+        /// teardown rather than time-to-usable" and read BuildUpTime instead.
+        /// That was wrong, and it made every timing the planner produced
+        /// optimistic by half. Measured against the game's own
+        /// construction_start / construction_complete events on NarakaCity
+        /// 2026-08-10:
+        ///
+        ///     Bio Cache   BuildUp 20 + CleanUp 10 = Total 30   measured 30.11
+        ///     Cyst        BuildUp 20 + CleanUp 15 = Total 35   measured 34.99
+        ///     Node        BuildUp 12 + CleanUp  8 = Total 20   measured 20.02
+        ///
+        /// Exact to a tenth of a second, and the executor's own "no finished BC
+        /// anywhere yet" flipped 0.8s after the Bio Cache's completion event —
+        /// so this is also when the game starts accepting it as an anchor.
+        ///
+        /// Read as a property first because that is what the game exposes, then
+        /// reconstructed from the parts, then the caller's default. All three
+        /// come off the live ConstructionData, so Si_UnitBalance's build-time
+        /// multipliers are picked up without a constant here tracking them —
+        /// these ARE the modded values (DrMuck: "no hard coded value
+        /// reference").
+        /// </summary>
+        static float ReadUsableTime(ConstructionData cd, float fallback)
+        {
+            float total = ReadField(cd, "TotalConstructionTime", out bool haveTotal);
+            if (haveTotal && total > 0f) return total;
+
+            float build = ReadField(cd, "BuildUpTime",      out bool haveBuild);
+            float clean = ReadField(cd, "CleanUpTime",      out _);
+            float wait  = ReadField(cd, "FinishedWaitTime", out _);
+            if (haveBuild && build > 0f) return build + clean + wait;
+
             return fallback;
         }
 
@@ -154,9 +200,9 @@ namespace Si_RTS_AI.Planning
             // Build times straight off the CDs.
             try
             {
-                if (bcCd   != null) BC_BUILD_S   = ReadBuildUpTime(bcCd,   BC_BUILD_S);
-                if (cystCd != null) CYST_BUILD_S = ReadBuildUpTime(cystCd, CYST_BUILD_S);
-                if (nodeCd != null) NODE_BUILD_S = ReadBuildUpTime(nodeCd, NODE_BUILD_S);
+                if (bcCd   != null) BC_BUILD_S   = ReadUsableTime(bcCd,   BC_BUILD_S);
+                if (cystCd != null) CYST_BUILD_S = ReadUsableTime(cystCd, CYST_BUILD_S);
+                if (nodeCd != null) NODE_BUILD_S = ReadUsableTime(nodeCd, NODE_BUILD_S);
             }
             catch { }
             if (any && bcCd != null && cystCd != null && nodeCd != null)
@@ -164,9 +210,9 @@ namespace Si_RTS_AI.Planning
                 _costsResolved = true;
                 MelonLoader.MelonLogger.Msg(
                     $"[ECO/COSTS] resolved from game: " +
-                    $"BC={BC_COST}/{BC_REACH_M:F0}m(+r{BC_RADIUS_M:F0}={BcPlaceReachM:F0}m)/ready{BC_BUILD_S:F0}s " +
-                    $"Cyst={CYST_COST}/-/ready{CYST_BUILD_S:F0}s " +
-                    $"Node={NODE_COST}/{NODE_REACH_M:F0}m/ready{NODE_BUILD_S:F0}s " +
+                    $"BC={BC_COST}/{BC_REACH_M:F0}m(+r{BC_RADIUS_M:F0}={BcPlaceReachM:F0}m)/usable{BC_BUILD_S:F0}s " +
+                    $"Cyst={CYST_COST}/-/usable{CYST_BUILD_S:F0}s " +
+                    $"Node={NODE_COST}/{NODE_REACH_M:F0}m/usable{NODE_BUILD_S:F0}s " +
                     $"shrimp={SHRIMP_COST}/{SHRIMP_BUILD_S:F0}s");
             }
         }
