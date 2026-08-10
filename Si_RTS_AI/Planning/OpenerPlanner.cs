@@ -126,7 +126,31 @@ namespace Si_RTS_AI.Planning
         // projected forward. An opening is worth what it earned plus what it
         // leaves running.
         const float SCORE_HORIZON_S  = 240f;
-        const float TERMINAL_TAIL_S  = 240f;   // how long the handover rate is credited for
+        const float TERMINAL_TAIL_S_DEFAULT = 240f;
+
+        /// <summary>
+        /// How long the handover rate is credited for. Live from rtsai.json.
+        ///
+        /// 240 on top of SCORE_HORIZON_S 240 scores an opening over an
+        /// effective 480 seconds, for a phase whose own job ends at 3-4 minutes.
+        /// It is also the term that keeps beating the doubled Cyst, and not on
+        /// merit: tail is min(rate x T, remainingAtHandoff), so a plan with MORE
+        /// SITES has more unmined ore under its Bio Caches and a higher cap,
+        /// while a tighter plan with a higher RATE gets capped.
+        ///
+        /// NarakaCity layout (1), 2026-08-11. The doubled plan had the highest
+        /// income (38840 v 36582), the highest rate (387 v 362), finished
+        /// soonest (72s v 114s), used the fewest nodes and had the best spread
+        /// -- and lost by 2617, of which 5736 was tail:
+        ///
+        ///     #1  rate 362 -> 86,880, tail 86,896   not capped
+        ///     #4  rate 387 -> 92,880, tail 81,160   CAPPED by remaining ore
+        ///
+        /// At T=120 the cap stops binding for the tighter plan and it wins on
+        /// the strength of the rate it actually achieves.
+        /// </summary>
+        static float TerminalTailS =>
+            Mathf.Clamp(RtsaiConfig.Float("openerTailSeconds", TERMINAL_TAIL_S_DEFAULT), 0f, 600f);
         const float RATE_WINDOW_S    = 30f;    // window used to measure the rate at handoff
         // Measured: a Bio Cache lands ~25m off the patch centre, on the near
         // edge of its no-build zone.
@@ -1845,7 +1869,7 @@ namespace Si_RTS_AI.Planning
             // it from; beyond that the income stops regardless of how many
             // shrimps are standing there.
             float remainingAtHandoff = RemainingUnderPlan(s);
-            plan.TerminalValue = Mathf.Min(rateAtHandoff * TERMINAL_TAIL_S, remainingAtHandoff);
+            plan.TerminalValue = Mathf.Min(rateAtHandoff * TerminalTailS, remainingAtHandoff);
 
             plan.Score = plan.IncomeToHandoff
                        + plan.TerminalValue
