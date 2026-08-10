@@ -363,11 +363,13 @@ namespace Si_RTS_AI.Planning
                     // is ground truth and ends the duplicate problem. The old
                     // check looked for a finished structure by name, missed the
                     // gap, and let a second Cyst be built 30s later.
+                    float dedupR = CystDedupRadiusFor(i);
                     if (Faction.AlienConstruction.WasOrderedNear(
-                            "Lesser Spawning Cyst", _queue[i].Target, CYST_DEDUP_M)
+                            "Lesser Spawning Cyst", _queue[i].Target, dedupR)
                         || Perception.BuildTimeline.IsBuildingNear(
-                            "Lesser Spawning Cyst", _queue[i].Target, CYST_DEDUP_M)
-                        || StructureNear(team, "Lesser Spawning Cyst", _queue[i].Target, 60f))
+                            "Lesser Spawning Cyst", _queue[i].Target, dedupR)
+                        || StructureNear(team, "Lesser Spawning Cyst", _queue[i].Target,
+                                         Mathf.Min(60f, dedupR)))
                     {
                         MelonLogger.Msg($"[OPENER] Cyst step {i + 1}/{_queue.Count} confirmed ordered");
                         MarkDone(i);
@@ -1804,6 +1806,48 @@ namespace Si_RTS_AI.Planning
         /// placement search relocates a request by up to ~100m, so the order
         /// that lands is not at the point we asked for.</summary>
         const float CYST_DEDUP_M = 130f;
+
+        /// <summary>Below this the guard is useless, so a plan that packs Cysts
+        /// tighter than this gets no dedup protection between them at all.</summary>
+        const float CYST_DEDUP_MIN_M = 20f;
+
+        /// <summary>
+        /// The dedup radius for one Cyst step, shrunk so it cannot reach a
+        /// SIBLING step's target.
+        ///
+        /// CYST_DEDUP_M is 130m because a placement can slide ~100m, and
+        /// CYST_BESIDE_M is 35m so a doubled Cyst sits beside its Bio Cache on
+        /// the same patch. Mirrored, that pair is 70m apart — well inside 130 —
+        /// so the first of the pair always confirmed the second and the second
+        /// was never built. Both constants are right on their own and were
+        /// written for opposite purposes; nothing reconciled them.
+        ///
+        /// Measured NarakaCity 2026-08-10: step 2's Cyst ordered at 12:07:23,
+        /// step 10 — the doubled Cyst on the SAME site — marked "confirmed
+        /// ordered" at 12:07:25 without ever being attempted. The blueprint's
+        /// first Cyst was 12:13:05, five and a half minutes later, so this was
+        /// the opener colliding with itself. Cost: the 4th producer arrived at
+        /// t=403s instead of t=110s, on a plan the opener only chose BECAUSE it
+        /// doubled (it beat the 3-Cyst variant by 1277).
+        ///
+        /// Half the distance to the nearest other Cyst step: wide enough to
+        /// absorb a slide when nothing is near, never wide enough to swallow a
+        /// deliberate neighbour. No special case for the doubled step — any
+        /// plan that puts two Cysts close gets the same protection.
+        /// </summary>
+        static float CystDedupRadiusFor(int i)
+        {
+            float r = CYST_DEDUP_M;
+            Vector3 t = _queue[i].Target;
+            for (int j = 0; j < _queue.Count; j++)
+            {
+                if (j == i || _queue[j].Kind != StepKind.Cyst) continue;
+                float dx = _queue[j].Target.x - t.x, dz = _queue[j].Target.z - t.z;
+                float d = Mathf.Sqrt(dx * dx + dz * dz);
+                if (d > 1f) r = Mathf.Min(r, d * 0.5f);
+            }
+            return Mathf.Max(CYST_DEDUP_MIN_M, r);
+        }
 
         /// <summary>
         /// Cyst position: BESIDE THE PATCH, level with the Bio Cache.
