@@ -156,6 +156,8 @@ namespace Si_RTS_AI.Faction
                     var u = units[i];
                     if (u?.ObjectInfo == null || u.IsDestroyed) continue;
                     if (!string.Equals(u.ObjectInfo.DisplayName, "Shrimp", StringComparison.OrdinalIgnoreCase)) continue;
+                    // One-shot per round; self-disarms after the first success.
+                    Planning.EcoSimulator.TryResolveShrimpSpeed(u);
                     var p = u.transform.position;
                     int nearestIdx = -1;
                     float nearestDsq = BC_SHRIMP_RADIUS_SQ;

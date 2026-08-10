@@ -28,7 +28,16 @@ namespace Si_RTS_AI.Planning
         public const float DT              = 2f;
         public const float HARVEST_RATE    = 9.5f;    // measured single-shrimp
         public const float DEPOSIT_RATE    = 50f;     // measured from cash slope
-        public const float SHRIMP_SPEED    = 9f;      // MoveSpeed from dump
+        // NOT const. Si_UnitBalance carries move_speed_mult, and this number is
+        // in the hot path of the entire eco model — every harvest cycle, every
+        // FirstDepositDelay, every free-agent walk radius. Baked at compile time
+        // it could not track a balance change, and a wrong speed here is
+        // invisible: it does not throw, it just makes every income projection
+        // quietly wrong. That is the same shape as the BuildUpTime error, so it
+        // gets the same treatment — read from the game, once per round.
+        // Resolved from a live Shrimp's Unit.MoveSpeed (it lives on the Unit
+        // component, not the ConstructionData) via TryResolveShrimpSpeed.
+        public static float SHRIMP_SPEED   = 9f;      // fallback; MoveSpeed=9 measured 2026-08-10
         public const int   CARRY_CAPACITY  = 400;     // ResourceHolder.MaxAmount
         public const int   MAX_PER_PATCH   = 18;      // observed access-contention ceiling
 
@@ -102,6 +111,61 @@ namespace Si_RTS_AI.Planning
         public static float CYST_BUILD_S    = 35f;
         public static float NODE_BUILD_S    = 20f;
         public static float SHRIMP_BUILD_S  = 15f;
+
+        /// <summary>
+        /// Take SHRIMP_SPEED off a live Shrimp, once per round.
+        ///
+        /// MoveSpeed sits on the Unit component, not on the ConstructionData, so
+        /// there is nothing to read until a Shrimp exists — which is immediately,
+        /// since the round starts with three. Cheap enough to call from the
+        /// producer's existing per-shrimp loop and self-disarming after the first
+        /// success.
+        /// </summary>
+        static bool _shrimpSpeedResolved;
+        public static bool ShrimpSpeedResolved => _shrimpSpeedResolved;
+        public static void TryResolveShrimpSpeed(Unit shrimp)
+        {
+            if (_shrimpSpeedResolved || shrimp == null) return;
+            try
+            {
+                // Reflective: MoveSpeed is on the concrete runtime type (the
+                // dump lists it under SHRIMP.Unit), not on the Unit surface the
+                // interop assembly exposes.
+                var t = shrimp.GetType();
+                float v = 0f;
+                var f = t.GetField("MoveSpeed");
+                if (f != null) v = System.Convert.ToSingle(f.GetValue(shrimp));
+                else
+                {
+                    var pr = t.GetProperty("MoveSpeed");
+                    if (pr != null) v = System.Convert.ToSingle(pr.GetValue(shrimp));
+                }
+                if (v > 0.01f)
+                {
+                    if (Mathf.Abs(v - SHRIMP_SPEED) > 0.01f)
+                        MelonLoader.MelonLogger.Msg(
+                            $"[ECO/COSTS] SHRIMP_SPEED {SHRIMP_SPEED:F2} -> {v:F2} (from live Shrimp.MoveSpeed)");
+                    SHRIMP_SPEED = v;
+                    _shrimpSpeedResolved = true;
+                }
+            }
+            catch { }
+        }
+
+        /// <summary>Technology tier a structure is gated behind, -1 for
+        /// ungated. Si_UnitBalance sets min_tier per unit, so a structure the
+        /// planner assumes it can build may be locked until a research lands.
+        /// Read here so the eco layer can see the gate rather than discovering
+        /// it as a silent placement refusal.</summary>
+        public static int BC_MIN_TIER   = -1;
+        public static int CYST_MIN_TIER = -1;
+        public static int NODE_MIN_TIER = -1;
+
+        static int ReadTier(ConstructionData cd)
+        {
+            if (cd == null) return -1;
+            try { return cd.TechnologyTier; } catch { return -1; }
+        }
 
         /// <summary>One numeric field or property off a ConstructionData.</summary>
         static float ReadField(ConstructionData cd, string name, out bool ok)
@@ -203,6 +267,9 @@ namespace Si_RTS_AI.Planning
                 if (bcCd   != null) BC_BUILD_S   = ReadUsableTime(bcCd,   BC_BUILD_S);
                 if (cystCd != null) CYST_BUILD_S = ReadUsableTime(cystCd, CYST_BUILD_S);
                 if (nodeCd != null) NODE_BUILD_S = ReadUsableTime(nodeCd, NODE_BUILD_S);
+                BC_MIN_TIER   = ReadTier(bcCd);
+                CYST_MIN_TIER = ReadTier(cystCd);
+                NODE_MIN_TIER = ReadTier(nodeCd);
             }
             catch { }
             if (any && bcCd != null && cystCd != null && nodeCd != null)
@@ -213,11 +280,14 @@ namespace Si_RTS_AI.Planning
                     $"BC={BC_COST}/{BC_REACH_M:F0}m(+r{BC_RADIUS_M:F0}={BcPlaceReachM:F0}m)/usable{BC_BUILD_S:F0}s " +
                     $"Cyst={CYST_COST}/-/usable{CYST_BUILD_S:F0}s " +
                     $"Node={NODE_COST}/{NODE_REACH_M:F0}m/usable{NODE_BUILD_S:F0}s " +
-                    $"shrimp={SHRIMP_COST}/{SHRIMP_BUILD_S:F0}s");
+                    $"shrimp={SHRIMP_COST}/{SHRIMP_BUILD_S:F0}s/spd{SHRIMP_SPEED:F1}" +
+                    (BC_MIN_TIER < 0 && CYST_MIN_TIER < 0 && NODE_MIN_TIER < 0
+                        ? "  minTier=none"
+                        : $"  minTier BC={BC_MIN_TIER} Cyst={CYST_MIN_TIER} Node={NODE_MIN_TIER}"));
             }
         }
 
-        internal static void ResetForNewRound() { _costsResolved = false; }
+        internal static void ResetForNewRound() { _costsResolved = false; _shrimpSpeedResolved = false; }
 
         public static void SimulateForward(EcoState s, float horizonS)
         {

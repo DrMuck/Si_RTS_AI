@@ -704,7 +704,21 @@ namespace Si_RTS_AI.Planning
                         if (!_techCds.ContainsKey(n))
                         {
                             _techCds[n] = opt;
+                            // DURATION AND TIER GATE, NOT JUST COST.
+                            //
+                            // Si_UnitBalance sets tech_time PER TIER and it is
+                            // not flat: 29/29/29/29/60/60/90/120 on this server
+                            // against a vanilla 30 everywhere. A tier-7 research
+                            // is three times a tier-1 one, and nothing here saw
+                            // that -- tech was costed and never timed. Same for
+                            // TechnologyTier, which is what gates a unit or
+                            // structure behind a tier at all.
+                            //
+                            // Read off the live CD so balance changes are picked
+                            // up (DrMuck: "no hard coded value reference").
                             MelonLogger.Msg("[TECH] cataloged Research CD: '" + n + "' cost=" + TryGetCost(opt) +
+                                            " takes=" + TryGetBuildS(opt).ToString("F0") + "s" +
+                                            " minTier=" + TryGetMinTier(opt) +
                                             " (team=" + team.name + ")");
                         }
                     }
@@ -716,6 +730,27 @@ namespace Si_RTS_AI.Planning
         static int TryGetCost(ConstructionData cd)
         {
             try { return cd.ResourceCost; } catch { return 0; }
+        }
+
+        /// <summary>Seconds this research takes once started. Si_UnitBalance's
+        /// tech_time is per tier, so this is NOT one number across tiers.</summary>
+        internal static float TryGetBuildS(ConstructionData cd)
+        {
+            try { return cd.TotalConstructionTime; } catch { return 0f; }
+        }
+
+        /// <summary>Technology tier this CD is gated behind, -1 for ungated.</summary>
+        internal static int TryGetMinTier(ConstructionData cd)
+        {
+            try { return cd.TechnologyTier; } catch { return -1; }
+        }
+
+        /// <summary>Seconds the named research takes, 0 if unknown. Exposed so
+        /// planners can time a tier rather than only afford it.</summary>
+        internal static float ResearchSecondsFor(string name)
+        {
+            if (name != null && _techCds.TryGetValue(name, out var cd)) return TryGetBuildS(cd);
+            return 0f;
         }
 
         // Cached method info for team.UpdateTechnologyTier(bool, bool) — the same
