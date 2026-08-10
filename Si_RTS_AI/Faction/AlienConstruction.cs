@@ -1149,9 +1149,31 @@ namespace Si_RTS_AI.Faction
         // the planner has no `h` because our HandleTick prefix returns before stock
         // hands us one. Walks team.Structures.ConstructionOptions same as the
         // fallback path of the AIConstructionHandler-flavored EnsureConstructionData.
+        /// <summary>
+        /// Resolve the three eco ConstructionDatas off the team's own
+        /// structures, for callers that have no AIConstructionHandler.
+        ///
+        /// AND READ THE GAME CONSTANTS OFF THEM. This used to only resolve the
+        /// CDs, leaving SetCostsFromCds to the handler path -- which does not
+        /// run when a HUMAN commands the team. NarakaCity 2026-08-10, player-
+        /// commanded co-op: the AI built happily through this path, 42 accepted
+        /// placements, and never logged [ECO/COSTS] once, so every constant
+        /// stayed at its fallback for the whole round.
+        ///
+        /// That is not cosmetic. The active spawn layout set
+        /// alienNodeChainRange 1210 and the planner was chaining at the 150
+        /// fallback -- one eighth of the real reach -- so it laid eight nodes
+        /// across ground that needed one. The game itself accepted a Node 735m
+        /// from its anchor in the same round, which is the proof the real reach
+        /// was never 150.
+        /// </summary>
         static void EnsureConstructionDataFromTeam(Team team)
         {
-            if (_bcCd != null && _cystCd != null && _nodeCd != null) return;
+            if (_bcCd != null && _cystCd != null && _nodeCd != null)
+            {
+                MaybeResolveCosts(team);
+                return;
+            }
             var structs = team.Structures;
             if (structs == null) return;
             for (int i = 0; i < structs.Count; i++)
@@ -1166,8 +1188,18 @@ namespace Si_RTS_AI.Faction
                     if (_cystCd == null && string.Equals(n, "Lesser Spawning Cyst", StringComparison.OrdinalIgnoreCase)) _cystCd = opt;
                     if (_nodeCd == null && string.Equals(n, "Node",                 StringComparison.OrdinalIgnoreCase)) _nodeCd = opt;
                 }
-                if (_bcCd != null && _cystCd != null && _nodeCd != null) return;
+                if (_bcCd != null && _cystCd != null && _nodeCd != null) break;
             }
+            MaybeResolveCosts(team);
+        }
+
+        /// <summary>One-shot per round, wherever the CDs came from.</summary>
+        static void MaybeResolveCosts(Team team)
+        {
+            if (Planning.EcoSimulator.CostsResolved) return;
+            if (_bcCd == null || _cystCd == null || _nodeCd == null) return;
+            try { Perception.GameConstantsDumper.MaybeDumpAlien(team, _bcCd, _cystCd, _nodeCd); } catch { }
+            Planning.EcoSimulator.SetCostsFromCds(_bcCd, _cystCd, _nodeCd);
         }
 
         static void EnsureConstructionData(AIConstructionHandler h, Team team)

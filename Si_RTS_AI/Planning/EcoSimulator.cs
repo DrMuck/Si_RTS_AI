@@ -224,6 +224,7 @@ namespace Si_RTS_AI.Planning
         }
 
         static bool _costsResolved;
+        static float _lastUnresolvedWarnAt = -999f;
         /// <summary>True once the one-shot read off the game's CDs has landed.
         /// Callers use this to skip the resolution path entirely rather than
         /// re-entering it every tick — these values do not change mid-round.</summary>
@@ -272,6 +273,27 @@ namespace Si_RTS_AI.Planning
                 NODE_MIN_TIER = ReadTier(nodeCd);
             }
             catch { }
+            // ALL-OR-NOTHING, AND SILENT WHEN IT FAILED.
+            //
+            // If one CD was missing this logged nothing, resolved nothing, and
+            // left every constant at its fallback -- with no way to tell that
+            // from "never called". NarakaCity 2026-08-10 spent a whole round
+            // planning at NODE_REACH_M 150 while the game was accepting nodes
+            // 735m out, and the only symptom was an opener laying eight hops
+            // where one would do.
+            if (!(any && bcCd != null && cystCd != null && nodeCd != null))
+            {
+                if (Time.time - _lastUnresolvedWarnAt > 30f)
+                {
+                    _lastUnresolvedWarnAt = Time.time;
+                    MelonLoader.MelonLogger.Warning(
+                        "[ECO/COSTS] NOT resolved — running on fallbacks. " +
+                        $"bc={(bcCd != null ? "ok" : "MISSING")} " +
+                        $"cyst={(cystCd != null ? "ok" : "MISSING")} " +
+                        $"node={(nodeCd != null ? "ok" : "MISSING")}. " +
+                        "Reach, cost and build time are guesses until this resolves.");
+                }
+            }
             if (any && bcCd != null && cystCd != null && nodeCd != null)
             {
                 _costsResolved = true;
