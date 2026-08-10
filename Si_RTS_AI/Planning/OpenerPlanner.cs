@@ -38,6 +38,14 @@ namespace Si_RTS_AI.Planning
         /// <summary>Shadow mode: log the chosen opening, never execute it.</summary>
         internal static bool ShadowOnly = true;
 
+        /// <summary>
+        /// May one site take a SECOND Cyst instead of the opening reaching for
+        /// another site? Live from rtsai.json, default off — see the comment at
+        /// the cyst-count loop in Search for why. Set "openerDoubleCyst": true
+        /// to score doubled openings again.
+        /// </summary>
+        internal static bool DoubleCystEnabled => RtsaiConfig.Bool("openerDoubleCyst", false);
+
         // Search space. Sites are ranked by distance from the Nest; the opener
         // considers the nearest CANDIDATE_SITES and picks MIN..MAX of them.
         const int CANDIDATE_SITES = 8;
@@ -1271,7 +1279,23 @@ namespace Si_RTS_AI.Planning
                     // capacity: measured 3 shrimps against a per-patch ceiling of
                     // 18, so doubling production where we already stand may beat
                     // paying for reach. User idea, 2026-07-31.
-                    for (int cysts = 2; cysts <= chosen.Count + 1; cysts++)
+                    // DOUBLING IS OFF BY DEFAULT BECAUSE IT HAS NEVER WORKED.
+                    //
+                    // AlienConstruction.IsDuplicateNow refuses a Cyst within
+                    // DUP_RADIUS_M (90m) of another, and says why: "Cysts and
+                    // Bio Caches are one-per-patch". A doubled Cyst is placed at
+                    // +/-CYST_BESIDE_M around one Bio Cache, so the pair is 70m
+                    // apart and the second is always refused. NarakaCity
+                    // 2026-08-10 12:29: step 10 attempted ten times at
+                    // (2688,1138) with 4,400 in the bank and gave up.
+                    //
+                    // The opener nonetheless SCORED the doubling — the doubled
+                    // plan beat the 3-Cyst variant by 1277 — so it was choosing
+                    // openings on a producer the executor cannot place. Off
+                    // until the one-per-patch rule is deliberately revisited;
+                    // openerDoubleCyst in rtsai.json turns it back on.
+                    int cystMax = chosen.Count + (DoubleCystEnabled ? 1 : 0);
+                    for (int cysts = 2; cysts <= cystMax; cysts++)
                     {
                         var p = Evaluate(root, chosen, cysts);
                         evalCount++;
