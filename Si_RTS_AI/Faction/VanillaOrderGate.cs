@@ -65,7 +65,13 @@ namespace Si_RTS_AI.Faction
         {
             if (t == null || _thinkingTeam == null) return false;
             if (!ReferenceEquals(t, _thinkingTeam)) return false;
-            if (!AlienCommanderLock.Enabled) return false;
+            // NOT gated on AlienCommanderLock. It was, and that made the gate
+            // inert in the co-op mode where it matters MOST: when a human holds
+            // the seat, lockAlienCommander is off by definition. The game
+            // normally disables its own commander for a human-held team, so
+            // Think should not fire at all -- but "should not" is what the
+            // player-orders-ignored report was about, and blocking by ORIGIN is
+            // safe either way. A player's order never comes from inside Think.
             string n = t.name ?? "";
             return n.IndexOf("Alien", StringComparison.OrdinalIgnoreCase) >= 0;
         }
