@@ -525,6 +525,40 @@ namespace Si_RTS_AI.Planning
                         continue;
                     }
 
+                    // AIM OFF THE BIO CACHE THAT EXISTS, NOT THE ONE WE PLANNED.
+                    //
+                    // The Cyst target was computed at plan time as an offset
+                    // from where the Bio Cache was EXPECTED to stand. The
+                    // placement search moves a Bio Cache tens or hundreds of
+                    // metres, and when it does, the Cyst keeps aiming at the
+                    // old spot -- which is now empty, so it takes the ground
+                    // the Bio Cache was meant to have.
+                    //
+                    // NarakaCity layout (3), 2026-08-11: Bio Cache asked for
+                    // (-1426,-1911), landed at (-1475,-2000), 102m off. The
+                    // Cyst then landed at (-1430,-1910), four metres from the
+                    // Bio Cache's own target. DrMuck: "why the spawner so close
+                    // to the biotics. The biocache should be there."
+                    //
+                    // It is the wrong way round twice over. The Bio Cache is the
+                    // deposit point, so ITS distance to the patch is in the
+                    // harvest cycle; a Cyst gains nothing from being close.
+                    // Re-derive from ground truth each attempt.
+                    if (NearestStructurePos(team, "Bio Cache", _queue[i].Goal, 400f,
+                                            out Vector3 realBc))
+                    {
+                        Vector3 aimed = OffsetCystBeside(_queue[i].Goal, realBc, CYST_BESIDE_M);
+                        float dx0 = aimed.x - _queue[i].Target.x, dz0 = aimed.z - _queue[i].Target.z;
+                        if (dx0 * dx0 + dz0 * dz0 > 25f * 25f)
+                        {
+                            MelonLogger.Msg($"[OPENER] Cyst step {i + 1}/{_queue.Count} retargeted " +
+                                            $"({_queue[i].Target.x:F0},{_queue[i].Target.z:F0}) -> " +
+                                            $"({aimed.x:F0},{aimed.z:F0}) — its Bio Cache actually " +
+                                            $"stands at ({realBc.x:F0},{realBc.z:F0})");
+                            RetargetStep(i, aimed);
+                        }
+                    }
+
                     // HARD ATTEMPT CAP.
                     //
                     // The placement search succeeds and calls Construct every
@@ -1015,6 +1049,33 @@ namespace Si_RTS_AI.Planning
                     return true;
             }
             return false;
+        }
+
+        /// <summary>Position of the nearest owned structure of this kind within
+        /// radius. Ground truth for re-aiming a step whose plan-time reference
+        /// has since moved.</summary>
+        static bool NearestStructurePos(Team team, string name, Vector3 target,
+                                        float radiusM, out Vector3 pos)
+        {
+            pos = Vector3.zero;
+            float best = radiusM * radiusM; bool found = false;
+            try
+            {
+                var structs = team?.Structures;
+                if (structs == null) return false;
+                for (int i = 0; i < structs.Count; i++)
+                {
+                    var st = structs[i];
+                    if (st == null || st.ObjectInfo == null || st.IsDestroyed) continue;
+                    if (st.ObjectInfo.DisplayName != name) continue;
+                    Vector3 q = st.transform.position;
+                    float dx = q.x - target.x, dz = q.z - target.z;
+                    float d = dx * dx + dz * dz;
+                    if (d < best) { best = d; pos = q; found = true; }
+                }
+            }
+            catch { }
+            return found;
         }
 
         static bool StructureNear(Team team, string name, Vector3 target, float radiusM)
