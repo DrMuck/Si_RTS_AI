@@ -64,6 +64,48 @@ holds its slot until built or explicitly invalidated.
 
 ---
 
+## 2b. The migration test is structurally dead — every site gets a Cyst
+
+`Blueprint.CystPass` is supposed to refuse a Cyst where migration would staff
+the site anyway. It has **never once refused**. Across a full round, 280 of 280
+planned Cysts carry the same reason:
+
+```
+184  "9 shrimps could never walk here in time"
+ 56  "8 shrimps could never walk here in time"
+ 32  "10 shrimps could never walk here in time"
+  8  "18 shrimps could never walk here in time"
+```
+
+That string is the `float.IsInfinity(arrivalS)` branch, and there is not a
+single `no Cyst at ...` line in the log.
+
+Cause: `SupplyForecast.Releases` has only two sources, both depletion-driven —
+a Bio Cache whose patch is already gone (`etaS = 0`), or one working a patch
+(`etaS = remaining / rate`). `TrustHorizonS = max(60, replanIntervalS × 4)` =
+**120s**. A 22,000 patch worked by ~10 shrimps drains at ~65/s → `eta ≈ 338s`;
+at 42,000 → ~646s. Both far beyond 120s, so `ArrivalTimeFor` breaks out
+immediately and returns `+infinity` for every site, for the whole early and
+mid game. It only comes alive when a patch is within two minutes of empty.
+
+**Missing third source: surplus production.** DrMuck, 2026-08-10, on the
+blueprint planting Cysts at (2230,1871), (2567,2101) and (1988,2153): shrimps
+from the opener's doubled spawner at (2405,1438) could relocate there quickly,
+so those Cysts are not all needed. `Releases` has no concept of a producer
+making more shrimps than its own patch can absorb. The surplus is real and
+measurable — `bcCap=12` blocked, `workerCapPerBioCache: 10`, production at
+27–55% of nominal because the Bio Caches are full.
+
+**Fix shape:** add a release source for overproduction — a site at its worker
+cap frees each newly spawned shrimp at roughly its spawn cadence, positioned at
+that site. Then the migration test can finally say no, and interacts directly
+with item 3 (budget) and item 8 (worker cap).
+
+Worth checking at the same time whether `TrustHorizonS` at 120s is the right
+window for a decision that commits 1,500 cash.
+
+---
+
 ## 3. Producer budget is pinned at 8 by a literal
 
 `maxCystsPerPlan: 4` in `rtsai.json` has **no effect** — `cystStrategyAuto: true`
