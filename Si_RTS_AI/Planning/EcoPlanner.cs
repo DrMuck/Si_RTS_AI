@@ -1544,6 +1544,12 @@ namespace Si_RTS_AI.Planning
             _beamPhase    = req.Phase;
             _beamTeam     = req.Team;
             _beamExplored = req.Explored;
+            // Crowd softening for THIS thread. Read once here rather than in
+            // CrowdFactor, which runs millions of times per plan tick. The
+            // opener sets its own value around its search; everything else runs
+            // on the measured curve unless crowdSoften says otherwise.
+            EcoSimulator.CrowdSoftening =
+                Mathf.Clamp01(RtsaiConfig.Float("crowdSoften", 0f));
             _beamUnderTapped = CountTappedPatches(req.State) < PHASE1_MIN_TAPPED_PATCHES;
 
             var best = BeamSearch(req.State, out var topK);

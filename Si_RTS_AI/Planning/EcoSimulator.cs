@@ -633,6 +633,32 @@ namespace Si_RTS_AI.Planning
         /// drain a depleted site.</summary>
         const int RELOCATE_PER_STEP = 2;
 
+        /// <summary>
+        /// How much of the crowding penalty to REMOVE, 0..1. Thread-static so
+        /// the opener's rollout can differ from the beam's without the two
+        /// clobbering each other — the beam runs on a worker thread, the
+        /// opener on the main one.
+        ///
+        /// Exists because crowding is the one cost the model charges the
+        /// doubled Cyst in full while being blind to the thing that pays for
+        /// it. A second Cyst on one site pushes that site over a CrowdFactor
+        /// step — 12 to 13 shrimps drops the whole group from 0.85 to 0.70 —
+        /// so adding a producer can LOWER modelled output. In reality the
+        /// surplus walks somewhere else, but SupplyForecast only frees shrimps
+        /// on patch depletion, never on overproduction, so the rollout keeps
+        /// them piled up and choking.
+        ///
+        /// NarakaCity layout (3), 2026-08-11, identical sites and nodes: the
+        /// doubled plan earned +159 more income and still lost by 673, because
+        /// its handoff rate fell 166 to 162 and the tail took -832.
+        ///
+        /// This is a stopgap and should be removed when the surplus-release
+        /// source lands (ECO_OPEN_ITEMS 2b). It compensates for a blind spot
+        /// rather than fixing it.
+        /// </summary>
+        [System.ThreadStatic] static float _crowdSoften;
+        public static float CrowdSoftening { get => _crowdSoften; set => _crowdSoften = value; }
+
         static float CrowdFactor(int n)
         {
             // Efficiency DIMINISHES but never hits zero — user observation:
@@ -640,6 +666,19 @@ namespace Si_RTS_AI.Planning
             // choice, so per-capita productivity must stay positive at high N.
             // Old model (0 above 18) was under-predicting income at hot spots
             // and steering the relocator to fight vanilla for no benefit.
+            return Soften(RawCrowdFactor(n));
+        }
+
+        static float Soften(float f)
+        {
+            float k = _crowdSoften;
+            if (k <= 0f) return f;
+            if (k > 1f) k = 1f;
+            return f + (1f - f) * k;      // k=0 unchanged, k=1 no crowding at all
+        }
+
+        static float RawCrowdFactor(int n)
+        {
             if (n <= 6)  return 1.00f;
             if (n <= 12) return 0.85f;
             if (n <= 18) return 0.70f;

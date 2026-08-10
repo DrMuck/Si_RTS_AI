@@ -46,6 +46,11 @@ namespace Si_RTS_AI.Planning
         /// </summary>
         internal static bool DoubleCystEnabled => RtsaiConfig.Bool("openerDoubleCyst", false);
 
+        /// <summary>Fraction of the crowding penalty to remove while scoring an
+        /// OPENING, 0..1. Live from rtsai.json.</summary>
+        internal static float CrowdSoften =>
+            Mathf.Clamp01(RtsaiConfig.Float("openerCrowdSoften", 0.5f));
+
         // Search space. Sites are ranked by distance from the Nest; the opener
         // considers the nearest CANDIDATE_SITES and picks MIN..MAX of them.
         const int CANDIDATE_SITES = 8;
@@ -149,7 +154,24 @@ namespace Si_RTS_AI.Planning
             try
             {
                 long ts = System.Diagnostics.Stopwatch.GetTimestamp();
-                var best = Search(state, out int evaluated);
+                // SOFTEN CROWDING FOR THE OPENING ONLY.
+                //
+                // See EcoSimulator.CrowdSoftening. The opening is where a
+                // doubled Cyst gets decided, and crowding is exactly the cost
+                // the model overstates for it: the surplus shrimps are modelled
+                // as standing on the host patch dragging its whole group down a
+                // CrowdFactor step, when in reality they walk elsewhere.
+                //
+                // Half weight, on DrMuck's call. Only around Search, and
+                // restored in a finally, so the beam and every later phase keep
+                // the measured curve — this is a deliberate divergence between
+                // the opening's model and the running one, not a global change.
+                Plan best;
+                float softenWas = EcoSimulator.CrowdSoftening;
+                EcoSimulator.CrowdSoftening = CrowdSoften;
+                int evaluated;
+                try { best = Search(state, out evaluated); }
+                finally { EcoSimulator.CrowdSoftening = softenWas; }
                 long ms = (System.Diagnostics.Stopwatch.GetTimestamp() - ts) * 1000L
                         / System.Diagnostics.Stopwatch.Frequency;
                 if (best == null)
