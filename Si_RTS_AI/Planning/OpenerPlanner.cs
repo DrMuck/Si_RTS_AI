@@ -1076,6 +1076,8 @@ namespace Si_RTS_AI.Planning
             public long  BioticsTapped;
             public float ReserveBonus;
             public bool  DoubledCyst;
+            /// <summary>Index into SiteIdx of the site taking the second Cyst.</summary>
+            public int   DoubledAt;
             public float TerminalValue;
             /// <summary>Rollout time at which each site finished being placed —
             /// the number the tail's rate projection silently assumed was 0 for
@@ -1087,7 +1089,7 @@ namespace Si_RTS_AI.Planning
             {
                 var sb = new System.Text.StringBuilder();
                 sb.Append("sites=").Append(SiteIdx.Count)
-                  .Append(" cysts=").Append(CystCount).Append(DoubledCyst ? "(2x1site)" : "")
+                  .Append(" cysts=").Append(CystCount).Append(DoubledCyst ? "(2x@" + (int)MapProfile.Sites[SiteIdx[DoubledAt]].DistFromNest + "m)" : "")
                   .Append(" nodes=").Append(TotalNodes)
                   .Append(" cost=").Append(CostCash)
                   .Append(" income@").Append((int)SCORE_HORIZON_S).Append("s=").Append(IncomeToHandoff)
@@ -1309,13 +1311,25 @@ namespace Si_RTS_AI.Planning
                     int cystMax = chosen.Count + (DoubleCystEnabled ? 1 : 0);
                     for (int cysts = 2; cysts <= cystMax; cysts++)
                     {
-                        var p = Evaluate(root, chosen, cysts);
-                        evalCount++;
-                        if (p == null) continue;
-                        Consider(p);
-                        if (p.DoubledCyst) { if (bestDoubled == null || p.Score > bestDoubled.Score) bestDoubled = p; }
-                        else               { if (bestSingle  == null || p.Score > bestSingle.Score)  bestSingle  = p; }
-                        if (best == null || p.Score > best.Score) best = p;
+                        // For a doubled plan, try the second Cyst on each of
+                        // the two NEAREST sites and let the rollout choose.
+                        // Bounded at two on purpose: those are the sites already
+                        // reachable and productive early, it is the comparison
+                        // DrMuck actually asked about, and opening it to every
+                        // site would take the search from 728 evaluations to
+                        // ~1,270 on a tick that has already been seen at 3.9s.
+                        bool doubling = cysts > chosen.Count;
+                        int dTries = doubling ? Mathf.Min(2, chosen.Count) : 1;
+                        for (int d = 0; d < dTries; d++)
+                        {
+                            var p = Evaluate(root, chosen, cysts, d);
+                            evalCount++;
+                            if (p == null) continue;
+                            Consider(p);
+                            if (p.DoubledCyst) { if (bestDoubled == null || p.Score > bestDoubled.Score) bestDoubled = p; }
+                            else               { if (bestSingle  == null || p.Score > bestSingle.Score)  bestSingle  = p; }
+                            if (best == null || p.Score > best.Score) best = p;
+                        }
                     }
                     return;
                 }
@@ -1374,7 +1388,7 @@ namespace Si_RTS_AI.Planning
         /// times and reaches the live planner reads off the game, so the score
         /// is directly comparable to the beam's.
         /// </summary>
-        static Plan Evaluate(EcoState root, List<int> siteIdx, int cystCount)
+        static Plan Evaluate(EcoState root, List<int> siteIdx, int cystCount, int doubleAt = 0)
         {
             var s = root.Clone();
             var plan = new Plan { CystCount = cystCount };
@@ -1560,7 +1574,17 @@ namespace Si_RTS_AI.Planning
             {
                 if (!AdvanceUntilBcFinished(s)) return null;
                 if (!Afford(s, EcoSimulator.CYST_COST)) return null;
-                var site0 = MapProfile.Sites[siteIdx[0]];
+                // WHICH SITE TAKES THE SECOND CYST IS A CHOICE, NOT SLOT 0.
+                //
+                // It was hardcoded to the nearest site and never compared
+                // against the alternative. DrMuck, 2026-08-10: the second
+                // nearest may be better because its shrimps can relocate onto
+                // untapped ground while a further site is still being tapped --
+                // the doubled Cyst is a shrimp SOURCE, so where those shrimps
+                // can go next is part of its value, not just what it stands on.
+                int dIdx = Mathf.Clamp(doubleAt, 0, siteIdx.Count - 1);
+                plan.DoubledAt = dIdx;
+                var site0 = MapProfile.Sites[siteIdx[dIdx]];
                 Vector3 bc0 = OffsetFromSite(s, site0.Centroid, BC_PATCH_STANDOFF_M);
                 // Mirror the usual offset so the two Cysts do not contend for
                 // the same ground in the placement search.
