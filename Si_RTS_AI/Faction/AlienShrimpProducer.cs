@@ -475,7 +475,7 @@ namespace Si_RTS_AI.Faction
                             $"blocked: teamCap={_blockedTeamCap} bcCap={_blockedBcCap} " +
                             $"alreadyBusy={_busy} refused={_refused}" +
                             (_blockedBcCap > 0
-                                ? $" | remoteFree raw={_remoteFreeRaw} transit={_remoteFreeTransit}"
+                                ? $" | remoteFree raw={_remoteFreeRaw} transit={_remoteFreeTransit} nearest={_remoteFreeNearestM}m"
                                 : ""));
             ResetCounters();
         }
@@ -483,7 +483,7 @@ namespace Si_RTS_AI.Faction
         static void ResetCounters()
         {
             _blockedTeamCap = _blockedBcCap = _busy = _refused = 0;
-            _remoteFreeRaw = _remoteFreeTransit = 0;
+            _remoteFreeRaw = _remoteFreeTransit = 0; _remoteFreeNearestM = -1;
         }
 
         // ---- REMOTE DEMAND, MEASURED BUT NOT YET ACTED ON ------------------
@@ -515,23 +515,35 @@ namespace Si_RTS_AI.Faction
         // raised exactly this: "need to see if the production demand does not
         // conflict with shrimp pile up manager".
         static int _remoteFreeRaw, _remoteFreeTransit;
+        static int _remoteFreeNearestM = -1;
 
         static void NoteRemoteDemand(List<BcInfo> bcs, int selfIdx)
         {
             try
             {
-                float reachM = Planning.EcoSimulator.SHRIMP_SPEED
-                             * Planning.ShrimpGroupPlanner.FreeAgentMaxWalkS;
-                float reachSq = reachM * reachM;
+                // NO RADIUS FILTER. The first version of this bounded the scan
+                // by SHRIMP_SPEED x FreeAgentMaxWalkS -- 30s of walking, 270m --
+                // and reported raw=0 on every tick with bcCap up to 16. That was
+                // the radius answering, not the demand: Bio Caches sit 200-700m
+                // apart, so almost nothing is ever inside 270m.
+                //
+                // The delivery path does not use that radius. The relocator's
+                // SPILL sends over-capacity shrimps to untapped ground with
+                // pileUpMaxDetourM defaulting to 0, which means no distance
+                // limit at all. Meanwhile the shrimp manager was reporting
+                // "shrimps=66 groups=13 used=9 empty=4 totalCap=119" -- four
+                // empty groups and 53 free slots -- while producers sat blocked.
+                //
+                // So scan the whole team and report how FAR the nearest free
+                // capacity is, rather than pretending anything past 270m does
+                // not exist.
                 int perDest = Math.Max(1, Planning.RtsaiConfig.Int("pileUpMaxPerPatch", 10));
                 var from = bcs[selfIdx].Pos;
 
-                int raw = 0, transit = 0;
+                int raw = 0, transit = 0; float nearestFreeSq = float.MaxValue;
                 for (int i = 0; i < bcs.Count; i++)
                 {
                     if (i == selfIdx) continue;
-                    float dx = bcs[i].Pos.x - from.x, dz = bcs[i].Pos.z - from.z;
-                    if (dx * dx + dz * dz > reachSq) continue;
 
                     int capI = PER_BC_CAP;
                     try { capI = Math.Min(PER_BC_CAP,
@@ -541,9 +553,18 @@ namespace Si_RTS_AI.Faction
 
                     raw     += free;
                     transit += Math.Min(free, perDest);
+
+                    float dx = bcs[i].Pos.x - from.x, dz = bcs[i].Pos.z - from.z;
+                    float dsq = dx * dx + dz * dz;
+                    if (dsq < nearestFreeSq) nearestFreeSq = dsq;
                 }
                 if (raw     > _remoteFreeRaw)     _remoteFreeRaw     = raw;
                 if (transit > _remoteFreeTransit) _remoteFreeTransit = transit;
+                if (nearestFreeSq < float.MaxValue)
+                {
+                    int m = (int)Math.Sqrt(nearestFreeSq);
+                    if (_remoteFreeNearestM < 0 || m < _remoteFreeNearestM) _remoteFreeNearestM = m;
+                }
             }
             catch { }
         }
