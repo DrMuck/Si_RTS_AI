@@ -411,9 +411,40 @@ namespace Si_RTS_AI.Faction
                 try { cap = Math.Min(PER_BC_CAP, Planning.ShrimpGroupPlanner.CapacityForNearestBc(bc.Pos)); } catch { }
                 if (bc.NearbyLive + bc.QueuedForHere >= cap)
                 {
-                    Skipped++; _blockedBcCap++;
+                    // KEEP PUMPING FOR GROUND SOMEONE ELSE IS SHORT OF.
+                    //
+                    // A Cyst used to stop the moment its OWN Bio Cache filled,
+                    // which is why production collapsed the instant the
+                    // blueprint started adding sites -- 93% of nominal at three
+                    // producers, 23-30% at eight, with bcCap climbing to 26.
+                    // Every added producer made it worse, because each one only
+                    // ever asked about the Bio Cache beside it.
+                    //
+                    // The delivery half already worked: ShrimpGroupPlanner
+                    // spills over-capacity shrimps onto untapped ground and
+                    // pileUpMaxDetourM defaults to 0, meaning no distance limit.
+                    // The producer simply never made a surplus to spill.
+                    //
+                    // Measured before enabling, NarakaCity 2026-08-11:
+                    //     bcCap=27  remoteFree raw=68 transit=68 nearest=446m
+                    //     bcCap=36  remoteFree raw=59 transit=59 nearest=446m
+                    // ~60 free worker slots team-wide while producers idled, and
+                    // transit == raw, so pileUpMaxPerPatch never binds -- the
+                    // free capacity is spread thin, not concentrated. That was
+                    // the conflict DrMuck asked to rule out, and it is ruled out.
+                    //
+                    // But nearest free capacity was 377-446m, about 45s of
+                    // walking, so this is NOT unconditional. A shrimp is only
+                    // worth 160 credits if it reaches work in time, hence the
+                    // walk budget.
                     NoteRemoteDemand(bcs, nearestBcIdx);
-                    continue;
+                    if (!RemoteSupplyEnabled ||
+                        !HasRemoteDemand(bcs, nearestBcIdx, RemoteSupplyMaxWalkS))
+                    {
+                        Skipped++; _blockedBcCap++;
+                        continue;
+                    }
+                    _remoteSupplied++;
                 }
 
                 // Per-Cyst queue-depth check — keeps cash-reservation shallow.
@@ -474,8 +505,9 @@ namespace Si_RTS_AI.Faction
                             $"live={live} queued={queued} cap={cap} | " +
                             $"blocked: teamCap={_blockedTeamCap} bcCap={_blockedBcCap} " +
                             $"alreadyBusy={_busy} refused={_refused}" +
-                            (_blockedBcCap > 0
-                                ? $" | remoteFree raw={_remoteFreeRaw} transit={_remoteFreeTransit} nearest={_remoteFreeNearestM}m"
+                            (_blockedBcCap > 0 || _remoteSupplied > 0
+                                ? $" | remoteFree raw={_remoteFreeRaw} transit={_remoteFreeTransit} nearest={_remoteFreeNearestM}m" +
+                                  $" supplied={_remoteSupplied}"
                                 : ""));
             ResetCounters();
         }
@@ -483,7 +515,7 @@ namespace Si_RTS_AI.Faction
         static void ResetCounters()
         {
             _blockedTeamCap = _blockedBcCap = _busy = _refused = 0;
-            _remoteFreeRaw = _remoteFreeTransit = 0; _remoteFreeNearestM = -1;
+            _remoteFreeRaw = _remoteFreeTransit = 0; _remoteFreeNearestM = -1; _remoteSupplied = 0;
         }
 
         // ---- REMOTE DEMAND, MEASURED BUT NOT YET ACTED ON ------------------
@@ -515,6 +547,50 @@ namespace Si_RTS_AI.Faction
         // raised exactly this: "need to see if the production demand does not
         // conflict with shrimp pile up manager".
         static int _remoteFreeRaw, _remoteFreeTransit;
+        static int _remoteSupplied;
+
+        /// <summary>May a Cyst keep producing when its own Bio Cache is full,
+        /// for capacity elsewhere the relocator can reach? rtsai.json,
+        /// live-reloaded, default off.</summary>
+        static bool RemoteSupplyEnabled
+            => Planning.RtsaiConfig.Bool("remoteSupplyEnabled", false);
+
+        /// <summary>How far, in seconds of walking, free capacity may be and
+        /// still count as demand. 60s at 9 m/s is about 540m -- past the
+        /// 377-446m the nearest free slots measured at, and short enough that
+        /// the shrimp still works for most of the horizon.</summary>
+        static float RemoteSupplyMaxWalkS
+            => Planning.RtsaiConfig.Float("remoteSupplyMaxWalkS", 60f);
+
+        /// <summary>Is there free worker capacity within the walk budget, and
+        /// can the relocator actually be moving shrimps toward it? Bounded per
+        /// destination by pileUpMaxPerPatch so production cannot outrun
+        /// delivery even if the spread changes.</summary>
+        static bool HasRemoteDemand(List<BcInfo> bcs, int selfIdx, float maxWalkS)
+        {
+            try
+            {
+                float reachM = Planning.EcoSimulator.SHRIMP_SPEED * Math.Max(1f, maxWalkS);
+                float reachSq = reachM * reachM;
+                int perDest = Math.Max(1, Planning.RtsaiConfig.Int("pileUpMaxPerPatch", 10));
+                var from = bcs[selfIdx].Pos;
+
+                for (int i = 0; i < bcs.Count; i++)
+                {
+                    if (i == selfIdx) continue;
+                    float dx = bcs[i].Pos.x - from.x, dz = bcs[i].Pos.z - from.z;
+                    if (dx * dx + dz * dz > reachSq) continue;
+
+                    int capI = PER_BC_CAP;
+                    try { capI = Math.Min(PER_BC_CAP,
+                            Planning.ShrimpGroupPlanner.CapacityForNearestBc(bcs[i].Pos)); } catch { }
+                    int free = Math.Min(capI - (bcs[i].NearbyLive + bcs[i].QueuedForHere), perDest);
+                    if (free > 0) return true;
+                }
+            }
+            catch { }
+            return false;
+        }
         static int _remoteFreeNearestM = -1;
 
         static void NoteRemoteDemand(List<BcInfo> bcs, int selfIdx)
