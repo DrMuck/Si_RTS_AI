@@ -394,3 +394,41 @@ function both callers use.
 
 Deliberately deferred: it moves the routing model underneath a scoring model
 only just made honest, and the two changes should not land together.
+
+---
+
+## 2c. Producers stop pumping while distant ground goes unstaffed
+
+DrMuck, co-op round 2026-08-11: Lesser Cysts at (2345.6,811.5) and
+(2260.6,1885.4) stopped producing shrimps although they could have kept going,
+while (2572.4,2149.9) and (1999.2,2181.4) sat unworked. "They could feed other
+biotics more far away."
+
+`AlienShrimpProducer` gates production on LOCAL demand -- `workerCapPerBioCache`
+is 10, and `SHRIMP/PROD` reports `blocked: bcCap=N` steadily from ~t=400s. So a
+Cyst whose own Bio Cache is full stops, even though the team has ground nobody
+is working and shrimps can walk.
+
+This is the same blind spot as 2b seen from the other side. 2b is "the planner
+adds Cysts it does not need because it cannot see migration". This is "the
+producers it already has go idle because they cannot see demand beyond their own
+Bio Cache". One missing concept -- surplus production as a relocatable supply --
+causes both.
+
+**Fix shape:** production demand should be team-wide, not per Bio Cache. A
+producer at its local cap keeps going while any reachable site is understaffed,
+and the relocator moves the surplus.
+
+---
+
+## 17. Slow start observations, co-op 2026-08-11
+
+Not yet diagnosed, recorded so they are not lost:
+
+- Shrimp production at (2349.9,807.1) started **very** late.
+- Tech was not up before 4 minutes.
+- "The expansion and noding south hurt here" -- the southern chain again, same
+  shape as the 90s Bio Cache hold and the 99s cash starve.
+- The RTSA layer viewer's map time may not line up with in-game time as seen
+  from a client. Worth checking before trusting any timing read off the viewer;
+  every timing conclusion in this file comes from log timestamps, not the viewer.
