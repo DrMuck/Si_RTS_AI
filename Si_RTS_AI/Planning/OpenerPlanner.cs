@@ -571,7 +571,28 @@ namespace Si_RTS_AI.Planning
                     if (NearestStructurePos(team, "Bio Cache", _queue[i].Goal, 400f,
                                             out Vector3 realBc))
                     {
-                        Vector3 aimed = OffsetCystBeside(_queue[i].Goal, realBc, CYST_BESIDE_M);
+                        // KEEP THE SIDE THE PLAN CHOSE.
+                        //
+                        // Evaluate puts a doubled pair on OPPOSITE sides of one
+                        // Bio Cache: +CYST_BESIDE_M for the first, -CYST_BESIDE_M
+                        // for the second. v0.83.0 recomputed with + for every
+                        // step, which swung the doubled Cyst onto its sibling's
+                        // side. NarakaCity 2026-08-11: step 9 retargeted
+                        // (2688,1138) -> (2634,1093), three metres from the Cyst
+                        // step 2 had just built at (2635,1090), and was
+                        // immediately confirmed as already-there. So the fix for
+                        // the Bio Cache swap broke the doubling instead.
+                        //
+                        // Which side is not knowable from the Bio Cache alone,
+                        // but the step's own target still remembers it: take
+                        // whichever offset lands nearer to where the plan aimed.
+                        Vector3 plusSide  = OffsetCystBeside(_queue[i].Goal, realBc,  CYST_BESIDE_M);
+                        Vector3 minusSide = OffsetCystBeside(_queue[i].Goal, realBc, -CYST_BESIDE_M);
+                        float dp = (plusSide.x  - _queue[i].Target.x) * (plusSide.x  - _queue[i].Target.x)
+                                 + (plusSide.z  - _queue[i].Target.z) * (plusSide.z  - _queue[i].Target.z);
+                        float dm = (minusSide.x - _queue[i].Target.x) * (minusSide.x - _queue[i].Target.x)
+                                 + (minusSide.z - _queue[i].Target.z) * (minusSide.z - _queue[i].Target.z);
+                        Vector3 aimed = dp <= dm ? plusSide : minusSide;
                         float dx0 = aimed.x - _queue[i].Target.x, dz0 = aimed.z - _queue[i].Target.z;
                         if (dx0 * dx0 + dz0 * dz0 > 25f * 25f)
                         {
