@@ -97,7 +97,26 @@ namespace Si_RTS_AI.Faction
         /// shrimps per minute." With a depth of one, no — with two, the next
         /// shrimp is already queued when the current one finishes.
         /// </summary>
-        const float CYST_QUEUE_MAX = 2;
+        const int CYST_QUEUE_MAX_DEFAULT = 2;
+
+        /// <summary>
+        /// Queue depth allowed per Cyst, EXCLUDING the one already building.
+        ///
+        /// The constant was 2 and the intent above was "two in the Cyst: one
+        /// building, one waiting". But Structure.ProductionQueue does not count
+        /// the unit currently under construction, so >= 2 permitted two QUEUED
+        /// on top of one in progress. DrMuck, watching a co-op round: "I see in
+        /// some cyst 3 shrimps piling up... third one is added while the one
+        /// building is at 1/3 build progress."
+        ///
+        /// So 1 gives what the comment always described: one building, one
+        /// queued behind it, no gap when the first finishes and no third
+        /// shrimp's 160 credits frozen two builds ahead.
+        ///
+        /// Live from rtsai.json as cystQueueMax.
+        /// </summary>
+        static int CystQueueMax
+            => Math.Max(1, Planning.RtsaiConfig.Int("cystQueueMax", CYST_QUEUE_MAX_DEFAULT));
 
         // Called every AI tick. Cache _shrimpCd lazily.
         static ConstructionData? _shrimpCd;
@@ -450,7 +469,7 @@ namespace Si_RTS_AI.Faction
                 // Per-Cyst queue-depth check — keeps cash-reservation shallow.
                 int queueDepth = 0;
                 try { queueDepth = s.ProductionQueue?.Count ?? 0; } catch { }
-                if (queueDepth >= CYST_QUEUE_MAX)
+                if (queueDepth >= CystQueueMax)
                 {
                     Skipped++; _busy++;
                     continue;
