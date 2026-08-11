@@ -412,6 +412,7 @@ namespace Si_RTS_AI.Faction
                 if (bc.NearbyLive + bc.QueuedForHere >= cap)
                 {
                     Skipped++; _blockedBcCap++;
+                    NoteRemoteDemand(bcs, nearestBcIdx);
                     continue;
                 }
 
@@ -472,12 +473,80 @@ namespace Si_RTS_AI.Faction
                             $"({(ceiling > 0f ? perMin / ceiling * 100f : 0f):F0}%) — " +
                             $"live={live} queued={queued} cap={cap} | " +
                             $"blocked: teamCap={_blockedTeamCap} bcCap={_blockedBcCap} " +
-                            $"alreadyBusy={_busy} refused={_refused}");
+                            $"alreadyBusy={_busy} refused={_refused}" +
+                            (_blockedBcCap > 0
+                                ? $" | remoteFree raw={_remoteFreeRaw} transit={_remoteFreeTransit}"
+                                : ""));
             ResetCounters();
         }
 
         static void ResetCounters()
-        { _blockedTeamCap = _blockedBcCap = _busy = _refused = 0; }
+        {
+            _blockedTeamCap = _blockedBcCap = _busy = _refused = 0;
+            _remoteFreeRaw = _remoteFreeTransit = 0;
+        }
+
+        // ---- REMOTE DEMAND, MEASURED BUT NOT YET ACTED ON ------------------
+        //
+        // A Cyst stops the moment ITS OWN nearest Bio Cache is full. It never
+        // asks whether anywhere else needs shrimps, so production collapses
+        // exactly when the blueprint starts adding sites -- NarakaCity
+        // 2026-08-11, 93% of nominal at 3 producers before blueprint rev=1,
+        // then 23-35% at 4-8 producers, with bcCap climbing 0 -> 26.
+        //
+        // The relocator would carry the surplus: it already spills over-capacity
+        // shrimps onto untapped ground, and pileUpMaxDetourM defaults to 0
+        // meaning NO distance limit. So the delivery half works; the producer
+        // never creates anything to deliver.
+        //
+        // Before opening that tap, measure what it would open it BY. Two
+        // numbers, because they can differ a lot:
+        //
+        //   raw      free capacity at other Bio Caches within a free agent's
+        //            walk, ignoring how fast the relocator can actually move
+        //            shrimps there.
+        //   transit  the same, but each destination capped at pileUpMaxPerPatch
+        //            -- the number the relocator may have walking toward one
+        //            place at once. Production above this outruns delivery and
+        //            just queues shrimps at the source at 160 credits each.
+        //
+        // If raw is large and transit is near zero, the capacity is real but
+        // unreachable in time and opening the tap would burn cash. DrMuck
+        // raised exactly this: "need to see if the production demand does not
+        // conflict with shrimp pile up manager".
+        static int _remoteFreeRaw, _remoteFreeTransit;
+
+        static void NoteRemoteDemand(List<BcInfo> bcs, int selfIdx)
+        {
+            try
+            {
+                float reachM = Planning.EcoSimulator.SHRIMP_SPEED
+                             * Planning.ShrimpGroupPlanner.FreeAgentMaxWalkS;
+                float reachSq = reachM * reachM;
+                int perDest = Math.Max(1, Planning.RtsaiConfig.Int("pileUpMaxPerPatch", 10));
+                var from = bcs[selfIdx].Pos;
+
+                int raw = 0, transit = 0;
+                for (int i = 0; i < bcs.Count; i++)
+                {
+                    if (i == selfIdx) continue;
+                    float dx = bcs[i].Pos.x - from.x, dz = bcs[i].Pos.z - from.z;
+                    if (dx * dx + dz * dz > reachSq) continue;
+
+                    int capI = PER_BC_CAP;
+                    try { capI = Math.Min(PER_BC_CAP,
+                            Planning.ShrimpGroupPlanner.CapacityForNearestBc(bcs[i].Pos)); } catch { }
+                    int free = capI - (bcs[i].NearbyLive + bcs[i].QueuedForHere);
+                    if (free <= 0) continue;
+
+                    raw     += free;
+                    transit += Math.Min(free, perDest);
+                }
+                if (raw     > _remoteFreeRaw)     _remoteFreeRaw     = raw;
+                if (transit > _remoteFreeTransit) _remoteFreeTransit = transit;
+            }
+            catch { }
+        }
 
         static void EnsureShrimpCd(Team team)
         {
