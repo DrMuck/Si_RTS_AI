@@ -35,7 +35,20 @@ namespace Si_RTS_AI.Perception.MapLayers
         static string _roundDir = "";
         static int    _frameIndex;
         static float  _lastSnapshotTime = -1f;
+        // 0 = round hasn't started yet. Set when MissionState flips to STARTED,
+        // NOT at scene load — the pre-round lobby/countdown can sit at INIT for
+        // minutes and used to be billed to t, so every timeline (build order,
+        // opener gates, eco curves, kill log) was offset by however long the
+        // lobby happened to last.
         static float  _roundStartTime;
+        static float  _sceneLoadedAt;
+        static bool   _roundStarted;
+
+        // Only used when MissionState is unreadable (non-MP_Strategy mode, or the
+        // game object isn't up yet). Never fires while we CAN read the state and it
+        // simply says INIT — a real server waiting for players must not start the
+        // clock early.
+        const float UNREADABLE_FALLBACK_SEC = 60f;
 
         // ---- In-memory catalog for TelemetryServer ----
         public sealed class CatalogEntry
@@ -57,7 +70,17 @@ namespace Si_RTS_AI.Perception.MapLayers
         static readonly object _cacheLock = new object();
 
         public static string CurrentMap { get; private set; } = "";
-        public static float  CurrentRoundTime => _roundStartTime > 0 ? Time.time - _roundStartTime : 0f;
+
+        /// <summary>
+        /// Seconds since the round actually STARTED (0 during the pre-round lobby
+        /// and countdown). This is the mod-wide round clock — build timeline,
+        /// opener/scout gates, eco samplers, combat log and the telemetry viewer
+        /// all read it, so they stay on one shared t.
+        /// </summary>
+        public static float  CurrentRoundTime => _roundStarted ? Time.time - _roundStartTime : 0f;
+
+        /// <summary>False while the map is loaded but the round hasn't begun.</summary>
+        public static bool   RoundStarted => _roundStarted;
 
         static string KeyOf(string team, string layer) => team + "/" + layer;
 
@@ -83,7 +106,10 @@ namespace Si_RTS_AI.Perception.MapLayers
             {
                 _frameIndex = 0;
                 _lastSnapshotTime = -SNAPSHOT_INTERVAL_SEC;
-                _roundStartTime = Time.time;
+                // Arm, don't start: TickRoundClock() starts t when the round does.
+                _roundStartTime = 0f;
+                _roundStarted   = false;
+                _sceneLoadedAt  = Time.time;
                 CurrentMap = mapName ?? "?";
 
                 lock (_cacheLock)
@@ -116,6 +142,55 @@ namespace Si_RTS_AI.Perception.MapLayers
             catch (Exception ex) { MelonLogger.Warning("[RTSA/Layers] Replay init threw: " + ex.Message); _roundDir = ""; }
         }
 
+        /// <summary>
+        /// Called every frame from OnUpdate. Starts the round clock the first frame
+        /// the game reports the round as running. Costs one branch once the clock is
+        /// running, so it's fine on the frame path.
+        /// </summary>
+        public static void TickRoundClock()
+        {
+            if (_roundStarted) return;
+
+            bool readable = false;
+            bool active   = false;
+            try
+            {
+                var gm = GameMode.CurrentGameMode;
+                if (gm != null)
+                {
+                    // MP_Strategy is the RTS mode we care about; MissionState is the
+                    // authoritative INIT -> STARTED -> ENDED signal (the same one the
+                    // test harness watches). Other modes only expose GameOngoing.
+                    var mp = gm as MP_Strategy;
+                    readable = true;
+                    active = mp != null
+                        ? mp.MissionState == GameModeExt.EMissionState.STARTED
+                        : gm.GameOngoing;
+                }
+            }
+            catch { readable = false; }
+
+            if (readable && active)
+            {
+                MarkRoundStarted("MissionState=STARTED");
+                return;
+            }
+
+            if (!readable && _sceneLoadedAt > 0f &&
+                Time.time - _sceneLoadedAt >= UNREADABLE_FALLBACK_SEC)
+            {
+                MarkRoundStarted($"fallback — mission state unreadable for {UNREADABLE_FALLBACK_SEC:F0}s");
+            }
+        }
+
+        static void MarkRoundStarted(string reason)
+        {
+            _roundStarted   = true;
+            _roundStartTime = Time.time;
+            float lobby = _sceneLoadedAt > 0f ? Time.time - _sceneLoadedAt : 0f;
+            MelonLogger.Msg($"[RTSA/Layers] Round clock t=0 ({reason}); {lobby:F1}s of pre-round excluded.");
+        }
+
         public static void MaybeSnapshot(int tickNo, Team team)
         {
             if (team == null) return;
@@ -123,7 +198,7 @@ namespace Si_RTS_AI.Perception.MapLayers
             float now = Time.time;
             if (now - _lastSnapshotTime < SNAPSHOT_INTERVAL_SEC) return;
             _lastSnapshotTime = now;
-            float roundTime = now - _roundStartTime;
+            float roundTime = CurrentRoundTime;
 
             string teamName = SafeTeamName(team);
 
@@ -160,7 +235,7 @@ namespace Si_RTS_AI.Perception.MapLayers
             // is only bumped inside MaybeSnapshot when the interval elapsed, so
             // requiring now == _lastSnapshotTime aligns Human snapshots with Alien.
             if (now - _lastSnapshotTime > 0.001f) return;   // Alien didn't snap this tick — skip
-            float roundTime = now - _roundStartTime;
+            float roundTime = CurrentRoundTime;
             string teamName = SafeTeamName(team);
 
             try
