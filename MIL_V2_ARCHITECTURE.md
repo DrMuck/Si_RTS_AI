@@ -242,6 +242,69 @@ the largest claim in the table and the least trustworthy — infantry stands in
 numbers at defended bases, and the model cannot separate *is good* from *is
 present when things go well*.
 
+### 4b. Counters decide the PRICE of a fight, not the winner
+
+Letting each unit's weight depend on the enemy's class mix — the game's own
+factories as the taxonomy, ~400 counter terms, nested so that zeroing them
+recovers §4a exactly:
+
+| subset | cash | flat weights | counter-aware | in-sample |
+|---|---|---|---|---|
+| all | 82.6% | 83.4% | 83.6% | 84.2% |
+| AI vs AI | 84.6% | 86.1% | **86.5%** | 88.8% |
+| skilled | 81.9% | 82.6% | 82.6% | 83.4% |
+
+**Nothing.** +0.0 to +0.4 points held-out at every regularisation strength, while
+in-sample climbs — the shape of overfitting, not of a finding.
+
+And it is not for want of contrast in the data. 48% of sides are more than 80%
+a single class, and the mean mix distance between two sides of a fight is 1.59
+out of a possible 2.0. The compositions vary enormously; the win outcome just
+does not care.
+
+**But that was the wrong target.** A counter's classic payoff is not winning a
+fight it would otherwise lose — it is winning the *same* fight for less. So the
+test was rerun against `log(lossA/lossB)`, with an antisymmetric class-matchup
+block on top of the force ratio (ridge, out-of-sample R², split by replay):
+
+| subset | force ratio only | + matchup block | |
+|---|---|---|---|
+| decisive | +0.166 | **+0.210** | +27% relative |
+| decisive, AI vs AI | +0.243 | **+0.282** | +16% relative |
+| every fight | −0.000 | +0.036 | force ratio explains nothing here |
+
+There they are. And the structure is readable rather than a black box —
+negative means the first class loses less:
+
+| matchup | coefficient | reading |
+|---|---|---|
+| Infantry vs Light | **−2.44** | infantry shreds light vehicles |
+| Infantry vs Air | −2.08 | infantry beats aircraft |
+| Heavy vs Lesser | **+1.58** | tanks bleed against cheap alien swarm |
+| Air vs Lesser | +1.25 | aircraft bleed against Lesser Cyst units |
+| Infantry vs Greater | −1.16 | |
+
+The Lesser rows are the check that this is real: `rtsai_units.json`, built from
+kill counts by an entirely different method, independently prices Squid against
+Air at 6.68 and Shocker against Air at 5.27. Two methods that share no code
+agree that cheap Lesser-Cyst units are the anti-air answer. The exchange
+exponent also lands at 0.55 (0.77 AI-vs-AI), matching the 0.50/0.64 measured
+directly in §4.
+
+**What this settles, architecturally.** The two decisions want different models
+and should stop sharing one:
+
+- **Whether to commit** — force ratio and the flat weights. Composition adds
+  nothing, so `p_win ≥ theta` sizes a force from effective cash and no counter
+  table is needed. Simpler than planned.
+- **What to build** — the counter matrix, because it sets what winning costs.
+  This is where `UnitPrior` and the production queue should read, and it is the
+  only place the counter data has earned the right to be used.
+
+Reading a counter table into the commit decision would be adding a parameter
+that measurably does not help. Reading force ratio into production would throw
+away the one thing that does.
+
 ## 5. The combat kernel (L1)
 
 One function, called from both languages, reading one JSON.
@@ -339,14 +402,8 @@ Each step ships logging-only or default-off, and **one change per round**.
 0. **`mil_sim` engagement dataset.** *Done — 21,845 fights, §4.*
 1. **Fit and validate the kernel offline.** *Done — §4a. It passes, narrowly,
    and the interesting output is not the accuracy.*
-1b. **A counter-aware kernel**, before anything ships. The average weight is
-   worth +1.5 points; the thing the planner actually wants is *w per unit per
-   enemy class*, which this model structurally cannot express and which is
-   where the remaining signal has to be. Same data, cut by the enemy mix
-   already recorded in each row. If that does not lift materially either, the
-   honest conclusion is that composition matters less than concentration in
-   this game and the planner should spend its attention on where to fight
-   rather than what to build.
+1b. **Counter-aware kernel.** *Done — §4b. It answers the fork, and the answer
+   splits: counters do not decide who wins, they decide what winning costs.*
 2. **Kernel in-game, shadow only.** It logs a prediction for every fight that
    happens; nothing consumes it. Read the log: were the predictions sane?
 3. **`price` from the kernel**, replacing `strengthMargin`. One constant dies.
