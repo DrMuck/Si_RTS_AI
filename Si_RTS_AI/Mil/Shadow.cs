@@ -126,24 +126,50 @@ namespace Si_RTS_AI.Mil
 
             if (rawCash <= 0) return;
 
-            // THEIRS IS NOT CONVERTED. MissionPlanner.EnemyEstimate is already
-            // in cash, and we have no per-unit breakdown of what we can see, so
-            // there is nothing to apply a multiplier to. Reporting the ratio as
-            // effective-over-raw would flatter us by exactly the amount our own
-            // multipliers exceed 1. Both sides are therefore RAW for the band,
-            // and effective is shown alongside so the gap is visible.
-            int theirs = Mathf.Max(0, MissionPlanner.EnemyEstimate);
+            // READ THREATMAP DIRECTLY, NOT MissionPlanner.EnemyEstimate.
+            //
+            // They are the same number — MeasureEnemy() assigns
+            // ThreatMap.TotalValue verbatim — but they are not equally
+            // available. MissionPlanner.Tick returns immediately unless
+            // military.enabled is true, so its EnemyEstimate reads 0 on exactly
+            // the rounds this module exists to describe: eco soaks with the
+            // military layer switched off. The band line would have gone
+            // silently missing and looked like "nothing seen" rather than like
+            // a wiring fault.
+            //
+            // ThreatMap.Observe/Tick run before the FactionControl gate and are
+            // unconditional, so this works whatever the military layer is doing.
+            //
+            // THEIRS IS NOT CONVERTED to effective cash. We have no per-unit
+            // breakdown of what we can see, so there is nothing to apply a
+            // multiplier to. Reporting ours-effective over theirs-raw would
+            // flatter us by exactly the amount our own multipliers exceed 1.
+            // Both sides are RAW for the band; effective is printed alongside
+            // so the gap is visible.
+            int theirs = 0;
+            try { theirs = Mathf.Max(0, Perception.ThreatMap.TotalValue); } catch { }
             float ratio = theirs > 0 ? (float)rawCash / theirs : float.PositiveInfinity;
             var band = Doctrine.Classify(ratio);
 
             float lift = effective / Mathf.Max(1, rawCash);
             string ratioTxt = theirs > 0 ? $"{ratio:F2}x" : "n/a (nothing seen)";
 
+            string mix = "";
+            try { mix = Perception.ThreatMap.EnemyMixSummary() ?? ""; } catch { }
             MelonLogger.Msg($"[MIL/SHADOW force] t={minutes:F1}m ours={rawCash} cash " +
                             $"(effective {effective:F0}, x{lift:F2}) theirs~{theirs} " +
-                            $"| ratio {ratioTxt}");
+                            $"| ratio {ratioTxt}" +
+                            (mix.Length > 0 ? $" | seen: {mix}" : ""));
 
-            if (theirs <= 0) return;
+            if (theirs <= 0)
+            {
+                // Not a fault: it means nothing enemy is inside the threat field
+                // yet. Said explicitly so a quiet log is not mistaken for a
+                // module that failed to start.
+                MelonLogger.Msg("[MIL/SHADOW band]  no enemy value in the threat " +
+                                "field yet — no ratio to band");
+                return;
+            }
 
             // The live rule and the measured one, side by side. PushMargin is a
             // requirement multiplier on their estimate; the doctrine is a band.
