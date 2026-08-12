@@ -349,6 +349,59 @@ needs no kernel at all — `p_win ≥ theta` with a high theta is the same
 statement. The kernel's remaining job is *sizing* — how much is 2× of that —
 which is what effective cash gives us.
 
+## 4d. What good commanders build, and when
+
+`tools/serverdata/build_phases.py`. 2,129 rounds joined to their replays,
+commanders identified from the log database, top quartile by Elo (>= 1,633).
+Cumulative mean per round; each checkpoint prints how many rounds were still
+alive so a thin late column is visible rather than quietly averaged.
+
+**Military cash share by class — the trajectory a planner can aim at:**
+
+| min | Alien: Lesser / Greater / Top | Sol & Cent: Inf / Light / Heavy / Air+Ultra |
+|---|---|---|
+| 5 | **94** / 3 / 2 | 55 / 8 / 5 / 30 |
+| 10 | 78 / 19 / 2 | 27 / **61** / 8 / 4 |
+| 15 | 56 / 35 / 9 | 18 / 46 / 29 / 8 |
+| 20 | 42 / 41 / 17 | 13 / 34 / 35 / 17 |
+| 30 | 29 / 44 / 27 | 9 / 25 / 36 / 30 |
+| 40 | 25 / **46** / 29 | 8 / 21 / 35 / **36** |
+
+Both human factions run within a couple of points of each other the whole way,
+which is worth knowing before we write a Sol or Centauri planner: **one build
+doctrine covers both.** The shape is the same on all three factions — cheap tier
+first, one tier up as the crossover, top tier late — and the crossover is around
+**minute 15-17**.
+
+**Alien structure timings, top quartile:**
+
+| | 5' | 10' | 15' | 20' | 30' | 40' |
+|---|---|---|---|---|---|---|
+| Node | 10.6 | 33.7 | 61.3 | 86.3 | 121.9 | 143.4 |
+| Bio Cache | 2.5 | 5.8 | 9.7 | 13.0 | 17.9 | 21.3 |
+| Lesser Cyst | 2.6 | 5.1 | 8.0 | 10.4 | 13.6 | 15.8 |
+| Greater Cyst | 0.1 | 1.1 | 2.5 | 3.8 | 5.9 | 7.7 |
+| Grand Cyst | . | 0.2 | 0.5 | 0.8 | 1.5 | 1.8 |
+| Quantum Cortex | **0.8** | 1.0 | 1.0 | 1.1 | 1.2 | 1.2 |
+| Hive Spire | . | 1.1 | 4.6 | 7.9 | 12.8 | 15.5 |
+
+Two things jump out. **The Quantum Cortex is up before minute 5** — strong
+commanders tech almost immediately. And **defence starts at minute 10** (Hive and
+Thorn Spires), not late, which is the opposite of treating towers as a
+late-game luxury.
+
+**Three independent lines now agree on the same production error.** Good
+commanders reach minute 40 with ~69 Shockers and ~35 Behemoths — roughly 2:1.
+`MILITARY_MODEL` §6 records our bot producing 255 Shockers to 41 Behemoths, about
+6:1. And §4a prices a Behemoth at 1.82x its cash, the best alien unit measured.
+Kill-count prior, engagement model and human build order disagree with our
+production and agree with each other: **build more Behemoths.**
+
+This is a prior to orient by and a target to measure against — not a script to
+follow. It says nothing about causation (Elo is the commander's final rating,
+so a player who improved is rated on their best form throughout), and a build
+that correlates with winning may be a symptom of winning.
+
 ## 5. The combat kernel (L1)
 
 One function, called from both languages, reading one JSON.
