@@ -323,8 +323,8 @@ def main():
                     help="archive but do not touch the server")
     ap.add_argument("--allow-dirty", action="store_true")
     ap.add_argument("--skip-tag-build", action="store_true",
-                    help="skip compiling the tag in a worktree; only for
-a machine where a second build is genuinely too slow")
+                    help="skip compiling the tag in a worktree; only for a "
+                         "machine where a second build is genuinely too slow")
     args = ap.parse_args()
 
     if args.list:
