@@ -178,18 +178,36 @@ def cut(args):
         print("  not deployed (--no-deploy)")
 
 
-def deploy_files(dll, cfg_dir, version):
+def deploy_files(dll, cfg_dir, version, retire_missing=False):
+    """
+    Put a build and its configs on the server.
+
+    `retire_missing` matters on a jump back and is the reason this function has
+    a flag at all. Copying files in does not take files OUT, so rolling from
+    v0.88.0 to v0.87.0 left `mil_doctrine.json` sitting in UserData — a file
+    that version has never heard of. Harmless in that instance because the
+    v0.87.0 DLL does not read it, and exactly the kind of thing that is not
+    harmless the third time it happens.
+
+    Retired files are RENAMED, never deleted. A rollback under pressure is the
+    worst moment to discover that a tool removed something.
+    """
     if not os.path.isdir(MODS):
         print(f"  ! server not found at {SERVER} — skipping deploy")
         return
     shutil.copy2(dll, os.path.join(MODS, "Si_RTS_AI.dll"))
-    n = 0
+    n = retired = 0
     for name, _ in CONFIGS:
         src = os.path.join(cfg_dir, name)
+        live = os.path.join(USERDATA, name)
         if os.path.exists(src):
-            shutil.copy2(src, os.path.join(USERDATA, name))
+            shutil.copy2(src, live)
             n += 1
-    print(f"  deployed {version}: DLL + {n} config files")
+        elif retire_missing and os.path.exists(live):
+            shutil.move(live, live + f".retired-by-{version}")
+            retired += 1
+    print(f"  deployed {version}: DLL + {n} config files"
+          + (f", {retired} renamed aside (this version had none)" if retired else ""))
     print("  (restart the server — MelonLoader loads mods at start)")
 
 
@@ -231,7 +249,10 @@ def jump(args):
         print(f"  ! no config snapshot for {version} — deploying the DLL only. "
               f"Behaviour depends on rtsai.json too; check it matches the era.")
         cfg_dir = None
-    deploy_files(dll, cfg_dir or os.path.join(ARCHIVE, "__none__"), version)
+    # retire_missing on purpose: a jump back should leave the server holding
+    # what that version had, not a union of it and everything since.
+    deploy_files(dll, cfg_dir or os.path.join(ARCHIVE, "__none__"), version,
+                 retire_missing=True)
 
 
 def show(args):

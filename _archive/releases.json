@@ -1,0 +1,28 @@
+{
+ "releases": {
+  "v0.87.0": {
+   "commit": "2ca96b4",
+   "configs": {
+    "mil_doctrine.json": null,
+    "rtsai.json": "6c76122895ed3c75",
+    "rtsai_units.json": "4797056e6a89496e"
+   },
+   "cut_at": "2026-08-12T23:49:00Z",
+   "dll_sha256_16": "a19c3a0877d0b526",
+   "note": "backfilled by hand before release.py existed",
+   "subject": "v0.87.0: repair asks for node reach, not Bio Cache reach"
+  },
+  "v0.88.0": {
+   "commit": "bdd5b1e",
+   "configs": {
+    "mil_doctrine.json": "4b900b7e4139cbca",
+    "rtsai.json": "6c76122895ed3c75",
+    "rtsai_units.json": "4797056e6a89496e"
+   },
+   "cut_at": "2026-08-12T23:49:00Z",
+   "dll_sha256_16": "9b081fd47a58ca21",
+   "note": "backfilled by hand before release.py existed",
+   "subject": "v0.88.0: the measured doctrine, running beside the live layer and touching nothing"
+  }
+ }
+}
