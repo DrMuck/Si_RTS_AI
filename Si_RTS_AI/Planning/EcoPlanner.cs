@@ -2300,7 +2300,9 @@ namespace Si_RTS_AI.Planning
                     int laid = 0;
                     for (int hop = 0; hop < REPAIR_HOPS_PER_CYCLE; hop++)
                     {
-                        if (!NextNodeTowards(state, repTo, out Vector3 repHop)) break;
+                        // Node reach, not Bio Cache reach -- see needWithinM.
+                        if (!NextNodeTowards(state, repTo, out Vector3 repHop,
+                                             EcoSimulator.NODE_REACH_M)) break;
                         int beforeRep = fired;
                         TryFireAction(new Candidate
                         {
@@ -4939,7 +4941,24 @@ namespace Si_RTS_AI.Planning
             return true;
         }
 
-        static bool NextNodeTowards(EcoState s, Vector3 goal, out Vector3 pos)
+        /// <param name="needWithinM">
+        /// How close the network must already get before no node is needed.
+        /// Default -1 keeps the Bio Cache question this was written for: a Bio
+        /// Cache reaches BcPlaceReachM + BC_TIGHT_GAP_M, so inside that no node
+        /// is required.
+        ///
+        /// REPAIR ASKS A DIFFERENT QUESTION AND MUST PASS ITS OWN VALUE.
+        /// Reconnecting an orphan is not placing a Bio Cache -- the structure
+        /// already exists and needs a NODE within NODE_REACH_M. With the Bio
+        /// Cache threshold, any gap between node reach (150m) and Bio Cache
+        /// reach (249m) reported "no node needed" and repair could never
+        /// proceed. NarakaCity 2026-08-12: orphan at (2495,600), 165m from the
+        /// network, "REPAIR BLOCKED ... (no reachable hop, or unaffordable)"
+        /// every tick with 148,110 in the bank, while singlePointsOfFailure
+        /// climbed 113 -> 116. One node would have closed it.
+        /// </param>
+        static bool NextNodeTowards(EcoState s, Vector3 goal, out Vector3 pos,
+                                    float needWithinM = -1f)
         {
             pos = goal;
             if (goal == Vector3.zero) return false;
@@ -4968,7 +4987,10 @@ namespace Si_RTS_AI.Planning
             if (best == float.MaxValue) return false;
 
             float gap = Mathf.Sqrt(best);
-            if (gap <= EcoSimulator.BcPlaceReachM + BC_TIGHT_GAP_M) return false;
+            float need = needWithinM > 0f
+                       ? needWithinM
+                       : EcoSimulator.BcPlaceReachM + BC_TIGHT_GAP_M;
+            if (gap <= need) return false;
 
             float hop = Mathf.Max(1f, EcoSimulator.NODE_REACH_M - NODE_DRIFT_MARGIN_M);
             Vector3 dir = goal - from;

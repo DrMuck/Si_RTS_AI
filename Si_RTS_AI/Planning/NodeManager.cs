@@ -17,8 +17,13 @@ namespace Si_RTS_AI.Planning
     /// that was modelled here; the planner laid chains and never looked at them
     /// again.
     ///
-    /// SHADOW FIRST. This reports and does not act. The two things it finds are
-    /// what repair and looping will be built on:
+    /// NO LONGER SHADOW. This reported and did not act when it was written;
+    /// EcoPlanner now consumes TryGetRepair and TryGetLoop and builds both. The
+    /// stale "shadow" wording is worth naming because it nearly cost an answer:
+    /// asked on 2026-08-12 whether a repair manager existed, reading this
+    /// comment says no and reading the call sites says yes.
+    ///
+    /// The two things it finds:
     ///
     ///   ORPHANS           — already disconnected from every Nest, so already
     ///                       dying. Repair targets.
