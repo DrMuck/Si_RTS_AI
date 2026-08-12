@@ -432,3 +432,51 @@ Not yet diagnosed, recorded so they are not lost:
 - The RTSA layer viewer's map time may not line up with in-game time as seen
   from a client. Worth checking before trusting any timing read off the viewer;
   every timing conclusion in this file comes from log timestamps, not the viewer.
+
+---
+
+## 18. Bridges are planned every revision and never built
+
+DrMuck, co-op round 2026-08-12, on node cutting at (1816.3,-1335.5):
+"bridging is weak".
+
+The blueprint finds a bridge every revision, ranks it, logs it, draws it --
+and never builds one:
+
+```
+19:36:28  bridge(loop): 5 node(s) (1645,895)->(1705,265)   bypasses 16 SPOFs
+19:37:04  bridge(loop): 6 node(s) (1920,335)->(1380,920)   bypasses 15 SPOFs
+19:37:43  bridge(loop): 4 node(s) (1260,2715)->(955,2220)  bypasses 20 SPOFs
+19:38:23  bridge(loop): 5 node(s) (2025,370)->(1645,895)   bypasses 13 SPOFs
+
+[NODEMGR] singlePointsOfFailure = 92 -> 94 -> 95   orphaned=7 decaying=6
+```
+
+A different bridge each time, and the SPOF count rising throughout. If any
+were landing it would fall.
+
+**Two causes, both structural.**
+
+*Position.* `Items` is ordered "cheapest coverage first" and the bridge
+emission runs at the very END of `Replan`, after every coverage node, Bio
+Cache and Cyst. The plan carries 300+ nodes and the executor works down the
+list with `maxNodeFronts x maxUnbuiltNodesPerFront` in flight. The four to six
+bridge nodes at the tail are never reached.
+
+*No commitment.* `Bridges.Clear()` runs on every replan and the bridge is
+re-found from scratch, so its identity changes every 30s. Same disease as
+item 2 for Cysts: planned repeatedly, built never.
+
+The ranking itself is good and makes the waste plain -- "4 node(s) saves
+2940m of road for 84 structures, bypasses 20 single points of failure" is 800
+credits protecting 84 structures, the highest-value work in the plan, sitting
+at the back of a 300-item queue.
+
+**Fix shape:** bridges need a small dedicated budget outside the coverage
+queue rather than a place in it, and a started bridge must hold its identity
+across revisions until finished or explicitly invalidated. Both halves are
+needed -- priority alone would still re-target every 30s, commitment alone
+would still never be reached.
+
+Related: `orphaned=7 decaying=6` in the same log is what redundancy is
+supposed to prevent, so this is already costing structures, not just risk.
