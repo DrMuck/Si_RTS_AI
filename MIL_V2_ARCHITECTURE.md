@@ -305,6 +305,50 @@ Reading a counter table into the commit decision would be adding a parameter
 that measurably does not help. Reading force ratio into production would throw
 away the one thing that does.
 
+### 4c. The model is strongest where it is least needed
+
+DrMuck, 2026-08-12: *"the current vanilla AI is very bad atm — in terms of RTS
+AI."* That is a statement about macro, not micro, and it leaves a fingerprint in
+the data that is worth stating plainly, because it changes what the kernel is
+for.
+
+Accuracy by force ratio, cross-validated, split by replay:
+
+| force ratio | share of fights | cash | kernel |
+|---|---|---|---|
+| **parity (<1.25×)** | **8%** | 54% | 74% *(n=87)* |
+| 1.25–2× | 19% | 78% | 79% |
+| 2–4× | 31% | 92% | 91% |
+| >4× | 42% | 89% | 89% |
+
+*(AI-vs-AI subset. All-fights is the same shape: 9% at parity, 59% → 64%.)*
+
+Two things fall out and neither is comfortable.
+
+**Only 8% of fights are near parity.** Forty-two percent are past 4:1. A
+commander that picks its fights well produces close ones; the archive's AI walks
+into hopeless ones and creates hopeless ones. So the regime a model exists to
+discriminate is the regime the archive barely contains.
+
+**Past 2:1 the kernel adds nothing.** 91% against 91%, 89% against 89% — cash
+alone is as good. The headline 86% is carried almost entirely by fights that did
+not need a model. At parity it may add a great deal (+20 points) but n = 87,
+which is not a measurement.
+
+**The doctrine this implies is stronger than the model.** If nothing — not the
+kernel, not cash, not composition — predicts a parity fight, then a parity fight
+is a coin flip and the planner's correct response is to *refuse it*. Combined
+with the saturation in §4, the whole engagement policy reduces to:
+
+> Fight at 2–4× effective force. Do not fight at parity, because no one can
+> tell you what happens. Do not stack past 4×, because it buys nothing and the
+> surplus belongs on another objective.
+
+That is a complete commitment rule, it is measured rather than tuned, and it
+needs no kernel at all — `p_win ≥ theta` with a high theta is the same
+statement. The kernel's remaining job is *sizing* — how much is 2× of that —
+which is what effective cash gives us.
+
 ## 5. The combat kernel (L1)
 
 One function, called from both languages, reading one JSON.
