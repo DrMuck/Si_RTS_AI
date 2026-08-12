@@ -78,6 +78,8 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from unit_stats import load_units, balance_epoch, resolve   # noqa: E402
+from roles import combatants, is_force                     # noqa: E402
+from skill import Skill, report_unmatched                  # noqa: E402
 
 SERVER = r"E:\Steam\steamapps\common\Silica Dedicated Server"
 MAPREPLAY = os.path.join(SERVER, "Mod MapReplay")
@@ -85,7 +87,15 @@ sys.path.insert(0, os.path.join(MAPREPLAY, "modules"))
 from srpl_reader import parse_srpl                     # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-ARCHIVE = os.path.join(ROOT, "Serverdata", "ReplayLogs - Copy")
+
+# THE PROJECT ARCHIVE ONLY. There is a second folder of replays under the live
+# dedicated server and it is deliberately NOT read: that box is DrMuck's own,
+# and most of what it holds is soaks, bring-up rounds and test matches where the
+# economy runs unopposed. A combat model fitted on rounds where nobody fought
+# learns what a bot does when nothing is shooting back.
+ARCHIVES = [
+    os.path.join(ROOT, "Serverdata", "ReplayLogs - Copy"),
+]
 OUTDIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "out")
 
 BROKEN_FROM, BROKEN_TO = "20260715", "20260731"
@@ -94,6 +104,9 @@ NEUTRAL = {"Wildlife", "GM", "Unknown"}
 # Type names the balance dump does not price. Printed at the end rather than
 # absorbed, because an unpriced unit is a hole in every cash column it touches.
 UNMATCHED = collections.Counter()
+
+# Which type names count as force. Built once at startup; see roles.py.
+IS_COMBAT = {}
 
 
 class Fight:
@@ -152,7 +165,7 @@ def census(replay, tick, cx, cz, radius, units):
         return {}
     out = collections.defaultdict(
         lambda: {"n": 0, "cash": 0.0, "piloted_n": 0, "piloted_cash": 0.0,
-                 "struct_n": 0, "struct_cash": 0.0,
+                 "struct_n": 0, "struct_cash": 0.0, "eco_n": 0, "eco_cash": 0.0,
                  "types": collections.Counter()})
     r2 = radius * radius
     for eid, pos in snap.items():
@@ -171,6 +184,14 @@ def census(replay, tick, cx, cz, radius, units):
             rec["struct_n"] += 1
             rec["struct_cash"] += cost
             continue
+        # Shrimps and Harvesters stand inside the radius and do not fight.
+        # Their cash is economy; folding it into force value inflates whichever
+        # side happened to be fighting at home.
+        fights, _ = is_force(IS_COMBAT, units, e.type_name, e.team_name)
+        if not fights:
+            rec["eco_n"] += 1
+            rec["eco_cash"] += cost
+            continue
         rec["n"] += 1
         rec["cash"] += cost
         rec["types"][e.type_name] += 1
@@ -184,7 +205,7 @@ def census(replay, tick, cx, cz, radius, units):
     return out
 
 
-def mine_replay(path, units, radius, gap, presence, min_kills):
+def mine_replay(path, units, radius, gap, presence, min_kills, skill):
     """Yield (fight_row, [unit_rows]) for one replay."""
     r = parse_srpl(path)
     base = os.path.basename(path)
@@ -192,6 +213,10 @@ def mine_replay(path, units, radius, gap, presence, min_kills):
     tick_s = (getattr(r, "tick_interval_ms", 2000) or 2000) / 1000.0
     map_name = getattr(r, "map_name", "") or "?"
     players = len({n for _, n in r.players.values() if n and n.strip()})
+    if skill and skill.ok():
+        overall, per_team = skill.rate(r)
+    else:
+        overall, per_team = {"cmd": 0.0, "fps": 0.0}, {}
 
     kills = []
     for tick, vid, aid, is_building in r.destructions:
@@ -282,6 +307,8 @@ def mine_replay(path, units, radius, gap, presence, min_kills):
             "duration": round(f.t1 - f.t0 + tick_s),
             "x": round(f.cx), "z": round(f.cz),
             "n_kills": len(f.kills),
+            "best_cmd_elo": round(overall["cmd"]),
+            "best_fps_elo": round(overall["fps"]),
             "median_range": round(sorted(ranges)[len(ranges) // 2]) if ranges else "",
         }
         for side, team in (("a", teams[0]), ("b", teams[1])):
@@ -294,6 +321,9 @@ def mine_replay(path, units, radius, gap, presence, min_kills):
             row[f"{side}_piloted_n"] = s.get("piloted_n", 0)
             row[f"{side}_piloted_frac"] = round(s.get("piloted_cash", 0.0) / cash, 3) if cash else ""
             row[f"{side}_struct_cash"] = round(s.get("struct_cash", 0.0))
+            row[f"{side}_eco_cash"] = round(s.get("eco_cash", 0.0))
+            row[f"{side}_cmd_elo"] = round(per_team.get(team, {}).get("cmd", 0.0))
+            row[f"{side}_fps_elo"] = round(per_team.get(team, {}).get("fps", 0.0))
             row[f"{side}_end_n"] = e.get("n", 0)
             row[f"{side}_end_cash"] = round(e.get("cash", 0.0))
             row[f"{side}_lost_units"] = L["units"]
@@ -310,10 +340,11 @@ def mine_replay(path, units, radius, gap, presence, min_kills):
 
 
 FIELDS = ["fight_id", "date", "map", "replay", "players", "t0", "t1", "duration",
-          "x", "z", "n_kills", "median_range"]
+          "x", "z", "n_kills", "median_range", "best_cmd_elo", "best_fps_elo"]
 for _s in ("a", "b"):
     FIELDS += [f"{_s}_team", f"{_s}_n", f"{_s}_cash", f"{_s}_piloted_n",
-               f"{_s}_piloted_frac", f"{_s}_struct_cash", f"{_s}_end_n",
+               f"{_s}_piloted_frac", f"{_s}_struct_cash", f"{_s}_eco_cash",
+               f"{_s}_cmd_elo", f"{_s}_fps_elo", f"{_s}_end_n",
                f"{_s}_end_cash", f"{_s}_lost_units", f"{_s}_lost_cash",
                f"{_s}_lost_structs", f"{_s}_lost_struct_cash",
                f"{_s}_killed_cash", f"{_s}_kill_piloted_frac"]
@@ -331,12 +362,27 @@ def main():
                     help="metres; census radius for who was standing there")
     ap.add_argument("--min-kills", type=int, default=3)
     ap.add_argument("--min-players", type=int, default=0)
-    ap.add_argument("--archive", default=ARCHIVE)
+    ap.add_argument("--min-commander-elo", type=float, default=0.0,
+                    help="keep only rounds with a commander at least this good")
+    ap.add_argument("--min-fps-elo", type=float, default=0.0,
+                    help="or an FPS player at least this good; the two are OR-ed")
+    ap.add_argument("--archive", action="append", default=None,
+                    help="repeatable; defaults to both known archives")
     ap.add_argument("--out", default=os.path.join(OUTDIR, "engagements.csv"))
     args = ap.parse_args()
 
     os.makedirs(OUTDIR, exist_ok=True)
-    paths = sorted(glob.glob(os.path.join(args.archive, "*.srpl")))
+    seen, paths = set(), []
+    for d in (args.archive or ARCHIVES):
+        found = 0
+        for p in sorted(glob.glob(os.path.join(d, "*.srpl"))):
+            base = os.path.basename(p)
+            if base in seen:
+                continue
+            seen.add(base)
+            paths.append(p)
+            found += 1
+        print(f"  {found:>5} new files from {d}", flush=True)
     paths = [p for p in paths
              if not (BROKEN_FROM <= os.path.basename(p)[:8] <= BROKEN_TO)
              and os.path.basename(p)[:8] >= (args.since or "0")]
@@ -345,12 +391,16 @@ def main():
         paths = paths[:args.limit]
 
     units = load_units()
+    IS_COMBAT.update(combatants(units)[0])
+    skill = Skill()
+    if not skill.ok():
+        print("  ! no ELO tables found - skill filters will keep everything")
     print(f"{len(paths)} replays | radius={args.radius}m gap={args.gap}s "
           f"presence={args.presence}m | balance {balance_epoch()['game_version']}",
           flush=True)
 
     unit_path = os.path.join(OUTDIR, "fight_units.csv")
-    n_fights = n_bad = 0
+    n_fights = n_bad = n_dropped = 0
     t_start = time.time()
     with io.open(args.out, "w", encoding="utf-8", newline="") as fh, \
          io.open(unit_path, "w", encoding="utf-8", newline="") as uh:
@@ -361,16 +411,22 @@ def main():
         for i, p in enumerate(paths, 1):
             try:
                 rows, urows = mine_replay(p, units, args.radius, args.gap,
-                                          args.presence, args.min_kills)
+                                          args.presence, args.min_kills, skill)
             except Exception as exc:
                 n_bad += 1
                 if n_bad <= 5:
                     print(f"  ! {os.path.basename(p)}: {exc}", flush=True)
                 continue
+            before = len(rows)
             if args.min_players:
                 rows = [r for r in rows if r["players"] >= args.min_players]
-                keep = {r["fight_id"] for r in rows}
-                urows = [u for u in urows if u["fight_id"] in keep]
+            if args.min_commander_elo or args.min_fps_elo:
+                rows = [r for r in rows
+                        if r["best_cmd_elo"] >= args.min_commander_elo
+                        or r["best_fps_elo"] >= args.min_fps_elo]
+            n_dropped += before - len(rows)
+            keep = {r["fight_id"] for r in rows}
+            urows = [u for u in urows if u["fight_id"] in keep]
             w.writerows(rows)
             uw.writerows(urows)
             n_fights += len(rows)
@@ -383,6 +439,9 @@ def main():
             "radius_m": args.radius, "gap_s": args.gap,
             "presence_m": args.presence, "min_kills": args.min_kills,
             "balance": balance_epoch(),
+            "min_commander_elo": args.min_commander_elo,
+            "min_fps_elo": args.min_fps_elo,
+            "dropped_by_filter": n_dropped,
             "unpriced": dict(UNMATCHED.most_common(30)),
             "seconds": round(time.time() - t_start)}
     with io.open(os.path.join(OUTDIR, "engagements_meta.json"), "w",
@@ -390,6 +449,12 @@ def main():
         json.dump(meta, fh, indent=2)
     print(f"\n{n_fights:,} fights from {len(paths)} replays "
           f"({n_bad} unreadable) -> {args.out}")
+    if n_dropped:
+        print(f"  {n_dropped:,} fights dropped by the player/skill filters")
+    report_unmatched()
+    if UNMATCHED:
+        print(f"  UNPRICED type names (cash reads 0 for these): "
+              f"{UNMATCHED.most_common(12)}")
 
 
 if __name__ == "__main__":
