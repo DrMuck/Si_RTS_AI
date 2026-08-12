@@ -37,13 +37,18 @@ MelonPreferences is deliberately NOT snapshotted: MelonLoader rewrites that file
 from memory on shutdown, so a copy taken while the server runs is a copy of
 something that is about to be overwritten. `COOP_SERVER_SETUP.md` documents it.
 
-OFFSITE IS A SEPARATE JOB
--------------------------
-Since 2026-08-12 the repo pushes to the private `DrMuck/Si_RTS_AI`, so commits
-and tags survive this disk. `_archive/` does NOT: the DLLs and config snapshots
-are gitignored build output. A tag can always be rebuilt, so nothing is lost
-that cannot be regenerated — but the instant-rollback convenience is local
-only.
+OFFSITE
+-------
+Since 2026-08-12 the repo pushes to the private `DrMuck/Si_RTS_AI`, and
+`_archive/` is tracked along with everything else, so both the DLLs and the
+config snapshots survive this disk.
+
+That is deliberate rather than incidental for the configs: **`rtsai.json` is not
+version-controlled anywhere else.** It is edited live on the server, so
+`cfg_<version>/rtsai.json` is the only record of what a given build was actually
+configured to do. Losing it would leave a DLL nobody can reproduce a round
+with. The DLLs themselves are pure convenience by comparison — any tag rebuilds
+in about a second.
 """
 
 import argparse
