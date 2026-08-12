@@ -1,7 +1,9 @@
 {
+ "_note": "Commit SHAs were rewritten on 2026-08-12 when analysis/, Screenshots/ and serverdata.sqlite were stripped from history. Tags were carried across, so a tag is the stable handle; the pre-rewrite SHA is kept beside each entry only so old notes can be matched up.",
  "releases": {
   "v0.87.0": {
-   "commit": "2ca96b4",
+   "commit": "9b6e3d8",
+   "commit_before_history_rewrite": "2ca96b4",
    "configs": {
     "mil_doctrine.json": null,
     "rtsai.json": "6c76122895ed3c75",
@@ -13,7 +15,8 @@
    "subject": "v0.87.0: repair asks for node reach, not Bio Cache reach"
   },
   "v0.88.0": {
-   "commit": "bdd5b1e",
+   "commit": "a90b1b4",
+   "commit_before_history_rewrite": "bdd5b1e",
    "configs": {
     "mil_doctrine.json": "4b900b7e4139cbca",
     "rtsai.json": "6c76122895ed3c75",
