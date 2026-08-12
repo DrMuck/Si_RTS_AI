@@ -109,10 +109,17 @@ def decisive(r):
             or (fb >= DECISIVE_LOSS and fa <= DECISIVE_SURVIVE))
 
 
-def build(fights, comp, units, ai_only, min_elo):
+def build(fights, comp, units, ai_only, min_elo, since=""):
     """Design matrices in CASH, so a weight of 1 is the baseline exactly."""
     rows = []
     for fid, r in fights.items():
+        # THE META MOVES. check_epochs measures value multipliers drifting
+        # 1.97x between months against a 1.38x noise floor, so a fit pooled
+        # over the whole archive describes an average of games that were not
+        # the same game. Anything shipped to the mod is cut to the era it will
+        # run in.
+        if since and r.get("date", "") < since:
+            continue
         ca, cb = num(r, "a_cash"), num(r, "b_cash")
         if min(ca, cb) < MIN_CASH or not decisive(r):
             continue
@@ -216,6 +223,8 @@ def main():
     ap.add_argument("--units", default=os.path.join(OUT, "fight_units.csv"))
     ap.add_argument("--ai-only", action="store_true")
     ap.add_argument("--min-elo", type=float, default=0.0)
+    ap.add_argument("--since", default="",
+                    help="YYYYMMDD; the meta moves, see check_epochs")
     ap.add_argument("--lam", type=float, default=1.0)
     ap.add_argument("--folds", type=int, default=5)
     ap.add_argument("--seed", type=int, default=0)
@@ -225,7 +234,7 @@ def main():
     units = load_units()
     fights, comp = load(args.fights, args.units)
     A, B, y, other, keep, replays, _rows = build(
-        fights, comp, units, args.ai_only, args.min_elo)
+        fights, comp, units, args.ai_only, args.min_elo, args.since)
     print(f"{len(y):,} decisive fights, {len(keep)} unit types weighted "
           f"(>= {MIN_APPEARANCES} appearances), "
           f"{len(set(replays)):,} distinct replays")
@@ -290,6 +299,7 @@ def main():
             "fights": int(len(y)),
             "ai_only": bool(args.ai_only),
             "min_elo": args.min_elo,
+            "since": args.since,
             "w": {keep[i]: round(float(w[i]), 4) for i in range(len(keep))},
         }
         with io.open(args.emit, "w", encoding="utf-8") as fh:

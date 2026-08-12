@@ -150,6 +150,10 @@ namespace Si_RTS_AI
                 MelonLogger.Msg($"[RTSA/LAG] spike dt={dt*1000f:F0}ms  {recent}");
             }
 
+            // Start the mod-wide round clock the frame the round actually begins.
+            // Must run before anything that stamps a roundT this frame.
+            Perception.MapLayers.LayerReplay.TickRoundClock();
+
             // Drain 1 deferred layer write per frame — spreads the ~15-file
             // snapshot burst across many frames so it never appears as a spike.
             Perception.MapLayers.LayerReplay.DrainPending();
@@ -282,6 +286,14 @@ namespace Si_RTS_AI
                         tBcMetrics = TimedMs(() => Perception.BcMetrics.TickHuman(team));
                     }
                     tShrimpState = TimedMs(() => Perception.ShrimpStateSampler.Tick(team));
+                    // OUTSIDE the FactionControl / military.enabled gate, and
+                    // deliberately: the doctrine comparison is most needed on
+                    // exactly the rounds where the military layer is off, which
+                    // is every eco soak we run. It issues no orders, so there is
+                    // nothing for the gate to protect.
+                    if ((team.name ?? "").Contains("Alien"))
+                        try { Mil.Shadow.Tick(team); }
+                        catch (Exception ex) { MelonLogger.Warning("[MIL/SHADOW] threw: " + ex.Message); }
                     Perception.BuildTimeline.Tick(team);
                     if ((team.name ?? "").Contains("Alien")) Perception.QueenStatus.Evaluate(team);
                     long tThreat = TimedMs(() => { Perception.ThreatMap.Observe(team);
@@ -503,6 +515,8 @@ namespace Si_RTS_AI
             Perception.CombatLog.ResetForNewRound();
             Planning.MilitaryConfig.Reload();
             Planning.UnitPrior.Reload();
+            Mil.Shadow.Configure();
+            Mil.Shadow.ResetForNewRound();
             Faction.AlienCommanderLock.Reload();
             Faction.AlienCommanderLock.ResetForNewRound();
             Planning.DefencePlanner.ResetForNewRound();

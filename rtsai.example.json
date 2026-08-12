@@ -1,6 +1,6 @@
 {
   "_readme": [
-    "Copy to <server>/UserData/rtsai.json. READ ONLY — the mod never writes it,",
+    "Copy to <server>/UserData/rtsai.json. READ ONLY \u2014 the mod never writes it,",
     "so unlike MelonPreferences.cfg an edit survives a shutdown, and it is re-read",
     "at every map load, so an edit takes effect on the NEXT ROUND with the server",
     "still running.",
@@ -9,37 +9,34 @@
     "Delete the whole file and nothing changes at all.",
     "",
     "While the A/B rig is cycling arms, the rig owns workerCapPerBioCache and",
-    "producerPerSites — those keys are ignored and the log says so once. Set",
+    "producerPerSites \u2014 those keys are ignored and the log says so once. Set",
     "configCycle to 'off' to steer them from here instead."
   ],
-
   "_autoResourceDrain": [
-    "false (default) — cash is left alone. At capacity the game clamps it, so",
+    "false (default) \u2014 cash is left alone. At capacity the game clamps it, so",
     "  income stops accruing and cumulIncome reads as money that really existed.",
-    "true — cash is cut to 70% of team capacity whenever it passes 75%, and",
+    "true \u2014 cash is cut to 70% of team capacity whenever it passes 75%, and",
     "  cumulIncome credits what was drained. That makes the benchmark measure",
     "  EARNING POWER past the cap, at the price of destroying the money: it took",
     "  315k out of a 988k NarakaCity round on 2026-08-06. Only for measurement.",
     "Capacity is roughly 4,000 per Bio Cache, so the cap moves with the base."
   ],
   "autoResourceDrain": false,
-
   "_pileUp": [
     "Anti-pile-up. Displaced shrimps each picked their own nearest free patch,",
-    "blind to the ones that just went there — so a depletion cascade sent all of",
+    "blind to the ones that just went there \u2014 so a depletion cascade sent all of",
     "them to the same ground (56 on a patch with capacity 7, NarakaCity",
     "2026-08-07) while the middle and west of the map sat empty.",
-    "pileUpMaxPerPatch — shrimps that may be WALKING to one destination at once.",
+    "pileUpMaxPerPatch \u2014 shrimps that may be WALKING to one destination at once.",
     "  The 11th takes the next-best patch instead. 0 disables the mechanism and",
     "  restores nearest-wins. 10 matches the per-Bio-Cache worker cap.",
-    "pileUpMaxDetourM — how much further a spilled shrimp may be sent once its",
+    "pileUpMaxDetourM \u2014 how much further a spilled shrimp may be sent once its",
     "  first choice is full. 0 = no limit, which is the intent: a long walk to",
     "  fresh ground beats standing on a dead patch. Raise off 0 only if a map",
     "  punishes the walk more than the pile-up."
   ],
   "pileUpMaxPerPatch": 10,
   "pileUpMaxDetourM": 0,
-
   "_storageBuffer": [
     "A pile of FREE Bio Caches spawned beside the Nest at a fixed minute, purely",
     "to raise team storage capacity so income stops clipping at the cap.",
@@ -47,54 +44,50 @@
     "They are SPAWNED (admin path): no cost, no build time, no placement checks,",
     "stacked on one spot. They measure nothing about the bot's expansion and are",
     "excluded from bc_metrics and the per-Bio-Cache income meter.",
-    "0 disables. This is a measurement scaffold — turn it off for a real game."
+    "0 disables. This is a measurement scaffold \u2014 turn it off for a real game."
   ],
   "storageBufferCaches": 100,
   "storageBufferAtMinute": 10,
   "storageBufferOffsetM": 150,
-
   "_bridgeMode": [
     "How a cross-branch link is priced. Both rules are live code:",
-    "  loop     — value is the DETOUR REMOVED between the two ends, measured over",
+    "  loop     \u2014 value is the DETOUR REMOVED between the two ends, measured over",
     "             the built network, times a bonus for each single point of failure",
     "             it bypasses. Prefers big rings. Up to 8 nodes per link. (v0.26)",
-    "  shortcut — value is how much the far side's road HOME to the Nest shortens.",
+    "  shortcut \u2014 value is how much the far side's road HOME to the Nest shortens.",
     "             Prefers small cuts near the base; will not build a ring between",
     "             two equally distant branches. Up to 6 nodes. (v0.25)",
-    "  off      — links are still planned, ranked, logged and drawn in the viewer,",
+    "  off      \u2014 links are still planned, ranked, logged and drawn in the viewer,",
     "             but none are built. The control arm.",
     "Also available as A/B arms: bridgeloop, bridgeshortcut, bridgeoff."
   ],
   "bridgeMode": "loop",
-
   "_rig": [
     "The A/B rig. configCycle rotates one arm per round; 'off' means the arms",
     "stop and the knobs below apply instead. Arms: adaptive, ratio2..ratio5,",
     "cap18, bridgeloop, bridgeshortcut, bridgeoff, and ratio3ap.",
-    "ratio3ap is ratio3 under a different tag — the anti-pile-up manager changed",
+    "ratio3ap is ratio3 under a different tag \u2014 the anti-pile-up manager changed",
     "the bot, so its rounds must not pool with last night's ratio3.",
     "roundsPerMap holds the same map for that many rounds before the rotation",
-    "advances — high on purpose, because arms need identical ground and only",
+    "advances \u2014 high on purpose, because arms need identical ground and only",
     "NarakaCity has a single spawn layout."
   ],
   "configCycle": "adaptive,ratio2,ratio3,ratio4",
   "endRoundAfterMinutes": 25,
   "roundsPerMap": 24,
-
   "_testMode": [
-    "true  — soak: the harness auto-joins, force-ends the round after",
+    "true  \u2014 soak: the harness auto-joins, force-ends the round after",
     "        endRoundAfterMinutes, cycles the map, and suppressCombat applies.",
-    "false — PLAYABLE: no forced round end, no map cycling, aliens fight.",
+    "false \u2014 PLAYABLE: no forced round end, no map cycling, aliens fight.",
     "TO PLAY AGAINST THE ALIEN AI, set testMode false. suppressCombat only has",
     "any effect while testMode is true, so leaving it true is harmless then."
   ],
   "testMode": true,
   "suppressCombat": true,
-
   "_chainExtendPerTick": [
     "Unreachable sites whose node chain may be extended in one planner tick.",
     "chainExtendDemandPerTick is a SEPARATE, larger budget for ground shrimps",
-    "  are already walking to — being late there is paid in long-distance",
+    "  are already walking to \u2014 being late there is paid in long-distance",
     "  hauling, so it is never rationed against speculative reaches.",
     "Neither budget touches the blueprint's own planned node chains, so outward",
     "  branch expansion is unaffected by both.",
@@ -104,7 +97,6 @@
   ],
   "chainExtendPerTick": 2,
   "chainExtendDemandPerTick": 3,
-
   "_timeScale": [
     "Simulation speed. 1 = real time. 2 finishes a 25 game-minute round in about",
     "12.5 wall-minutes, doubling soak throughput.",
@@ -117,56 +109,54 @@
     "29k at 25 min. Matching curves = safe. Diverging = keep 1x for measurement."
   ],
   "timeScale": 1,
-
   "_tapReachMode": [
     "How close the chain must get to a patch before its Bio Cache is placeable.",
-    "measured (default) — what the game has actually allowed this round, less a",
+    "measured (default) \u2014 what the game has actually allowed this round, less a",
     "  node's slide (~147m). Correct, but costs about one extra node per site.",
-    "optimistic — the pre-v0.37.1 rule, reach + 40m (~249m). Cheaper chains, but",
+    "optimistic \u2014 the pre-v0.37.1 rule, reach + 40m (~249m). Cheaper chains, but",
     "  strands a site whenever the last hop lands short of where it was planned.",
     "Switchable so the two can be compared between rounds rather than argued."
   ],
   "tapReachMode": "measured",
-
   "_military": [
-    "THE MILITARY LAYER. Off by default — a DLL swap must never start an army.",
+    "THE MILITARY LAYER. Off by default \u2014 a DLL swap must never start an army.",
     "Everything here is re-read at map load, so a played evening can tune it",
     "between rounds without stopping the server.",
     "",
     "BRING IT UP IN THIS ORDER, one step per round:",
-    "  1. enabled=true, execute=false — nothing moves. Read [DEFENCE], [MISSION]",
+    "  1. enabled=true, execute=false \u2014 nothing moves. Read [DEFENCE], [MISSION]",
     "     and [BATTALION] and check the portfolio picks ground you would defend.",
-    "  2. execute=true, offence=false — defence only. Watch that the garrison",
+    "  2. execute=true, offence=false \u2014 defence only. Watch that the garrison",
     "     stays home, that responses ARRIVE TOGETHER rather than trickling, and",
     "     that units are not tugged between vanilla and us.",
-    "  3. offence=true — the army pushes when it stops growing. Expect this one",
+    "  3. offence=true \u2014 the army pushes when it stops growing. Expect this one",
     "     to be wrong first; it is the least measured thing in the mod.",
     "In-game, /rtsai mil prints the posture, the portfolio and every battalion.",
     "",
     "SWITCHES",
-    "  enabled  — master. false = the layer computes nothing at all.",
-    "  execute  — issue orders. false = plan and log, touch no unit.",
-    "  produce  — queue combat units and place higher-tier producers.",
-    "  offence  — allow push missions. false = defence and garrison only.",
+    "  enabled  \u2014 master. false = the layer computes nothing at all.",
+    "  execute  \u2014 issue orders. false = plan and log, touch no unit.",
+    "  produce  \u2014 queue combat units and place higher-tier producers.",
+    "  offence  \u2014 allow push missions. false = defence and garrison only.",
     "",
-    "PRICING — one number now, not two. A mission is sized from the ENEMY'S OWN",
+    "PRICING \u2014 one number now, not two. A mission is sized from the ENEMY'S OWN",
     "CASH within its radius, so both sides of the comparison are prices the game",
     "set and nothing needs converting. cashPerThreat is GONE: it converted the",
     "threat field, which is an accumulator rather than an amount, and asked for a",
     "1,466,026-cash garrison on 2026-08-07.",
-    "  strengthMargin — how much MORE than the enemy's cash a force must be worth",
+    "  strengthMargin \u2014 how much MORE than the enemy's cash a force must be worth",
     "                   before it is sent. Above 1 because trading evenly on",
-    "                   defence loses — we paid for that ground twice.",
+    "                   defence loses \u2014 we paid for that ground twice.",
     "",
-    "ALLOCATION — the garrison is filled FIRST, so its size decides whether any",
+    "ALLOCATION \u2014 the garrison is filled FIRST, so its size decides whether any",
     "defence happens at all. Both bounds are fractions of army VALUE, so they",
     "scale instead of being wrong early and wrong late.",
-    "  homeShare    — least of the army that stays home. The floor.",
-    "  homeCapShare — MOST of it the garrison may hold, however much turns up at",
+    "  homeShare    \u2014 least of the army that stays home. The floor.",
+    "  homeCapShare \u2014 MOST of it the garrison may hold, however much turns up at",
     "                 home. Without a ceiling the floor is a claim on everything:",
     "                 on 2026-08-07 the garrison took every unit for a whole round",
     "                 while nine Bio Caches died with no battalion ever funded.",
-    "  maxDefendMissions — simultaneous defences. Beyond a few the army is being",
+    "  maxDefendMissions \u2014 simultaneous defences. Beyond a few the army is being",
     "                      divided into pieces that lose separately.",
     "",
     "MONEY. Not a budget share. The economy keeps ecoReserve while it is BEHIND",
@@ -174,63 +164,68 @@
     "it is on track, or yield is falling and the answer is ground not workers,",
     "the military may spend down to zero. Rounds sit on 100-200k unspent from",
     "minute twelve, so that idle bank is what pays for the army.",
-    "  lesserCystShare — share of Lesser Cysts making combat units instead of",
+    "  lesserCystShare \u2014 share of Lesser Cysts making combat units instead of",
     "                    shrimps. Forced to zero while the economy is behind.",
     "",
-    "PUSH. Fires when army value stops growing WHILE cash is available — money",
+    "PUSH. Fires when army value stops growing WHILE cash is available \u2014 money",
     "present and not becoming army means the ceiling is production or population,",
     "and waiting lifts neither. A quiet enemy is NOT a trigger: holding compounds",
     "ahead while unattacked, so inactivity is neutral-to-good.",
-    "  pushGrowthFloor     — cash/s of army growth below which holding is a loss.",
-    "  pushMargin          — ours over their estimate before committing.",
-    "  pushRetreatFraction — fraction of committed peak value at which the push",
+    "  pushGrowthFloor     \u2014 cash/s of army growth below which holding is a loss.",
+    "  pushMargin          \u2014 ours over their estimate before committing.",
+    "  pushRetreatFraction \u2014 fraction of committed peak value at which the push",
     "                        is called off. Not a timer, not first contact.",
     "",
     "NOT BUILT, and deliberately: raids (need enemy-structure discovery we only",
     "just started collecting), formations (cannot be judged before exchange",
     "ratios exist), and the economic-push posture. See MILITARY_TACTICS.md."
   ],
+  "_mil": [
+    "Shadow doctrine. Reads UserData/mil_doctrine.json and logs what the",
+    "measured 2-4x commitment band and the good-commander build trajectory",
+    "would say, beside what the live layer does. Issues no orders and",
+    "builds nothing, and ticks even when military.enabled is false --",
+    "which is the point, since eco soaks are exactly the rounds we have",
+    "no military read on. Delete mil_doctrine.json and it goes quiet."
+  ],
+  "mil": {
+    "shadow": true
+  },
   "military": {
     "enabled": false,
     "execute": true,
     "produce": true,
     "offence": true,
     "blockVanillaAttackOrders": true,
-
     "strengthMargin": 1.5,
-
     "homeShare": 0.25,
     "homeCapShare": 0.5,
     "maxDefendMissions": 3,
     "maxProducersPerType": 10,
-
     "ecoReserve": 15000,
     "lesserCystShare": 0.25,
-
     "pushGrowthFloor": 20.0,
     "pushMargin": 1.5,
     "pushRetreatFraction": 0.4,
     "structureRazeShare": 0.5
   },
-
   "_lockAlienCommander": [
-    "true — the alien commander seat is emptied and handed back to the AI within",
+    "true \u2014 the alien commander seat is emptied and handed back to the AI within",
     "  a second of any player taking it. Use it whenever you are playing AGAINST",
     "  the bot: a human in that seat disables the AI commander, which stands the",
     "  eco planner down and silences the whole military layer, and the round",
     "  carries on looking normal. [ALIEN/LOCK] logs each ejection.",
-    "false (default) — anyone may command the aliens. Required for co-op, where",
+    "false (default) \u2014 anyone may command the aliens. Required for co-op, where",
     "  EcoAssistWithHumanCommander keeps the economy running for a human."
   ],
   "lockAlienCommander": false,
-
   "_maxUnbuiltNodes": [
     "Nodes ORDERED AND NOT YET STANDING, across the whole map. A chain builds one",
     "node at a time, so an eighth site earns nothing until the seven ahead of it",
-    "finish — it is just cash frozen in something that does not work yet, on",
+    "finish \u2014 it is just cash frozen in something that does not work yet, on",
     "ground we may not still want by then. NarakaCity 2026-08-07: 99 nodes built",
     "for 18 Bio Caches, and the enemy destroyed 57 of them.",
-    "This is a limit on WORK IN PROGRESS, not on order rate — maxNodeFronts caps",
+    "This is a limit on WORK IN PROGRESS, not on order rate \u2014 maxNodeFronts caps",
     "how many are ordered per tick and says nothing about how many earlier orders",
     "are still half-built, which is why it did not help. Repair is exempt: the",
     "structures past a break are already built and already dying.",
@@ -238,27 +233,24 @@
     "sequential and slow. There is no 'off'."
   ],
   "maxUnbuiltNodes": 3,
-
   "_maxNodeFronts": [
     "Hard ceiling on how many fronts may be NODING at once. Applied at all three",
-    "places fronts are opened — the per-tick node fire budget, the escape hatch,",
-    "and pioneer chains — so it cannot be honoured in one path and ignored in",
+    "places fronts are opened \u2014 the per-tick node fire budget, the escape hatch,",
+    "and pioneer chains \u2014 so it cannot be honoured in one path and ignored in",
     "another.",
     "The planner funds fronts from surplus and opens six or more on a deep bank,",
     "which is right for an eco soak and wrong for a played game, where broad",
     "noding spreads structures a defence cannot cover.",
-    "0 (default) — no ceiling, the planner's own budget applies."
+    "0 (default) \u2014 no ceiling, the planner's own budget applies."
   ],
   "maxNodeFronts": 0,
-
   "_eco": "Economy knobs worth changing between rounds.",
   "blueprintDrivesPhase2": true,
   "replanIntervalS": 30,
   "workersByTenMinutes": 100,
   "cystStrategyAuto": true,
   "maxCystsPerPlan": 4,
-
-  "_rigOwned": "Ignored while arms are cycling — see _readme.",
+  "_rigOwned": "Ignored while arms are cycling \u2014 see _readme.",
   "workerCapPerBioCache": 10,
   "producerPerSites": 3
 }
