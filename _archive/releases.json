@@ -38,6 +38,17 @@
    "cut_at": "2026-08-12T22:07:03Z",
    "dll_sha256_16": "122a0cafcff61e12",
    "subject": "v0.88.1: the round clock starts when the round does"
+  },
+  "v0.88.2": {
+   "commit": "9038c85",
+   "configs": {
+    "mil_doctrine.json": "4b900b7e4139cbca",
+    "rtsai.json": "6c76122895ed3c75",
+    "rtsai_units.json": "4797056e6a89496e"
+   },
+   "cut_at": "2026-08-12T22:12:40Z",
+   "dll_sha256_16": "81467240373d8bdc",
+   "subject": "v0.88.2: the shadow band must not depend on the layer it is shadowing"
   }
  }
 }
