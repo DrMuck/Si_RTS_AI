@@ -37,12 +37,13 @@ MelonPreferences is deliberately NOT snapshotted: MelonLoader rewrites that file
 from memory on shutdown, so a copy taken while the server runs is a copy of
 something that is about to be overwritten. `COOP_SERVER_SETUP.md` documents it.
 
-WHAT THIS DOES NOT PROTECT AGAINST
------------------------------------
-The repo has no git remote. All 258 commits, every tag and this whole archive
-live on one disk, so a disk failure loses the lot regardless of how carefully
-versions are cut. That is a different problem from rolling back a bad build and
-this tool does not solve it.
+OFFSITE IS A SEPARATE JOB
+-------------------------
+Since 2026-08-12 the repo pushes to the private `DrMuck/Si_RTS_AI`, so commits
+and tags survive this disk. `_archive/` does NOT: the DLLs and config snapshots
+are gitignored build output. A tag can always be rebuilt, so nothing is lost
+that cannot be regenerated — but the instant-rollback convenience is local
+only.
 """
 
 import argparse
@@ -142,6 +143,37 @@ def cut(args):
     run(["dotnet", "build", "-c", "Release"], cwd=PROJECT)
     if not os.path.exists(BUILT):
         sys.exit(f"build reported success but {BUILT} is missing")
+
+    # BUILD THE TAG TOO, NOT JUST THE WORKING TREE.
+    #
+    # v0.88.0 was cut by hand and shipped a DLL that worked while the commit did
+    # not compile: half an in-progress change had been swept into it and half
+    # was still sitting uncommitted, so the working tree built and the tag did
+    # not. Nobody would have found out until the day someone tried to roll back
+    # to it, which is the worst possible day to find out.
+    #
+    # The dirty-tree check above catches the usual version of this. It does not
+    # catch a tree that is clean but whose HEAD is missing something the build
+    # needs from an untracked file, so the tag is compiled in a throwaway
+    # worktree as well. It costs about a second.
+    if not args.skip_tag_build:
+        print("  verifying the tag builds on its own…")
+        wt = os.path.join(ROOT, ".verify-worktree")
+        shutil.rmtree(wt, ignore_errors=True)
+        run(["git", "worktree", "add", "--detach", wt, version])
+        try:
+            r = subprocess.run(["dotnet", "build", "-c", "Release"],
+                               cwd=os.path.join(wt, "Si_RTS_AI"),
+                               capture_output=True, text=True)
+            if r.returncode != 0:
+                errs = [l for l in r.stdout.splitlines() if "error CS" in l][:5]
+                sys.exit("the TAG does not compile, though the working tree "
+                         "does — something the build needs is not committed:\n  "
+                         + "\n  ".join(errs or ["(see dotnet output)"]))
+        finally:
+            run(["git", "worktree", "remove", wt, "--force"], check=False)
+            shutil.rmtree(wt, ignore_errors=True)
+        print("    tag builds clean")
 
     os.makedirs(ARCHIVE, exist_ok=True)
     dll_dst = os.path.join(ARCHIVE, f"Si_RTS_AI_{version}.dll")
@@ -285,6 +317,9 @@ def main():
     ap.add_argument("--no-deploy", dest="deploy", action="store_false",
                     help="archive but do not touch the server")
     ap.add_argument("--allow-dirty", action="store_true")
+    ap.add_argument("--skip-tag-build", action="store_true",
+                    help="skip compiling the tag in a worktree; only for
+a machine where a second build is genuinely too slow")
     args = ap.parse_args()
 
     if args.list:

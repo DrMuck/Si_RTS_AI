@@ -25,7 +25,19 @@
    "cut_at": "2026-08-12T23:49:00Z",
    "dll_sha256_16": "9b081fd47a58ca21",
    "note": "backfilled by hand before release.py existed",
-   "subject": "v0.88.0: the measured doctrine, running beside the live layer and touching nothing"
+   "subject": "v0.88.0: the measured doctrine, running beside the live layer and touching nothing",
+   "warning": "SOURCE DOES NOT COMPILE. The TickRoundClock() call was committed while its LayerReplay.cs implementation was not, so this tag is missing a method it calls. The archived DLL is sound -- it was built from the working tree, which had the fix -- so 'release.py --to v0.88.0' works from the archive. Do NOT rebuild this tag. Use v0.88.1, which is the same code with the round-clock fix committed."
+  },
+  "v0.88.1": {
+   "commit": "890dffd",
+   "configs": {
+    "mil_doctrine.json": "4b900b7e4139cbca",
+    "rtsai.json": "6c76122895ed3c75",
+    "rtsai_units.json": "4797056e6a89496e"
+   },
+   "cut_at": "2026-08-12T22:07:03Z",
+   "dll_sha256_16": "122a0cafcff61e12",
+   "subject": "v0.88.1: the round clock starts when the round does"
   }
  }
 }
