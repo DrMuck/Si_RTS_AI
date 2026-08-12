@@ -188,9 +188,59 @@ force buys nothing and should have gone somewhere else on the map. That is an
 argument for two fronts over one doomstack, and it is measured rather than
 asserted.
 
-**The baseline the kernel must beat is 76%** (79% AI-vs-AI) — the accuracy of
+**The baseline the kernel must beat is 83%** (85% AI-vs-AI) — the accuracy of
 "more combat cash wins" on decisive fights. Composition has to be worth more than
 that or it is not worth modelling.
+
+### 4a. The kernel, fitted — it passes narrowly, and that is not the point
+
+One learned number per unit: a multiplier on its cash price, with
+`P(A wins) = sigmoid(k · log(effA/effB))`. Five-fold, **split by replay** so an
+army cannot appear on both sides of the train/test line:
+
+| subset | fights | baseline | kernel | lift | Brier |
+|---|---|---|---|---|---|
+| all | 3,595 | 82.6% | 83.4% | +0.9 | 0.144 |
+| **AI vs AI** | 1,043 | 84.6% | **86.1%** | **+1.5** | **0.118** |
+| skilled 1650+ | 2,869 | 81.9% | 82.6% | +0.7 | 0.151 |
+
+**Read the lift honestly: +1.5 points is not a reason to build a kernel.** Two
+things are, and neither is accuracy.
+
+*The probabilities are calibrated* (Brier 0.118 on the subset the bot can copy).
+The planner never needed `argmax`; it needs `p_win ≥ theta` to size a force, and
+a calibrated probability delivers that where an accuracy score does not.
+
+*The weights are the answer to a question production has been guessing at.*
+Alien units, AI-controlled, as a multiplier on cash price:
+
+| unit | cost | w | effective cost |
+|---|---|---|---|
+| **Behemoth** | 1200 | **1.82** | 658 |
+| Horned Crab | 160 | 1.18 | 135 |
+| Shocker | 220 | 1.15 | 191 |
+| Colossus | 6000 | 1.08 | 5558 |
+| Hunter | 500 | 1.03 | 483 |
+| Crab | 80 | 0.93 | 86 |
+| Scorpion | 1600 | 0.85 | 1876 |
+| Defiler | 4200 | 0.85 | 4924 |
+| Dragonfly | 400 | 0.72 | 555 |
+| Firebug | 2400 | 0.44 | 5511 |
+
+**This inverts the prior we ship.** `rtsai_units.json` ranks by kill/death and
+puts Defiler (4.8) and Scorpion (2.76) above Behemoth (2.42). Priced against the
+force that was actually standing there, Behemoth is the best alien unit by a
+wide margin and Defiler and Scorpion are *below* their cost. That is exactly the
+failure `mine_replay_kills.py` predicted in its own header — kill/death flatters
+whatever arrives last and survives — and it is the first time we have had a
+denominator good enough to show it.
+
+Two cautions carried in the code rather than buried. `k = 1.5` is **not** the
+same quantity as `beta = 0.64`: beta is how losses scale, k is how win
+probability scales, and both can hold. And infantry fits at 2.4–3.0× price,
+the largest claim in the table and the least trustworthy — infantry stands in
+numbers at defended bases, and the model cannot separate *is good* from *is
+present when things go well*.
 
 ## 5. The combat kernel (L1)
 
@@ -286,17 +336,17 @@ another, three times.
 
 Each step ships logging-only or default-off, and **one change per round**.
 
-0. **`mil_sim` engagement dataset.** *Done — 58,080 fights, §4.*
-1. **Fit and validate the kernel offline.** No game code. The gate is now a
-   number: beat **76%** (79% on AI-vs-AI) on held-out decisive fights, which is
-   what "more combat cash wins" already achieves. If composition cannot beat
-   that, the kernel is not ready and nothing downstream is either — a real
-   possible outcome, and cheap to discover here.
-   Before fitting, two known defects in the fight definition are worth one pass:
-   the greedy clustering fragments rolling battles (median fight is 44 s and 7
-   kills), and presence is a 400 m circle rather than the units that actually
-   traded. Both push `trade_frac` around, and `trade_frac` is the parameter
-   `beta = 0.52` is really measuring.
+0. **`mil_sim` engagement dataset.** *Done — 21,845 fights, §4.*
+1. **Fit and validate the kernel offline.** *Done — §4a. It passes, narrowly,
+   and the interesting output is not the accuracy.*
+1b. **A counter-aware kernel**, before anything ships. The average weight is
+   worth +1.5 points; the thing the planner actually wants is *w per unit per
+   enemy class*, which this model structurally cannot express and which is
+   where the remaining signal has to be. Same data, cut by the enemy mix
+   already recorded in each row. If that does not lift materially either, the
+   honest conclusion is that composition matters less than concentration in
+   this game and the planner should spend its attention on where to fight
+   rather than what to build.
 2. **Kernel in-game, shadow only.** It logs a prediction for every fight that
    happens; nothing consumes it. Read the log: were the predictions sane?
 3. **`price` from the kernel**, replacing `strengthMargin`. One constant dies.

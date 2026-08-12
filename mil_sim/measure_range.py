@@ -36,6 +36,7 @@ WHAT DEGRADES THE MEASUREMENT, STATED SO IT IS NOT MISREAD
 
 import argparse
 import collections
+import json
 import glob
 import math
 import os
@@ -156,12 +157,64 @@ def report(obs, units, by_epoch, min_n):
               f"{max(s):>7.0f}{reach:>7.0f}{aim:>6.0f}{frac:>11}  {limit}")
 
 
+# Melee reach. Measured, not guessed: Crab tops out at 13 m, Hunter at 32,
+# Goliath at 36 across 40 replays. 40 m covers contact plus one tick of closing
+# at 2 s sampling.
+CONTACT_M = 40.0
+
+
+def emit_reach(obs, units, path):
+    """
+    Write the reach every later stage should use: derived where the dump can
+    derive it, measured where it cannot.
+
+    Infantry is the reason this exists. Soldier weapons live on
+    `HumanHandsAnimator` and are not in the balance dump, so Juggernaut,
+    Templar, Sniper and the rest derive to zero — and a Juggernaut kills at
+    689 m. For those the archive's p99 kill distance is the only estimate
+    available, and it is a FLOOR: it is the furthest they were seen killing,
+    not the furthest they could. Each entry says which it is so a consumer can
+    weight them differently.
+    """
+    merged = collections.defaultdict(list)
+    for (nm, kind, _), ds in obs.items():
+        if kind == "unit":
+            merged[nm].extend(ds)
+
+    table = {}
+    for nm, u in units.items():
+        if u["is_structure"]:
+            continue
+        ds = sorted(merged.get(nm, []))
+        p99 = ds[min(len(ds) - 1, int(len(ds) * 0.99))] if ds else None
+        derived = u["reach"]
+        if derived > 1.0:
+            eff, src = derived, "derived"
+        elif p99 is not None and len(ds) >= 25 and p99 > CONTACT_M:
+            eff, src = p99, "measured"
+        else:
+            eff, src = CONTACT_M, "contact"
+        table[nm] = {
+            "effective": round(eff, 1), "source": src,
+            "derived": round(derived, 1), "aim_cap": round(u["aim_cap"], 1),
+            "measured_p99": round(p99, 1) if p99 is not None else None,
+            "n": len(ds),
+        }
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump({"contact_m": CONTACT_M, "units": table}, fh, indent=1)
+    by_src = collections.Counter(v["source"] for v in table.values())
+    print(f"\nwrote {path}: {len(table)} units  {dict(by_src)}")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--limit", type=int, default=40)
     ap.add_argument("--since", default="20260802")
     ap.add_argument("--min-n", type=int, default=25)
     ap.add_argument("--by-epoch", action="store_true")
+    ap.add_argument("--emit-reach", default="",
+                    help="write the merged reach table to this path")
     ap.add_argument("--archive", default=ARCHIVE)
     args = ap.parse_args()
 
@@ -177,6 +230,8 @@ def main():
     pct = 100.0 * paired / total if total else 0.0
     print(f"{paired:,} kills with both positions ({pct:.0f}% of {total:,})")
     report(obs, units, args.by_epoch, args.min_n)
+    if args.emit_reach:
+        emit_reach(obs, units, args.emit_reach)
 
 
 if __name__ == "__main__":
