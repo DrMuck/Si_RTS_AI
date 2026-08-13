@@ -186,10 +186,24 @@
     "would say, beside what the live layer does. Issues no orders and",
     "builds nothing, and ticks even when military.enabled is false --",
     "which is the point, since eco soaks are exactly the rounds we have",
-    "no military read on. Delete mil_doctrine.json and it goes quiet."
+    "no military read on. Delete mil_doctrine.json and it goes quiet.",
+    "",
+    "mil.spires \u2014 static defence, which this mod has never built. A top-quartile",
+    "commander has ~13 Hive and ~9 Thorn Spires by minute 30 and starts at minute",
+    "10; the bot builds none. The archive says the alien is weakest exactly early:",
+    "34% win rate and 0.68 cash exchange in the first five minutes, climbing to",
+    "45%/0.92 by twenty \u2014 so earlyBias lets it run ahead of the human curve before",
+    "minute 12. execute:false plans and logs without spending; flip it once the",
+    "[MIL/SPIRE] placements look sane."
   ],
   "mil": {
-    "shadow": true
+    "shadow": true,
+    "spires": {
+      "enabled": true,
+      "execute": false,
+      "cashFloor": 4000,
+      "earlyBias": 1.5
+    }
   },
   "military": {
     "enabled": false,

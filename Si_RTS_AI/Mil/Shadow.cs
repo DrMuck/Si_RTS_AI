@@ -173,14 +173,30 @@ namespace Si_RTS_AI.Mil
 
             // The live rule and the measured one, side by side. PushMargin is a
             // requirement multiplier on their estimate; the doctrine is a band.
+            // WASTEFUL IS NOT AGREEMENT, and reading it as such hid the main
+            // finding of the first played round. The first version counted
+            // Wasteful as "would commit", so 31 of 73 ticks printed "agree"
+            // while the doctrine was actually saying something pushMargin has
+            // no opinion about: you are past the point where more force buys
+            // anything, send the surplus somewhere else. The bot sat at 4x-10x
+            // for the last third of that round and never split off, which is
+            // the saturation result showing up live — and the log called it
+            // agreement.
             float need = MilitaryConfig.PushMargin;
             bool liveWouldCommit = ratio >= need;
-            bool docWouldCommit  = band == Doctrine.Band.Commit
-                                || band == Doctrine.Band.Wasteful;
-            string verdict = liveWouldCommit == docWouldCommit
-                ? "agree"
-                : (liveWouldCommit ? "LIVE COMMITS, doctrine would not"
-                                   : "doctrine would commit, live holds");
+            string verdict;
+            if (band == Doctrine.Band.Wasteful)
+                verdict = liveWouldCommit
+                    ? "DIVERGES — live says commit, doctrine says the surplus is idle"
+                    : "doctrine says split the surplus, live holds";
+            else
+            {
+                bool docWouldCommit = band == Doctrine.Band.Commit;
+                verdict = liveWouldCommit == docWouldCommit
+                    ? "agree"
+                    : (liveWouldCommit ? "LIVE COMMITS, doctrine would not"
+                                       : "doctrine would commit, live holds");
+            }
 
             MelonLogger.Msg($"[MIL/SHADOW band]  {band} -> {Doctrine.Advice(band)} " +
                             $"| pushMargin {need:F2}x says {(liveWouldCommit ? "commit" : "hold")} " +

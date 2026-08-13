@@ -292,8 +292,17 @@ namespace Si_RTS_AI
                     // is every eco soak we run. It issues no orders, so there is
                     // nothing for the gate to protect.
                     if ((team.name ?? "").Contains("Alien"))
+                    {
                         try { Mil.Shadow.Tick(team); }
                         catch (Exception ex) { MelonLogger.Warning("[MIL/SHADOW] threw: " + ex.Message); }
+                        // Inside FactionControl below would be wrong: static
+                        // defence is the thing that keeps an eco-only round
+                        // alive, and those are exactly the rounds the military
+                        // gate is off for. It builds nothing unless
+                        // mil.spires.execute is set.
+                        try { Mil.SpirePlanner.Tick(team); }
+                        catch (Exception ex) { MelonLogger.Warning("[MIL/SPIRE] threw: " + ex.Message); }
+                    }
                     Perception.BuildTimeline.Tick(team);
                     if ((team.name ?? "").Contains("Alien")) Perception.QueenStatus.Evaluate(team);
                     long tThreat = TimedMs(() => { Perception.ThreatMap.Observe(team);
@@ -517,6 +526,8 @@ namespace Si_RTS_AI
             Planning.UnitPrior.Reload();
             Mil.Shadow.Configure();
             Mil.Shadow.ResetForNewRound();
+            Mil.SpirePlanner.Configure();
+            Mil.SpirePlanner.ResetForNewRound();
             Faction.AlienCommanderLock.Reload();
             Faction.AlienCommanderLock.ResetForNewRound();
             Planning.DefencePlanner.ResetForNewRound();
