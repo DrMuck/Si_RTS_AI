@@ -35,6 +35,41 @@ Note `ScoutEnabled = true` here: `ScoutPlanner` will recruit up to 20 Squids and
 order them around. Set it false if you want manual control of them — it is a
 MelonPreferences value, so it needs a stop.
 
+## `testmode-military/`
+
+**The first unattended round with the military layer actually running.** Same
+harness as `testmode-headless/` — fake client, auto-start, force-end at 25
+minutes — but the alien fights a real opponent instead of a purged one.
+
+Differs from `testmode-headless/` in five lines, and each one is load-bearing:
+
+```
+EnemyBroke                    true  ->  false   Sol/Centauri keep their cash
+HeadlessTest_SuppressHumanAI  true  ->  false   ...and their units
+military.execute              false ->  true    orders are issued
+military.produce              false ->  true    combat units are queued
+military.offence              false ->  true    pushes are allowed
+```
+
+plus `mil.spires.execute: true`, so static defence is built rather than only
+planned. A soak is the right place to let that off the leash for the first
+time: nothing is lost if it spends badly.
+
+**Why the two enemy flags travel together.** `EnemyBroke = false` on its own
+buys nothing, because `SuppressHumanAI` suicides every non-HQ human unit once a
+second and zeroes their resources anyway — the alien would still be shadow-
+boxing. Both, or neither.
+
+`testmode-headless/` turns them off for the opposite reason, and its README note
+explains it: with `military.produce: false` the alien has no army and dies
+around minute 20, long before the benchmark checkpoints. That reasoning expires
+the moment production is on, which is what this pair is for.
+
+`RTSAI_Sol` and `RTSAI_Centauri` stay false, so the human factions are run by
+Silica's own AI — the opponent is vanilla, not a second copy of us.
+
+---
+
 ## `testmode-headless/`
 
 Unattended soak. Fake client joins, round auto-starts, force-ends at 25 minutes,
