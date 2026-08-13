@@ -63,6 +63,8 @@ namespace Si_RTS_AI.Planning
             /// Kept on the battalion so the transition can be logged once
             /// instead of every pass.</summary>
             public bool  ClosingUp;
+            public float ClosingSince;   // when the close-up began, 0 = not closing
+            public bool  PatienceLogged; // one line per stall, not one per tick
         }
 
         internal static readonly List<Battalion> Battalions = new List<Battalion>(6);
@@ -331,8 +333,29 @@ namespace Si_RTS_AI.Planning
                 if (mission.Kind == MissionPlanner.Kind.Push)     push     = bat;
             }
 
+            // A COMMITTED FORCE DOES NOT ABSORB REINFORCEMENTS.
+            //
+            // The surplus used to go to the push whatever state it was in, and
+            // combined with the cohesion rule below that is a deadlock rather
+            // than a policy. NarakaCity 2026-08-13: the push reached 186 units
+            // and a spread of 3,665m, so `closingUp` was permanently true and
+            // every unit was ordered to the CENTROID OF ITS OWN BLOB instead of
+            // the objective — for sixty minutes. It never left. DrMuck watched
+            // combat units sit at four separate spawners and reported no
+            // pressure on the enemy, which is exactly what that produces.
+            //
+            // The army cannot close because it is fed from Cysts scattered
+            // across the map: fresh spawns re-inflate the spread as fast as the
+            // tail closes it, and 186 units cannot physically stand inside 220m
+            // anyway. Reinforcing a moving army is what the NEXT wave is for.
+            //
+            // So the surplus only tops up a force that has not left yet. Once it
+            // commits, later units accumulate as free — the next mission refresh
+            // raises a battalion for them, which is the "build up critical
+            // armies first" rule the spec asks for rather than a trickle.
             var reserve = push ?? garrison;
-            if (reserve != null)
+            if (reserve != null && (reserve.Phase == State.Forming
+                                 || reserve.Phase == State.Ready))
             {
                 while (free.Count > 0) Take(free, reserve, reserve.Objective);
                 reserve.Value = ValueOf(reserve.Units);
@@ -502,8 +525,35 @@ namespace Si_RTS_AI.Planning
 
         /// <summary>How strung out a group may get before it stops advancing and
         /// closes up. Generous enough that ordinary pathing noise does not stall
-        /// it, tight enough that the tail is in the same fight as the head.</summary>
+        /// it, tight enough that the tail is in the same fight as the head.
+        ///
+        /// A FLAT RADIUS IS WRONG FOR A LARGE ARMY. Two hundred and twenty metres
+        /// is right for a dozen units and physically impossible for two hundred —
+        /// they do not fit. Held flat it stalled a 186-unit push for a whole
+        /// round. CohesionRadius() scales it with the headcount.</summary>
         const float COHESION_M = 220f;
+
+        /// <summary>Ground one unit needs. A blob of N units occupies about
+        /// sqrt(N) x this across, so the allowance grows with the square root of
+        /// the headcount rather than linearly.</summary>
+        const float UNIT_FOOTPRINT_M = 26f;
+
+        /// <summary>Longest a battalion may spend closing up before it advances
+        /// regardless. The escape hatch: cohesion is a preference, arriving is
+        /// the point, and no amount of tidiness is worth a force that never
+        /// leaves. Reached only when something is preventing the close — a
+        /// straggler stuck on terrain, or reinforcements arriving faster than
+        /// the tail can walk.</summary>
+        const float CLOSING_PATIENCE_S = 45f;
+
+        /// <summary>How tight this particular battalion must be. Scales with
+        /// headcount, so a large army is allowed to be large.</summary>
+        static float CohesionRadius(Battalion bat)
+        {
+            int n = bat.Units.Count;
+            if (n <= 1) return COHESION_M;
+            return Mathf.Max(COHESION_M, Mathf.Sqrt(n) * UNIT_FOOTPRINT_M);
+        }
 
         /// <summary>Is this unit in a fight? Nothing we want is worth
         /// interrupting one — the order can wait until it resolves.</summary>
@@ -572,7 +622,27 @@ namespace Si_RTS_AI.Planning
                 // One rule, and it produces staging, pace-matching and regroup
                 // after a fight without any of them being written separately.
                 Cohesion(bat, out Vector3 centre, out float spread);
-                bool closingUp = spread > COHESION_M && bat.Units.Count > 1;
+                float allow = CohesionRadius(bat);
+                bool closingUp = spread > allow && bat.Units.Count > 1;
+                // The escape hatch. Without it a group that cannot close never
+                // advances, and "cannot close" is the normal case for an army
+                // being reinforced from across the map.
+                if (closingUp)
+                {
+                    if (bat.ClosingSince <= 0f) bat.ClosingSince = now;
+                    else if (now - bat.ClosingSince > CLOSING_PATIENCE_S)
+                    {
+                        closingUp = false;
+                        if (!bat.PatienceLogged)
+                        {
+                            bat.PatienceLogged = true;
+                            MelonLogger.Msg($"[BATTALION] {bat.Name} spread {spread:F0}m over " +
+                                            $"allowance {allow:F0}m for {CLOSING_PATIENCE_S:F0}s — " +
+                                            $"advancing anyway; arriving beats tidiness");
+                        }
+                    }
+                }
+                else { bat.ClosingSince = 0f; bat.PatienceLogged = false; }
                 Vector3 target = closingUp ? centre : dest;
                 if (closingUp != bat.ClosingUp)
                 {
