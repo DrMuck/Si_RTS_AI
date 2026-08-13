@@ -192,9 +192,15 @@
     "commander has ~13 Hive and ~9 Thorn Spires by minute 30 and starts at minute",
     "10; the bot builds none. The archive says the alien is weakest exactly early:",
     "34% win rate and 0.68 cash exchange in the first five minutes, climbing to",
-    "45%/0.92 by twenty \u2014 so earlyBias lets it run ahead of the human curve before",
     "minute 12. execute:false plans and logs without spending; flip it once the",
-    "[MIL/SPIRE] placements look sane."
+    "[MIL/SPIRE] placements look sane.",
+    "",
+    "mil.spires counts by DEMAND, not by clock. DefencePlanner lists ground that",
+    "earned recently AND has threat near it; each such site warrants perSite",
+    "spires, +1 above heavyThreat. A quiet round builds almost none. The Nest is",
+    "the one exception and gets one by nestByMin regardless, because the Queen is",
+    "the loss condition and the alien is measurably weakest early (34% win rate,",
+    "0.68 exchange in the first five minutes)."
   ],
   "mil": {
     "shadow": true,
@@ -202,7 +208,9 @@
       "enabled": true,
       "execute": false,
       "cashFloor": 4000,
-      "earlyBias": 1.5
+      "perSite": 1,
+      "heavyThreat": 2000,
+      "nestByMin": 8
     }
   },
   "military": {

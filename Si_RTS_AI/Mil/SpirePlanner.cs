@@ -39,19 +39,18 @@ namespace Si_RTS_AI.Mil
     /// costs 1,000 and 35 seconds and does not consume unit cap, so it buys
     /// time that Shockers cannot.
     ///
-    /// It also means the human trajectory is a FLOOR rather than a target here.
-    /// Good commanders place their first spire around minute 8-10, but they are
-    /// placing it when they can afford it, not when they first need it. This
-    /// planner is allowed to be earlier and never later.
+    /// That window is the ONE place this plans ahead of demand: the Nest gets a
+    /// spire by `nestByMin` whether or not the threat map has seen anything yet,
+    /// because the Queen is the loss condition and the first attack is the one
+    /// the economy can least afford to answer.
     ///
     /// WHAT IT DECIDES, AND WHAT IT DELIBERATELY DOES NOT
     /// ---------------------------------------------------
-    /// It decides HOW MANY (from the measured trajectory) and WHERE (the ground
-    /// `DefencePlanner` already ranks by recent income x threat, falling back to
-    /// the Nest, because the Queen is a loss condition and everything else is
-    /// an asset). It does not decide what a spire costs, when the economy can
-    /// spare it, or whether the ground is buildable — `MoneyBroker` and
-    /// `AlienConstruction` own those and are asked rather than second-guessed.
+    /// It decides WHERE and HOW MANY, both from live demand — see
+    /// ConsiderSites() for why the human build trajectory decides neither. It
+    /// does not decide what a spire costs, when the economy can spare it, or
+    /// whether the ground is buildable: `MoneyBroker` and `AlienConstruction`
+    /// own those and are asked rather than second-guessed.
     ///
     /// OFF BY DEFAULT, ON PURPOSE. `mil.spires.execute` starts false, so the
     /// first round logs every placement it WOULD make and spends nothing.
@@ -64,16 +63,25 @@ namespace Si_RTS_AI.Mil
         internal static bool Enabled { get; private set; } = true;
         internal static bool Execute { get; private set; }
 
-        /// <summary>Both spires cost 1,000. Below this in the bank we are not
-        /// buying defence with money the economy still needs to compound —
-        /// early eco IS the defence if it gets far enough fast enough.</summary>
+        /// <summary>Cash kept back for the economy. Costs are read live rather
+        /// than assumed — the balance dump says a Hive Spire is 1,000 and the
+        /// game charged 1,400 on 2026-08-13, so ObjectInfo.Cost is the truth and
+        /// the dump is a document. Below this in the bank we are not buying
+        /// defence with money the economy still needs to compound.</summary>
         static int _cashFloor = 4000;
 
-        /// <summary>How far ahead of the human curve we may run in the opening,
-        /// where the archive says the alien is weakest. 1.0 = follow it
-        /// exactly.</summary>
-        static float _earlyBias = 1.5f;
-        const float EARLY_UNTIL_MIN = 12f;
+        /// <summary>Spires a threatened, earning site justifies. The rule of
+        /// thumb, not a fitted number — see Warranted().</summary>
+        static int _perSite = 1;
+
+        /// <summary>Threat above which a site justifies one more. Calibrated off
+        /// nothing but the spread seen in one round: quiet sites read 200-330,
+        /// the contested one read 7,722.</summary>
+        static float _heavyThreat = 2000f;
+
+        /// <summary>Minutes by which the Nest should hold one spire even with a
+        /// clean threat map. The only place we act ahead of demand.</summary>
+        static float _nestByMin = 8f;
 
         /// <summary>Spires this close to an existing one are redundant — they
         /// would cover the same ground twice and leave other assets bare.</summary>
@@ -91,11 +99,14 @@ namespace Si_RTS_AI.Mil
         {
             Enabled    = RtsaiConfig.Bool ("mil.spires.enabled", true);
             Execute    = RtsaiConfig.Bool ("mil.spires.execute", false);
-            _cashFloor = RtsaiConfig.Int  ("mil.spires.cashFloor", 4000);
-            _earlyBias = RtsaiConfig.Float("mil.spires.earlyBias", 1.5f);
+            _cashFloor   = RtsaiConfig.Int  ("mil.spires.cashFloor",   4000);
+            _perSite     = RtsaiConfig.Int  ("mil.spires.perSite",      1);
+            _heavyThreat = RtsaiConfig.Float("mil.spires.heavyThreat",  2000f);
+            _nestByMin   = RtsaiConfig.Float("mil.spires.nestByMin",    8f);
             MelonLogger.Msg($"[MIL/SPIRE] {(Enabled ? "on" : "off")} " +
                             $"execute={Execute} cashFloor={_cashFloor} " +
-                            $"earlyBias={_earlyBias:F2} until {EARLY_UNTIL_MIN:F0}min" +
+                            $"perSite={_perSite} (+1 above threat {_heavyThreat:F0}) " +
+                            $"nestBy={_nestByMin:F0}min" +
                             (Execute ? "" : " — planning only, builds nothing"));
         }
 
@@ -119,8 +130,160 @@ namespace Si_RTS_AI.Mil
             DiscoverCds(team);
             if (_cds.Count == 0) return;
 
+            ConsiderSites(team, minutes);
+        }
+
+        /// <summary>
+        /// DEMAND DECIDES THE COUNT, NOT THE CLOCK.
+        ///
+        /// The first version servoed to the human build trajectory — build until
+        /// you have as many spires as a top-quartile commander had at this
+        /// minute. DrMuck killed it on sight: *"wouldnt orientate so much when
+        /// how many buildings are placed. It depends on the situation, the cash
+        /// in the bank and many more other factors."*
+        ///
+        /// He is right, and the code was contradicting its own documentation —
+        /// MIL_V2_ARCHITECTURE section 4d calls that curve "a prior to orient by
+        /// and a target to measure against, not a script to follow", and then
+        /// this class followed it as a script. A population average over top
+        /// commanders cannot know the map size, the matchup, whether anything is
+        /// actually attacking, or that 260,000 credits are sitting idle.
+        ///
+        /// What survives the objection is the CAPABILITY finding: zero spires
+        /// ever built, on any round, because no code named the structure. No
+        /// situation explains that. What does not survive is "you have 2 and the
+        /// average commander had 10.7 by now".
+        ///
+        /// So the count emerges from the map. `DefencePlanner.Tasks` already
+        /// holds exactly the right input and nothing else: a site is listed only
+        /// if it EARNED recently AND has nonzero threat near it — ground worth
+        /// defending that something is actually coming for. A quiet round builds
+        /// almost nothing; a contested one builds until the threat is covered.
+        ///
+        /// The trajectory stays in the log line as a yardstick, so we can still
+        /// see how the demand-driven count compares with human play, and it
+        /// decides nothing.
+        /// </summary>
+        static void ConsiderSites(Team team, float minutes)
+        {
+            int cash = 0;
+            try { cash = (int)team.TotalResources; } catch { }
+            int reserved = 0;
+            try { reserved = MoneyBroker.GetReservedCash(team); } catch { }
+            int spendable = cash - reserved;
+
+            // ONE PER TICK. Fifteen seconds between passes, so a contested map
+            // still covers itself inside a couple of minutes — but a sudden
+            // rush cannot make the planner dump ten spires in a single frame
+            // and hand the round to whoever attacks the other side.
+            foreach (var site in Sites(team, minutes))
+            {
+                int warranted = Warranted(site, minutes);
+                int covered   = SpiresNear(team, site.Pos);
+                if (covered >= warranted) continue;
+
+                // Cheaper first: a Thorn is 1,000 against a Hive's 1,400, and
+                // the first spire on a site is the one that matters most.
+                string name = PickType(team, site.Pos);
+                if (name == null || !_cds.TryGetValue(name, out var cd)) continue;
+
+                int cost = 1000;
+                try { cost = cd.ObjectInfo?.Cost ?? 1000; } catch { }
+                if (spendable < _cashFloor + cost) return;   // poorer sites will not do better
+
+                float yardstick = Doctrine.TargetAt(name, minutes);
+                _placedThisRound++;
+                MelonLogger.Msg(
+                    $"[MIL/SPIRE] t={minutes:F1}m {name} -> ({site.Pos.x:F0},{site.Pos.z:F0}) " +
+                    $"{site.Why} | warranted {warranted} covered {covered} " +
+                    $"| spendable {spendable} cost {cost}" +
+                    (float.IsNaN(yardstick) ? "" : $" | humans ~{yardstick:F1} by now") +
+                    (Execute ? "" : "  [PLAN ONLY — mil.spires.execute is false]"));
+
+                if (!Execute) return;
+                try
+                {
+                    if (!Faction.AlienConstruction.TryBuildStructureByCd(team, cd, site.Pos))
+                        MelonLogger.Msg($"[MIL/SPIRE] placement refused at " +
+                                        $"({site.Pos.x:F0},{site.Pos.z:F0}) — construction said no");
+                }
+                catch (Exception ex) { MelonLogger.Warning("[MIL/SPIRE] build threw: " + ex.Message); }
+                return;
+            }
+        }
+
+        struct Site { public Vector3 Pos; public float Threat; public long Income; public string Why; }
+
+        /// <summary>Ground worth defending, most valuable first, with the Nest
+        /// appended because the Queen is a loss condition and `DefencePlanner`
+        /// only lists it once something is already near it.</summary>
+        static IEnumerable<Site> Sites(Team team, float minutes)
+        {
+            var tasks = DefencePlanner.Tasks;
+            for (int i = 0; i < tasks.Count; i++)
+                yield return new Site
+                {
+                    Pos = tasks[i].Pos, Threat = tasks[i].Threat,
+                    Income = tasks[i].RecentIncome,
+                    Why = $"{tasks[i].Kind} earning {tasks[i].RecentIncome} " +
+                          $"under threat {tasks[i].Threat:F0}",
+                };
+
+            var nest = FindNest(team);
+            if (nest != Vector3.zero)
+                yield return new Site
+                {
+                    Pos = nest, Threat = 0f, Income = 0,
+                    Why = "the Nest — the Queen is the loss condition",
+                };
+        }
+
+        /// <summary>
+        /// How many spires this ground justifies. A STARTING OPINION, and
+        /// labelled as one: it is a rule of thumb to be measured against
+        /// outcomes, not something fitted from data. Two knobs, both in
+        /// rtsai.json, so it can be argued with between rounds.
+        ///
+        /// The Nest gets one early whatever the threat map says. That is the
+        /// one place the archive justifies acting ahead of demand: the alien
+        /// wins 34% of fights in the first five minutes at a 0.68 exchange, and
+        /// the thing being defended is the loss condition.
+        /// </summary>
+        static int Warranted(Site site, float minutes)
+        {
+            if (site.Threat <= 0f)
+                return minutes <= _nestByMin ? 1 : 0;     // the Nest, early only
+            return site.Threat >= _heavyThreat ? _perSite + 1 : _perSite;
+        }
+
+        /// <summary>Thorn first for cost, then Hive, so a site gets breadth
+        /// before it gets depth.</summary>
+        static string PickType(Team team, Vector3 pos)
+        {
             for (int i = 0; i < SPIRES.Length; i++)
-                Consider(team, SPIRES[i], minutes);
+            {
+                if (!_cds.ContainsKey(SPIRES[i])) continue;
+                if (CountNear(team, SPIRES[i], pos) == 0
+                    && !OrderedNear(SPIRES[i], pos)) return SPIRES[i];
+            }
+            return null;
+        }
+
+        static int SpiresNear(Team team, Vector3 pos)
+        {
+            int n = 0;
+            for (int i = 0; i < SPIRES.Length; i++)
+            {
+                n += CountNear(team, SPIRES[i], pos);
+                if (OrderedNear(SPIRES[i], pos)) n++;
+            }
+            return n;
+        }
+
+        static bool OrderedNear(string name, Vector3 pos)
+        {
+            try { return Faction.AlienConstruction.WasOrderedNear(name, pos, SPACING_M); }
+            catch { return false; }
         }
 
         /// <summary>
@@ -156,60 +319,11 @@ namespace Si_RTS_AI.Mil
             catch { }
         }
 
-        static void Consider(Team team, string name, float minutes)
-        {
-            float target = Doctrine.TargetAt(name, minutes);
-            if (float.IsNaN(target)) return;
-
-            // The opening is where the hole is, so we are allowed to run ahead
-            // of the human curve there and never behind it.
-            if (minutes < EARLY_UNTIL_MIN) target *= _earlyBias;
-
-            int have = CountStanding(team, name);
-            if (have >= Mathf.FloorToInt(target)) return;
-
-            if (!_cds.TryGetValue(name, out var cd)) return;
-
-            int cash = 0;
-            try { cash = (int)team.TotalResources; } catch { }
-            int reserved = 0;
-            try { reserved = MoneyBroker.GetReservedCash(team); } catch { }
-            int spendable = cash - reserved;
-            int cost = 1000;
-            try { cost = cd.ObjectInfo?.Cost ?? 1000; } catch { }
-
-            if (spendable < _cashFloor + cost)
-            {
-                // Not a refusal worth logging every 15s — but say it once the
-                // gap is large, because "wanted defence, could not pay" is a
-                // different story from "did not want defence".
-                return;
-            }
-
-            if (!TryPickSite(team, name, out var where, out string why)) return;
-
-            _placedThisRound++;
-            MelonLogger.Msg($"[MIL/SPIRE] t={minutes:F1}m {name} {have}/{target:F1} " +
-                            $"-> ({where.x:F0},{where.z:F0}) {why} | " +
-                            $"spendable {spendable} cost {cost}" +
-                            (Execute ? "" : "  [PLAN ONLY — mil.spires.execute is false]"));
-            if (!Execute) return;
-
-            try
-            {
-                if (!Faction.AlienConstruction.TryBuildStructureByCd(team, cd, where))
-                    MelonLogger.Msg($"[MIL/SPIRE] placement refused at " +
-                                    $"({where.x:F0},{where.z:F0}) — construction said no");
-            }
-            catch (Exception ex)
-            {
-                MelonLogger.Warning("[MIL/SPIRE] build threw: " + ex.Message);
-            }
-        }
-
-        static int CountStanding(Team team, string name)
+        /// <summary>Standing spires of this type within SPACING_M of a spot.</summary>
+        static int CountNear(Team team, string name, Vector3 pos)
         {
             int n = 0;
+            float r2 = SPACING_M * SPACING_M;
             try
             {
                 var structs = team.Structures;
@@ -218,8 +332,11 @@ namespace Si_RTS_AI.Mil
                     {
                         var st = structs[i];
                         if (st?.ObjectInfo == null || st.IsDestroyed) continue;
-                        if (string.Equals(st.ObjectInfo.DisplayName, name,
-                                          StringComparison.OrdinalIgnoreCase)) n++;
+                        if (!string.Equals(st.ObjectInfo.DisplayName, name,
+                                           StringComparison.OrdinalIgnoreCase)) continue;
+                        var p = st.transform.position;
+                        float dx = p.x - pos.x, dz = p.z - pos.z;
+                        if (dx * dx + dz * dz <= r2) n++;
                     }
             }
             catch { }
