@@ -93,6 +93,17 @@
    "cut_at": "2026-08-13T15:57:29Z",
    "dll_sha256_16": "79a03cd9c0879078",
    "subject": "v0.90.0: spires count by demand, not by clock"
+  },
+  "v0.91.0": {
+   "commit": "00d5612",
+   "configs": {
+    "mil_doctrine.json": "4b900b7e4139cbca",
+    "rtsai.json": "b17123b94b3293bd",
+    "rtsai_units.json": "4797056e6a89496e"
+   },
+   "cut_at": "2026-08-13T18:47:20Z",
+   "dll_sha256_16": "7a6edc128fe3124a",
+   "subject": "v0.91.0: the army could never leave \u00e2\u20ac\u201d cohesion deadlock"
   }
  }
 }
