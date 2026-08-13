@@ -45,12 +45,22 @@ minutes — but the alien fights a real opponent instead of a purged one.
 Differs from `testmode-headless/` in five lines, and each one is load-bearing:
 
 ```
-EnemyBroke                    true  ->  false   Sol/Centauri keep their cash
-HeadlessTest_SuppressHumanAI  true  ->  false   ...and their units
-military.execute              false ->  true    orders are issued
-military.produce              false ->  true    combat units are queued
-military.offence              false ->  true    pushes are allowed
+EnemyBroke                     true  ->  false   Sol/Centauri play normally
+HeadlessTest_AutoOverrideRtsai true  ->  false   ...with THEIR OWN unit choices
+military.execute               false ->  true    orders are issued
+military.produce               false ->  true    combat units are queued
+military.offence               false ->  true    pushes are allowed
 ```
+
+**`AutoOverrideRtsai` is the one that would have quietly ruined the test.** It
+flips the Phase 3.1 production override on for *every* team in
+`AIManager.Commanders`, with no faction filter — so our own CompositionPlanner
+would have been picking Sol's and Centauri's units too, and "vs vanilla AI"
+would have been us against a copy of our own composition logic. Off here.
+
+`HeadlessTest_SuppressHumanAI` needs no change: it is the LEGACY NAME for
+`EnemyBroke`, not a second switch. TestHarness reads `EnemyBroke` and falls back
+to the old key only when it is unset.
 
 plus `mil.spires.execute: true`, so static defence is built rather than only
 planned. A soak is the right place to let that off the leash for the first
