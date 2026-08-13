@@ -1,0 +1,171 @@
+{
+ "_readme": [
+  "MEASURED DOCTRINE for the military layer. Copy to <server>/UserData/.",
+  "Advisory: the mod logs against this before it acts on it.",
+  "",
+  "commit     - force-ratio bands in EFFECTIVE cash. Below refuseBelow",
+  "             nothing predicts the fight; past wastefulAbove the win",
+  "             curve is flat and the surplus belongs elsewhere.",
+  "unitValue  - multiplier on cash price, AI-vs-AI fit. A unit missing",
+  "             here is UNMEASURED, not bad, and counts at 1.0.",
+  "trajectory - what a top-quartile commander had built by each minute.",
+  "             A yardstick, not a script.",
+  "",
+  "Regenerate with mil_sim/emit_doctrine.py. Delete the file and the",
+  "mod falls back to raw cash and its own constants."
+ ],
+ "era": {
+  "trajectorySince": "20260501",
+  "unitValueSince": "20260401",
+  "faction": "Alien",
+  "note": "the meta moves; see check_epochs.py and build_phases.py"
+ },
+ "source": {
+  "model": "mil_model_ai.json",
+  "fights": 936,
+  "cv_accuracy": 0.8602,
+  "cv_baseline": 0.8453,
+  "ai_only": true,
+  "k": 1.437
+ },
+ "commit": {
+  "refuseBelow": 1.25,
+  "commitAt": 2.0,
+  "wastefulAbove": 4.0
+ },
+ "unitValue": {
+  "AA Truck": 0.79,
+  "Assault Car": 2.17,
+  "Barrage Truck": 1.231,
+  "Behemoth": 1.978,
+  "Colossus": 1.284,
+  "Combat Tank": 0.705,
+  "Commando": 6.202,
+  "Crab": 0.912,
+  "Crimson Tank": 1.334,
+  "Defiler": 0.765,
+  "Dragonfly": 0.763,
+  "Dreadnought": 0.524,
+  "Dropship": 1.084,
+  "Firebug": 0.539,
+  "Flak Car": 0.844,
+  "Gunship": 0.419,
+  "Heavy": 2.266,
+  "Heavy Quad": 0.701,
+  "Heavy Raider": 0.682,
+  "Heavy Striker": 1.017,
+  "Heavy Tank": 0.525,
+  "Horned Crab": 1.204,
+  "Hover Tank": 1.157,
+  "Hunter": 1.157,
+  "Juggernaut": 2.996,
+  "Light Quad": 0.53,
+  "Light Raider": 0.879,
+  "Light Striker": 2.003,
+  "Marksman": 1.207,
+  "Platoon Hauler": 0.621,
+  "Pulse Truck": 1.039,
+  "Pyro Tank": 0.859,
+  "Queen": 0.537,
+  "Railgun Tank": 1.016,
+  "Rocket Tank": 1.167,
+  "Scorpion": 0.72,
+  "Shocker": 1.214,
+  "Shuttle": 0.569,
+  "Siege Tank": 2.153,
+  "Sniper": 1.532,
+  "Squad Transport": 1.005,
+  "Strike Tank": 1.097,
+  "Templar": 1.083
+ },
+ "trajectory": {
+  "Bio Cache": {
+   "5": 2.73,
+   "10": 6.52,
+   "15": 10.51,
+   "20": 13.74,
+   "25": 16.48,
+   "30": 18.94,
+   "40": 22.82
+  },
+  "Greater Spawning Cyst": {
+   "5": 0.09,
+   "10": 1.3,
+   "15": 2.79,
+   "20": 4.22,
+   "25": 5.4,
+   "30": 6.49,
+   "40": 8.64
+  },
+  "Hive Spire": {
+   "5": 0.0,
+   "10": 1.35,
+   "15": 4.91,
+   "20": 8.39,
+   "25": 11.06,
+   "30": 13.51,
+   "40": 16.51
+  },
+  "Lesser Spawning Cyst": {
+   "5": 2.84,
+   "10": 5.86,
+   "15": 8.84,
+   "20": 11.31,
+   "25": 13.08,
+   "30": 14.67,
+   "40": 17.22
+  },
+  "Nest": {
+   "5": 0.0,
+   "10": 0.01,
+   "15": 0.14,
+   "20": 0.42,
+   "25": 0.71,
+   "30": 0.95,
+   "40": 1.27
+  },
+  "Node": {
+   "5": 12.35,
+   "10": 38.61,
+   "15": 67.19,
+   "20": 92.53,
+   "25": 111.05,
+   "30": 128.35,
+   "40": 156.12
+  },
+  "Quantum Cortex": {
+   "5": 0.87,
+   "10": 1.01,
+   "15": 1.05,
+   "20": 1.12,
+   "25": 1.17,
+   "30": 1.21,
+   "40": 1.25
+  },
+  "Thorn Spire": {
+   "5": 0.01,
+   "10": 0.87,
+   "15": 3.24,
+   "20": 5.42,
+   "25": 7.44,
+   "30": 8.75,
+   "40": 9.57
+  },
+  "Colossal Spawning Cyst": {
+   "10": 0.01,
+   "15": 0.23,
+   "20": 0.64,
+   "25": 1.02,
+   "30": 1.3,
+   "40": 1.8
+  },
+  "Grand Spawning Cyst": {
+   "10": 0.2,
+   "15": 0.57,
+   "20": 0.88,
+   "25": 1.26,
+   "30": 1.54,
+   "40": 1.97
+  }
+ }
+}
