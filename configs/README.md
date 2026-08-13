@@ -35,9 +35,10 @@ Note `ScoutEnabled = true` here: `ScoutPlanner` will recruit up to 20 Squids and
 order them around. Set it false if you want manual control of them — it is a
 MelonPreferences value, so it needs a stop.
 
-## `testmode-military/`
+## `alien-military-vs-vanilla/`
 
-**The first unattended round with the military layer actually running.** Same
+**Alien military test against Silica's own AI.** The first unattended round
+with the military layer actually running. Same
 harness as `testmode-headless/` — fake client, auto-start, force-end at 25
 minutes — but the alien fights a real opponent instead of a purged one.
 
