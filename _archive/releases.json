@@ -49,6 +49,17 @@
    "cut_at": "2026-08-12T22:12:40Z",
    "dll_sha256_16": "81467240373d8bdc",
    "subject": "v0.88.2: the shadow band must not depend on the layer it is shadowing"
+  },
+  "v0.88.3": {
+   "commit": "35906a1",
+   "configs": {
+    "mil_doctrine.json": "4b900b7e4139cbca",
+    "rtsai.json": "d6722defa8343cdf",
+    "rtsai_units.json": "4797056e6a89496e"
+   },
+   "cut_at": "2026-08-13T10:14:08Z",
+   "dll_sha256_16": "1cc9bb63b322573b",
+   "subject": "v0.88.3: a stalled Node order is now acted on, not just counted"
   }
  }
 }
