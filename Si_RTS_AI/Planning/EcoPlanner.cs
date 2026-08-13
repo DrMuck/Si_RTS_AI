@@ -2298,11 +2298,20 @@ namespace Si_RTS_AI.Planning
                     // everything past it decays. Same argument as
                     // CHAIN_HOPS_PER_CYCLE, with more urgency behind it.
                     int laid = 0;
+                    // WALK THE ANCHOR FORWARD. The state is not rebuilt between
+                    // hops — the node we just ordered does not exist yet — so
+                    // without carrying the anchor every hop would recompute the
+                    // same first step and the loop would order one position
+                    // REPAIR_HOPS_PER_CYCLE times.
+                    Vector3 anchor = repFrom;
                     for (int hop = 0; hop < REPAIR_HOPS_PER_CYCLE; hop++)
                     {
                         // Node reach, not Bio Cache reach -- see needWithinM.
+                        // Anchor passed explicitly: the orphan is in EcoState
+                        // like any other node, so letting this pick the nearest
+                        // structure to the goal picks the orphan itself.
                         if (!NextNodeTowards(state, repTo, out Vector3 repHop,
-                                             EcoSimulator.NODE_REACH_M)) break;
+                                             EcoSimulator.NODE_REACH_M, anchor)) break;
                         int beforeRep = fired;
                         TryFireAction(new Candidate
                         {
@@ -2313,6 +2322,7 @@ namespace Si_RTS_AI.Planning
                         }, rescue: true);
                         if (fired == beforeRep) break;      // could not, stop asking
                         laid++;
+                        anchor = repHop;
                         MelonLogger.Msg($"[PLAN/EXEC] REPAIR node at ({repHop.x:F0},{repHop.z:F0}) " +
                                         $"reconnecting ({repTo.x:F0},{repTo.z:F0})");
                     }
@@ -4957,8 +4967,31 @@ namespace Si_RTS_AI.Planning
         /// every tick with 148,110 in the bank, while singlePointsOfFailure
         /// climbed 113 -> 116. One node would have closed it.
         /// </param>
+        /// <param name="anchorOverride">
+        /// Hop from HERE instead of from whatever structure is nearest the goal.
+        ///
+        /// REPAIR CANNOT USE THE NEAREST STRUCTURE, BECAUSE THE NEAREST
+        /// STRUCTURE IS THE THING IT IS TRYING TO RESCUE. `EcoState.nodes`
+        /// carries every node with no reachability filter, so an orphan is in
+        /// there like any other — and when repair asked for a hop toward the
+        /// orphan, the scan below found the orphan itself at distance zero,
+        /// concluded `gap <= need`, and returned "no node needed". Every time.
+        ///
+        /// That is why repair has never worked. NarakaCity 2026-08-13,
+        /// (2166,-724): NODEMGR asked for one node across a 225m gap while
+        /// 41,811 sat in the bank, and got "REPAIR BLOCKED ... no reachable hop"
+        /// on every cycle. The 2026-08-12 fix (node reach instead of Bio Cache
+        /// reach) changed `need` from 249 to 150 and could not have helped: the
+        /// gap being compared was 0.
+        ///
+        /// NodeManager already knows the right anchor — it computes the
+        /// connected end of the break as `repFrom` — so repair passes it rather
+        /// than having it re-derived from a state that cannot tell connected
+        /// from orphaned.
+        /// </param>
         static bool NextNodeTowards(EcoState s, Vector3 goal, out Vector3 pos,
-                                    float needWithinM = -1f)
+                                    float needWithinM = -1f,
+                                    Vector3 anchorOverride = default)
         {
             pos = goal;
             if (goal == Vector3.zero) return false;
@@ -4970,6 +5003,8 @@ namespace Si_RTS_AI.Planning
                 float d = dx * dx + dz * dz;
                 if (d < best) { best = d; from = q; }
             }
+            bool pinned = anchorOverride != Vector3.zero;
+            if (pinned) consider(anchorOverride);
             // A NODE MAY ANCHOR OFF WORK STILL IN PROGRESS.
             //
             // Bio Caches and Nodes anchor a NODE from the moment they are
@@ -4980,10 +5015,13 @@ namespace Si_RTS_AI.Planning
             // Worth roughly a build per hop. Every chain step used to wait for
             // its anchor to complete, so a four-hop chain paid time it never
             // owed.
-            if (s.nestPos != Vector3.zero) consider(s.nestPos);
-            for (int i = 0; i < s.bcs.Count; i++)   consider(s.bcs[i].pos);
-            for (int i = 0; i < s.nodes.Count; i++) consider(s.nodes[i].pos);
-            for (int i = 0; i < s.cysts.Count; i++) if (s.cysts[i].finished) consider(s.cysts[i].pos);
+            if (!pinned)
+            {
+                if (s.nestPos != Vector3.zero) consider(s.nestPos);
+                for (int i = 0; i < s.bcs.Count; i++)   consider(s.bcs[i].pos);
+                for (int i = 0; i < s.nodes.Count; i++) consider(s.nodes[i].pos);
+                for (int i = 0; i < s.cysts.Count; i++) if (s.cysts[i].finished) consider(s.cysts[i].pos);
+            }
             if (best == float.MaxValue) return false;
 
             float gap = Mathf.Sqrt(best);
