@@ -232,7 +232,20 @@ def deploy_files(dll, cfg_dir, version, retire_missing=False):
     if not os.path.isdir(MODS):
         print(f"  ! server not found at {SERVER} — skipping deploy")
         return
-    shutil.copy2(dll, os.path.join(MODS, "Si_RTS_AI.dll"))
+    try:
+        shutil.copy2(dll, os.path.join(MODS, "Si_RTS_AI.dll"))
+    except OSError as exc:
+        # WinError 1224: the file has a user-mapped section open — i.e. Silica
+        # is running and has the DLL loaded. This is the NORMAL case when a
+        # version is cut mid-round, not a failure of the release: the tag,
+        # archive and config snapshot are all already written by the time we
+        # get here, so the only thing missing is the copy. Say that plainly
+        # instead of throwing a traceback at someone who is mid-game.
+        print(f"  ! could not replace the deployed DLL: {exc.strerror or exc}")
+        print(f"    the server is running and has it loaded. Everything else is")
+        print(f"    saved — stop the server and run:")
+        print(f"      python tools/release.py --to {version}")
+        return
     n = retired = 0
     for name, _ in CONFIGS:
         src = os.path.join(cfg_dir, name)
