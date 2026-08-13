@@ -38,7 +38,14 @@ MelonPreferences value, so it needs a stop.
 ## `alien-military-vs-vanilla/`
 
 **Alien military test against Silica's own AI.** The first unattended round
-with the military layer actually running. Same
+with the military layer actually running.
+
+Runs **60 minutes**, not the soak's 25. The eco benchmarks only needed the
+1500s checkpoint; a military round needs to reach the part of the game where
+military decisions exist. Real matches run 40-60 minutes, the build trajectory
+this is measured against extends to minute 40, and in the 2026-08-13 co-op round
+the army did not pass 100k until minute 21 — a 25-minute cut would end the test
+four minutes after the interesting part started. Same
 harness as `testmode-headless/` — fake client, auto-start, force-end at 25
 minutes — but the alien fights a real opponent instead of a purged one.
 
