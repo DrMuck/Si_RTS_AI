@@ -45,6 +45,60 @@ namespace Si_RTS_AI.Planning
         /// structure counts as stalled rather than merely slow.</summary>
         const float STALL_GRACE_S  = 20f;
         const float STALL_RADIUS_M = 60f;
+
+        /// <summary>Seconds past the measured build time before a Node order
+        /// that produced nothing is FORGOTTEN rather than merely reported.
+        /// Longer than STALL_GRACE_S on purpose: reporting is a diagnostic and
+        /// should be twitchy, dropping an order is an action and should not
+        /// fire on something that is only slow. Well under
+        /// AlienConstruction.ORDER_MEMORY_S (240s), which is how long the spot
+        /// would otherwise stay un-retryable.</summary>
+        const float STALL_CLEAR_AFTER_S = 60f;
+
+        /// <summary>Stalled Node orders dropped this round, so the fix is
+        /// visible in the round summary rather than only in the moment.</summary>
+        internal static int StallsCleared { get; private set; }
+
+        /// <summary>
+        /// How many times one spot may be freed for a retry before we stop.
+        ///
+        /// WITHOUT THIS THE FIX IS AN INFINITE LOOP. Clearing a stalled order
+        /// invites the planner to ask again; if the ground is genuinely
+        /// unbuildable — blocked, contested, out of reach after a cut — it
+        /// stalls again, gets cleared again, and the pair spin every thirty
+        /// seconds spending cash on orders that can never complete. Three
+        /// attempts is enough to ride out a transient (a chain being repaired
+        /// behind it, a unit standing in the way) and few enough that a truly
+        /// dead spot is abandoned within two minutes.
+        /// </summary>
+        const int   STALL_MAX_RETRIES = 3;
+        const float STALL_MEMORY_M    = 40f;
+        static readonly List<Vector3> _stallSpots  = new List<Vector3>(8);
+        static readonly List<int>     _stallCounts = new List<int>(8);
+
+        /// <summary>Times we have already freed this ground, so a spot that
+        /// cannot be built is given up on instead of retried forever.</summary>
+        static int StallRetriesAt(Vector3 pos)
+        {
+            float r2 = STALL_MEMORY_M * STALL_MEMORY_M;
+            for (int i = 0; i < _stallSpots.Count; i++)
+            {
+                float dx = _stallSpots[i].x - pos.x, dz = _stallSpots[i].z - pos.z;
+                if (dx * dx + dz * dz <= r2) return _stallCounts[i];
+            }
+            return 0;
+        }
+
+        static void NoteStallRetry(Vector3 pos)
+        {
+            float r2 = STALL_MEMORY_M * STALL_MEMORY_M;
+            for (int i = 0; i < _stallSpots.Count; i++)
+            {
+                float dx = _stallSpots[i].x - pos.x, dz = _stallSpots[i].z - pos.z;
+                if (dx * dx + dz * dz <= r2) { _stallCounts[i]++; return; }
+            }
+            _stallSpots.Add(pos); _stallCounts.Add(1);
+        }
         static readonly List<Vector3> _orderScratch = new List<Vector3>(16);
 
         /// <summary>How far apart two structures can be and still chain. Read
@@ -92,6 +146,8 @@ namespace Si_RTS_AI.Planning
         internal static void ResetForNewRound()
         {
             _lastReportAt = 0f; _repairAt = -1f; _loopAt = -1f; _commitAt = -1f;
+            StallsCleared = 0;
+            _stallSpots.Clear(); _stallCounts.Clear();
         }
 
         /// <summary>
@@ -681,11 +737,12 @@ namespace Si_RTS_AI.Planning
             //
             // The accepted Construct is the evidence. If an order is older than
             // the build should have taken and nothing stands there, it stalled.
-            int stalled = 0;
+            int stalled = 0, cleared = 0;
             Vector3 firstStalled = Vector3.zero;
             try
             {
-                float overdue = Perception.BuildTimeline.MeasuredTotalS("Node") + STALL_GRACE_S;
+                float build   = Perception.BuildTimeline.MeasuredTotalS("Node");
+                float overdue = build + STALL_GRACE_S;
                 _orderScratch.Clear();
                 Faction.AlienConstruction.CollectOrdersOlderThan("Node", overdue, _orderScratch);
                 for (int i = 0; i < _orderScratch.Count; i++)
@@ -694,6 +751,66 @@ namespace Si_RTS_AI.Planning
                     if (stalled == 0) firstStalled = _orderScratch[i];
                     stalled++;
                 }
+
+                // AND NOW DO SOMETHING ABOUT IT.
+                //
+                // Counting stalls was all this ever did: the number went into
+                // the log line and nothing acted on it, so a Node ordered into
+                // a chain that was cut before its build started stayed un-built
+                // and — because WasOrderedNear answers yes for ORDER_MEMORY_S —
+                // un-retryable. In the 2026-08-13 co-op round `stalled` climbed
+                // 0 -> 9 over ten minutes while every REPAIR line went to a
+                // different, orphaned node, and DrMuck stood on one of them
+                // waiting for a repair that was never coming.
+                //
+                // FORGETTING IS THE ACTION, not re-ordering. Placement belongs
+                // to whichever planner wanted the node; clearing the memory lets
+                // it ask again on its next pass, or decide it no longer wants to,
+                // and both of those are right. Issuing a replacement from here
+                // would make this a second owner of a decision that already has
+                // one.
+                //
+                // A LONGER FUSE THAN THE REPORT USES. Reporting at build+20s is
+                // meant to be twitchy — it is a diagnostic. Clearing at
+                // build+STALL_CLEAR_AFTER_S makes sure we are not dropping the
+                // order for something that is merely slow and about to finish.
+                float clearAfter = build + STALL_CLEAR_AFTER_S;
+                _orderScratch.Clear();
+                Faction.AlienConstruction.CollectOrdersOlderThan("Node", clearAfter, _orderScratch);
+                for (int i = 0; i < _orderScratch.Count; i++)
+                {
+                    var at = _orderScratch[i];
+                    if (StructureNearPos(team, "Node", at, STALL_RADIUS_M)) continue;
+
+                    int tries = StallRetriesAt(at);
+                    if (tries >= STALL_MAX_RETRIES)
+                    {
+                        // Left ORDERED on purpose. The order expiring naturally
+                        // at ORDER_MEMORY_S is the backstop; re-freeing it here
+                        // would restart the loop this cap exists to stop.
+                        if (tries == STALL_MAX_RETRIES)
+                        {
+                            NoteStallRetry(at);   // tick past, so this logs once
+                            MelonLogger.Warning($"[NODEMGR] Node at ({at.x:F0},{at.z:F0}) has " +
+                                                $"stalled {STALL_MAX_RETRIES} times — giving up on " +
+                                                $"that ground rather than ordering into it again");
+                        }
+                        continue;
+                    }
+
+                    int n = Faction.AlienConstruction.ForgetOrdersNear(
+                                "Node", at, STALL_RADIUS_M);
+                    if (n > 0)
+                    {
+                        cleared += n;
+                        NoteStallRetry(at);
+                        MelonLogger.Msg($"[NODEMGR] stalled Node at ({at.x:F0},{at.z:F0}) never " +
+                                        $"started after {clearAfter:F0}s — order forgotten " +
+                                        $"(attempt {tries + 1}/{STALL_MAX_RETRIES}), the spot is " +
+                                        $"open to be planned again");
+                    }
+                }
+                StallsCleared += cleared;
             }
             catch (Exception ex) { MelonLogger.Warning("[NODEMGR] stall check threw: " + ex.Message); }
 
@@ -711,6 +828,7 @@ namespace Si_RTS_AI.Planning
               .Append(" orphaned=").Append(orphans)
               .Append(" decaying=").Append(decaying)
               .Append(" stalled=").Append(stalled)
+              .Append(StallsCleared > 0 ? " clearedThisRound=" + StallsCleared : "")
               .Append(" singlePointsOfFailure=").Append(cuts.Count);
             if (orphans > 0)
                 sb.Append(" firstOrphan=(").Append(firstOrphan.x.ToString("F0")).Append(',')

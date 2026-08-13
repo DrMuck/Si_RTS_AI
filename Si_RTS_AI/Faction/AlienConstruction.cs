@@ -741,6 +741,46 @@ namespace Si_RTS_AI.Faction
         /// If the game disagrees the placement is simply refused and retried a
         /// second later, which costs a log line rather than a structure.
         /// </summary>
+        /// <summary>
+        /// Forget that we ordered this, so the planner may place it again.
+        ///
+        /// AN ORDER THAT NEVER BECAME A BUILDING BLOCKS ITS OWN RETRY.
+        /// `WasOrderedNear` is what stops the planners re-ordering a spot they
+        /// have already asked for, and it answers yes for `ORDER_MEMORY_S` —
+        /// four minutes — whether or not anything was actually built. So a Node
+        /// ordered into a chain that got cut before its build started sits
+        /// there un-built AND un-retryable, and `NodeManager` counts it as
+        /// stalled once every thirty seconds while nothing happens. DrMuck,
+        /// standing on one of them mid-round: *"waiting for node repair here:
+        /// 2124.7, -382.6"* — a wait that would never have ended.
+        ///
+        /// Clearing the memory is the whole fix. It deliberately does NOT issue
+        /// a replacement order: placement belongs to the planner that wanted the
+        /// node, and re-ordering from here would put a second owner on that
+        /// decision. Once the spot is forgotten, the normal planning pass either
+        /// asks for it again or has changed its mind, and both are correct.
+        ///
+        /// Returns how many entries were dropped.
+        /// </summary>
+        internal static int ForgetOrdersNear(string name, Vector3 pos, float radiusM)
+        {
+            int dropped = 0;
+            float r2 = radiusM * radiusM;
+            for (int i = _ordered.Count - 1; i >= 0; i--)
+            {
+                if (!string.Equals(_ordered[i].Name, name, StringComparison.OrdinalIgnoreCase)) continue;
+                float dx = _ordered[i].Pos.x - pos.x, dz = _ordered[i].Pos.z - pos.z;
+                float wx = _ordered[i].Want.x - pos.x, wz = _ordered[i].Want.z - pos.z;
+                // Match on either the position we asked for or the one the game
+                // snapped it to — the same pair WasOrderedNear tests, so a spot
+                // this clears is exactly a spot that gate would have blocked.
+                if (dx * dx + dz * dz > r2 && wx * wx + wz * wz > r2) continue;
+                _ordered.RemoveAt(i);
+                dropped++;
+            }
+            return dropped;
+        }
+
         internal static void CollectOrdersOlderThan(string name, float minAgeS, List<Vector3> into)
         {
             if (into == null) return;
