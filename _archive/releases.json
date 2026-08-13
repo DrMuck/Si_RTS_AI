@@ -82,6 +82,17 @@
    "cut_at": "2026-08-13T15:04:39Z",
    "dll_sha256_16": "64820ea32ef9e7f8",
    "subject": "v0.89.1: node repair could never fire - the orphan was its own anchor"
+  },
+  "v0.90.0": {
+   "commit": "bb054f5",
+   "configs": {
+    "mil_doctrine.json": "4b900b7e4139cbca",
+    "rtsai.json": "d6722defa8343cdf",
+    "rtsai_units.json": "4797056e6a89496e"
+   },
+   "cut_at": "2026-08-13T15:57:29Z",
+   "dll_sha256_16": "79a03cd9c0879078",
+   "subject": "v0.90.0: spires count by demand, not by clock"
   }
  }
 }
