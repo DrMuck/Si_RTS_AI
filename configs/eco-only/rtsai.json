@@ -1,6 +1,6 @@
 {
   "_readme": [
-    "CO-OP ECO SERVER — players play alien, Si_RTS_AI runs their economy.",
+    "CO-OP ECO SERVER \u2014 players play alien, Si_RTS_AI runs their economy.",
     "",
     "The military layer issues NO orders and builds NO producers. It still runs",
     "its analysis and logs it, because DrMuck asked to keep the intel while the",
@@ -9,20 +9,19 @@
     "",
     "The previous soak configuration is saved as rtsai.soak-military.backup.json.",
     "",
-    "SANITY CHECK BEFORE A PLAYED ROUND — testMode is now FALSE. Left on it would",
+    "SANITY CHECK BEFORE A PLAYED ROUND \u2014 testMode is now FALSE. Left on it would",
     "auto-join a fake client, force-end the round at 40 minutes and restart the",
     "map underneath the players. It is the single most damaging line to leave set",
     "from a soak config, and it is the reason this file is rewritten rather than",
     "edited by hand."
   ],
-
   "_notASoak": [
     "Every harness setting is off. These only ever made sense for unattended runs.",
-    "testMode false        — no fake client, no force-end, no map restart.",
-    "suppressCombat false  — players must be able to shoot. This is gated on",
+    "testMode false        \u2014 no fake client, no force-end, no map restart.",
+    "suppressCombat false  \u2014 players must be able to shoot. This is gated on",
     "                        testMode anyway, but it is stated rather than implied.",
-    "configCycle off       — one configuration, not rotating arms.",
-    "storageBufferCaches 0 — no measurement scaffolding parked next to the Nest."
+    "configCycle off       \u2014 one configuration, not rotating arms.",
+    "storageBufferCaches 0 \u2014 no measurement scaffolding parked next to the Nest."
   ],
   "testMode": true,
   "suppressCombat": false,
@@ -44,13 +43,12 @@
   "storageBufferCaches": 0,
   "storageBufferAtMinute": 10,
   "autoResourceDrain": false,
-
   "_military": [
     "OBSERVE ONLY. Deliberately 'enabled: true' with execute and produce OFF,",
     "rather than 'enabled: false'.",
     "",
     "enabled:false would switch off the planners too, and with them every line",
-    "worth reading — [MISSION] posture and enemy estimates, [BATTALION] what a",
+    "worth reading \u2014 [MISSION] posture and enemy estimates, [BATTALION] what a",
     "force would have been asked to do, [MIL/BP] which ground scores as forward,",
     "[DEFENCE] what ranks as worth holding. Those cost nothing when nothing acts",
     "on them, and they are the intel the rebuild needs.",
@@ -59,43 +57,39 @@
     "  produce:false  MilitaryProduction returns before spending a single credit,",
     "                 so no Greater Cyst is ever built for military reasons.",
     "  execute:false  BattalionManager never calls IssueOrders, and Owns() returns",
-    "                 false for every unit — which matters because two Harmony",
+    "                 false for every unit \u2014 which matters because two Harmony",
     "                 prefixes hang off Unit.OnMoveOrder and AIGroup.OnAttackOrder.",
     "                 With Owns() false they pass every order straight through, so",
     "                 PLAYER AND VANILLA ORDERS ARE UNTOUCHED. That is the property",
     "                 that makes this safe for a played co-op round.",
-    "  blockVanillaAttackOrders:false — belt and braces on the same point. It is",
+    "  blockVanillaAttackOrders:false \u2014 belt and braces on the same point. It is",
     "                 already gated on execute, but a co-op server is the last",
     "                 place to rely on a second condition.",
     "  offence:false  no push posture, so no armed reconnaissance either.",
     "",
     "The map layers (enemy_pressure, enemy_value, fow_active, fow_explored) are",
-    "written by Perception regardless of any of this — they were never gated on",
+    "written by Perception regardless of any of this \u2014 they were never gated on",
     "the military config."
   ],
   "military": {
-    "enabled": true,
+    "enabled": false,
     "execute": false,
     "produce": false,
     "offence": false,
     "blockVanillaAttackOrders": false,
-
     "strengthMargin": 1.5,
     "homeShare": 0.25,
     "homeCapShare": 0.5,
     "homeFloorCash": 12000,
     "maxDefendMissions": 3,
     "maxProducersPerType": 10,
-
     "ecoReserve": 15000,
     "lesserCystShare": 0.25,
-
     "pushGrowthFloor": 20.0,
     "pushMargin": 1.5,
     "pushRetreatFraction": 0.4,
     "structureRazeShare": 0.5
   },
-
   "_lockAlienCommander": [
     "OFF for player-commanded co-op. The player holds the alien commander",
     "seat and runs the military; the AI runs the economy underneath them.",
@@ -109,7 +103,6 @@
     "field. The two are mutually exclusive."
   ],
   "lockAlienCommander": false,
-
   "_eco": [
     "The tuned economy, unchanged, except for the node budget.",
     "",
@@ -119,14 +112,13 @@
     "node placement gaps reaching 209s against a 9s median, Bio Caches queued",
     "behind it on bcAnchor and shrimps walking to distant patches as a result.",
     "",
-    "The budget is now per front — maxUnbuiltNodesPerFront x maxNodeFronts, so",
+    "The budget is now per front \u2014 maxUnbuiltNodesPerFront x maxNodeFronts, so",
     "3 x 2 = 6. A single chain still stays shallow, because a chain builds one",
     "node at a time and stacking it deeper only freezes cash; two fronts get two",
     "chains' worth instead of sharing one."
   ],
   "maxUnbuiltNodesPerFront": 3,
   "maxNodeFronts": 5,
-
   "pileUpMaxPerPatch": 10,
   "pileUpMaxDetourM": 0,
   "bridgeMode": "loop",
@@ -148,10 +140,8 @@
     "shrimp's 160 credits frozen two builds ahead."
   ],
   "cystQueueMax": 1,
-
   "workerCapPerBioCache": 10,
   "producerPerSites": 3,
-
   "_openerDoubleCyst": [
     "May one opener site take a SECOND Cyst instead of the opening reaching",
     "for another site? A Cyst on ground already reached costs 1500 and no",
@@ -166,9 +156,7 @@
     "With this false the opener drops to 3 sites / 3 cysts for 6400 of a 9000",
     "bank and the last site lands at 100s -- measured worse."
   ],
-
   "openerDoubleCyst": true,
-
   "_openerTailSeconds": [
     "How long the opening's handover RATE is credited for, seconds.",
     "",
@@ -187,7 +175,6 @@
     "120 = credit the handover for the two minutes after handoff, not four."
   ],
   "openerTailSeconds": 240,
-
   "_remoteSupply": [
     "May a Cyst keep producing when its OWN Bio Cache is full, for free worker",
     "capacity elsewhere that the relocator can reach?",
@@ -211,7 +198,6 @@
   ],
   "remoteSupplyEnabled": true,
   "remoteSupplyMaxWalkS": 60,
-
   "_crowdSoften": [
     "GLOBAL crowd softening, 0..1, applied to the beam and every later phase.",
     "0 = the measured curve, unchanged. This is the honest default: the steps",
@@ -221,7 +207,6 @@
     "The opener has its own value below and does not read this one."
   ],
   "crowdSoften": 0,
-
   "_openerCrowdSoften": [
     "Fraction of the crowding penalty removed while scoring an OPENING only,",
     "0..1. The beam and every later phase keep the measured curve.",
@@ -241,7 +226,6 @@
     "fix one."
   ],
   "openerCrowdSoften": 1,
-
   "_coopBlockVanillaUnitOrders": [
     "CO-OP ONLY. Refuse move and attack orders raised INSIDE",
     "AICommander.Think on the alien team, so Silica's own commander stops",
@@ -253,5 +237,16 @@
     "and co-op runs execute:false. Blocking by unit would also be wrong here",
     "-- it cannot tell a player's order from the AI's."
   ],
-  "coopBlockVanillaUnitOrders": true
+  "coopBlockVanillaUnitOrders": true,
+  "mil": {
+    "shadow": true,
+    "spires": {
+      "enabled": true,
+      "execute": false,
+      "cashFloor": 4000,
+      "perSite": 1,
+      "heavyThreat": 2000,
+      "nestByMin": 8
+    }
+  }
 }

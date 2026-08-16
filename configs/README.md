@@ -88,7 +88,37 @@ Silica's own AI — the opponent is vanilla, not a second copy of us.
 
 ---
 
-## `testmode-headless/`
+## `eco-only/`
+
+Unattended eco soak, and the baseline every economy benchmark was measured on.
+**No military at all** — `military.enabled: false`, so nothing is produced,
+ordered or defended.
+
+Was `testmode-headless/`. Renamed because "headless" described how the round is
+driven and every other config here is headless too; what makes this one
+different is that the military layer is off.
+
+Two things changed when it was renamed, and both are corrections rather than
+preferences:
+
+- `HeadlessTest_AutoOverrideRtsai` **true -> false**. It flipped the Phase 3.1
+  production override on for *every* team in `AIManager.Commanders` with no
+  faction filter, so our own CompositionPlanner was picking Sol's and
+  Centauri's units. Wrong in every config, not just this one.
+- A `mil` block was added: shadow **on** (it is inert and the build-trajectory
+  line is worth having in an eco round too), spires enabled but
+  `execute: false` so they plan and never build.
+
+**Round length stays 25 minutes.** The eco benchmark corpus was measured against
+the 1500s checkpoint and quietly changing it would break comparability with
+every earlier run — the same class of mistake as pooling build data across
+balance eras. Raise `HeadlessTest_EndRoundAfterMinutes` deliberately if a longer
+observation is wanted, and know that the numbers stop being comparable.
+
+`EnemyBroke = true` here, unlike `alien-military-vs-vanilla/`: with no army the
+alien dies around minute 20 against a live opponent, long before the checkpoint.
+
+Original description follows.
 
 Unattended soak. Fake client joins, round auto-starts, force-ends at 25 minutes,
 humans are suppressed so the round survives to the benchmark checkpoints.
