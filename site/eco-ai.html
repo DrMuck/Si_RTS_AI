@@ -1,0 +1,341 @@
+<title>Teaching a Bot to Run an Economy</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root{
+  --ground:#F7F6F2; --panel:#FFFFFF; --sunk:#F1F0EA;
+  --ink:#14180F; --ink2:#4C5344; --ink3:#7C8274;
+  --rule:#E0E2D8; --rule2:#EDEEE7;
+  --accent:#2E6F4E; --accent-soft:#DCE8E0;
+  --amber:#9C6712;
+  --shadow:0 1px 2px rgba(30,40,20,.04),0 10px 30px -22px rgba(30,40,20,.45);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#0F120D; --panel:#171B14; --sunk:#131711;
+    --ink:#E9ECE1; --ink2:#AEB5A5; --ink3:#7B836F;
+    --rule:#2A2F25; --rule2:#20241C;
+    --accent:#5BA97C; --accent-soft:#1B2A20;
+    --amber:#D9A441;
+    --shadow:none;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0F120D; --panel:#171B14; --sunk:#131711;
+  --ink:#E9ECE1; --ink2:#AEB5A5; --ink3:#7B836F;
+  --rule:#2A2F25; --rule2:#20241C;
+  --accent:#5BA97C; --accent-soft:#1B2A20;
+  --amber:#D9A441;
+  --shadow:none;
+}
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--ground); color:var(--ink);
+  font:400 17px/1.65 "IBM Plex Sans",ui-sans-serif,system-ui,"Segoe UI",Roboto,sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:720px;margin:0 auto;padding:0 26px 110px}
+
+h1,h2{font-family:Fraunces,Georgia,"Times New Roman",serif;font-weight:600;text-wrap:balance;margin:0}
+h1{font-size:clamp(2.3rem,6vw,3.5rem);line-height:1.06;letter-spacing:-.015em;
+   font-variation-settings:"SOFT" 0,"WONK" 1,"opsz" 90}
+h2{font-size:clamp(1.45rem,3.4vw,1.95rem);line-height:1.2;letter-spacing:-.01em;
+   font-variation-settings:"WONK" 1,"opsz" 40}
+p{margin:0 0 1.1em}
+a{color:var(--accent)}
+strong{font-weight:600}
+
+header{padding:76px 0 0}
+.kicker{
+  font:500 11.5px/1.5 "IBM Plex Mono",ui-monospace,monospace;
+  letter-spacing:.17em;text-transform:uppercase;color:var(--ink3);
+  display:flex;gap:10px;align-items:center;margin-bottom:26px;flex-wrap:wrap;
+}
+.kicker .dot{width:5px;height:5px;border-radius:50%;background:var(--accent);flex:none}
+.standfirst{font-size:1.17rem;line-height:1.58;color:var(--ink2);margin:22px 0 0;max-width:60ch}
+.byline{
+  margin-top:34px;padding-top:20px;border-top:1px solid var(--rule);
+  font:400 14px/1.5 "IBM Plex Mono",monospace;color:var(--ink3);
+}
+
+section{margin-top:66px}
+.problemclass{
+  font:500 11px/1.5 "IBM Plex Mono",monospace;letter-spacing:.15em;text-transform:uppercase;
+  color:var(--accent);margin-bottom:13px;display:block;
+}
+section h2 + p{margin-top:16px}
+
+.figures{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1px;
+  background:var(--rule);border:1px solid var(--rule);border-radius:3px;
+  margin:30px 0;overflow:hidden;
+}
+.fig{background:var(--panel);padding:18px}
+.fig b{
+  display:block;font-family:Fraunces,Georgia,serif;font-weight:600;
+  font-size:1.7rem;line-height:1;color:var(--amber);
+  font-variant-numeric:tabular-nums;letter-spacing:-.02em;
+}
+.fig span{display:block;margin-top:8px;font-size:13.5px;line-height:1.45;color:var(--ink2)}
+
+.formula{
+  background:var(--sunk);border:1px solid var(--rule);border-left:2px solid var(--accent);
+  border-radius:3px;padding:17px 20px;margin:26px 0;overflow-x:auto;
+  font:400 14px/1.9 "IBM Plex Mono",ui-monospace,monospace;color:var(--ink);
+  font-variant-numeric:tabular-nums;white-space:pre;
+}
+.formula .c{color:var(--ink3)}
+
+figure{margin:34px 0}
+.diagram{
+  background:var(--panel);border:1px solid var(--rule);border-radius:3px;
+  padding:26px 20px 18px;box-shadow:var(--shadow);overflow-x:auto;
+}
+figcaption{
+  margin-top:14px;font-size:14px;line-height:1.55;color:var(--ink3);
+  border-left:2px solid var(--rule);padding-left:12px;
+}
+
+.slot{
+  border:1px dashed var(--rule);border-radius:3px;background:var(--sunk);
+  padding:42px 26px;text-align:center;margin:32px 0;
+}
+.slot .t{font-family:Fraunces,Georgia,serif;font-size:1.15rem;color:var(--ink2);display:block}
+.slot .s{font:400 13.5px/1.55 "IBM Plex Mono",monospace;margin-top:10px;display:block;color:var(--ink3)}
+
+.limits{border-top:1px solid var(--rule);margin-top:70px;padding-top:34px}
+.limits ul{margin:20px 0 0;padding:0;list-style:none;display:grid;gap:16px}
+.limits li{padding-left:20px;position:relative;color:var(--ink2);line-height:1.6}
+.limits li::before{content:"";position:absolute;left:0;top:.62em;width:8px;height:1px;background:var(--accent)}
+.limits li b{color:var(--ink);font-weight:600}
+
+footer{
+  margin-top:64px;padding-top:24px;border-top:1px solid var(--rule);
+  font:400 13.5px/1.6 "IBM Plex Mono",monospace;color:var(--ink3);
+}
+::selection{background:var(--accent-soft);color:var(--ink)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:2px}
+
+.edge{stroke:var(--rule);stroke-width:2;fill:none}
+.trunk{stroke:var(--accent);stroke-width:2.5;fill:none;stroke-linecap:round}
+.nodedot circle{fill:var(--panel);stroke:var(--accent);stroke-width:1.8}
+.patch circle{fill:var(--amber)}
+.nest{fill:var(--accent)}
+.lbl{font:500 11px "IBM Plex Mono",monospace;fill:var(--ink3);letter-spacing:.08em}
+.cost{font:600 13px "IBM Plex Mono",monospace;fill:var(--ink2)}
+@media (prefers-reduced-motion:no-preference){
+  .grow{stroke-dasharray:260;stroke-dashoffset:260;animation:draw 1.4s ease-out .3s forwards}
+  @keyframes draw{to{stroke-dashoffset:0}}
+}
+</style>
+
+<div class="wrap">
+<header>
+  <div class="kicker"><span class="dot"></span> Silica &middot; RTS commander mod &middot; side project</div>
+  <h1>Teaching a bot to run an economy</h1>
+  <p class="standfirst">
+    Silica is a strategy game with an FPS bolted on: one player commands from above,
+    everyone else fights on the ground. I write the commander &mdash; specifically the half
+    nobody volunteers for, which is the economy. Where to expand, what to build, and who
+    gets the money when three subsystems all want it at once.
+  </p>
+  <div class="byline">A hobby project. Four of the problems in it turned out to be real ones.</div>
+</header>
+
+<section>
+  <span class="problemclass">Discrete enumeration &middot; the opening</span>
+  <h2>The first five minutes decide the round</h2>
+  <p>
+    The main planner is a beam search. Every few seconds it snapshots the game, enumerates
+    the moves available, simulates each one forward and keeps the best sequences &mdash; depth
+    five, width six, a 180-second horizon. It works well, and it was terrible at openings.
+  </p>
+  <p>
+    An opening is not a marginal decision. It is a small discrete one: which three to five
+    resource sites, in what order, with how many chain nodes to reach each. A search asking
+    &ldquo;what is the best next move&rdquo; takes the nearest patch and skips the one that unlocks
+    two more behind it. The damage compounds, and because I had recordings of strong human
+    commanders I could measure exactly how much:
+  </p>
+  <div class="figures">
+    <div class="fig"><b>&minus;19%</b><span>income behind the human benchmark at 3 minutes</span></div>
+    <div class="fig"><b>&minus;40%</b><span>at 5 minutes</span></div>
+    <div class="fig"><b>&minus;55%</b><span>by 13 minutes &mdash; one late building, compounding</span></div>
+  </div>
+  <p>
+    So the opening stopped being searched and started being enumerated. There are only a few
+    hundred sensible openings across eight candidate sites, and you can simulate all of them
+    properly, once, at round start. That is both more accurate and cheaper than re-deriving a
+    local decision a hundred times.
+  </p>
+</section>
+
+<section>
+  <span class="problemclass">Steiner tree &middot; the build plan</span>
+  <h2>The expansion plan is a known NP-hard problem</h2>
+  <p>
+    Alien structures only function while they are chained back to the nest. So expansion is:
+    given a set of resource patches worth reaching and a network you already own, place the
+    fewest connecting nodes that reach the most patches.
+  </p>
+  <p>
+    That is a <strong>Steiner tree</strong>. The patches are terminals, everything already built is
+    the root set, and the nodes you pay for are the Steiner points. Optimal Steiner is NP-hard,
+    so the planner uses the standard greedy construction &mdash; Takahashi&ndash;Matsuyama:
+    repeatedly attach whichever terminal is cheapest to reach <em>from the network as it now
+    stands</em>, and let each new chain become network for the ones after it.
+  </p>
+  <figure>
+    <div class="diagram">
+      <svg viewBox="0 0 620 254" width="100%" height="auto" role="img"
+           aria-label="Two networks reaching the same four resource patches. On the left, four separate chains run in parallel from the nest and cost eight nodes. On the right, one shared trunk splits late into short twigs and costs two.">
+        <text x="16" y="18" class="lbl">NEAREST-FIRST</text>
+        <path class="edge" d="M40 132 L95 72 L150 54 L205 46"/>
+        <path class="edge" d="M40 132 L96 108 L152 98 L208 94"/>
+        <path class="edge" d="M40 132 L94 154 L150 166 L206 174"/>
+        <path class="edge" d="M40 132 L92 192 L146 210 L202 220"/>
+        <g class="nodedot">
+          <circle cx="95" cy="72" r="4.5"/><circle cx="150" cy="54" r="4.5"/>
+          <circle cx="96" cy="108" r="4.5"/><circle cx="152" cy="98" r="4.5"/>
+          <circle cx="94" cy="154" r="4.5"/><circle cx="150" cy="166" r="4.5"/>
+          <circle cx="92" cy="192" r="4.5"/><circle cx="146" cy="210" r="4.5"/>
+        </g>
+        <circle cx="40" cy="132" r="8" class="nest"/>
+        <g class="patch">
+          <circle cx="205" cy="46" r="5.5"/><circle cx="208" cy="94" r="5.5"/>
+          <circle cx="206" cy="174" r="5.5"/><circle cx="202" cy="220" r="5.5"/>
+        </g>
+        <text x="16" y="246" class="cost">8 nodes</text>
+
+        <g transform="translate(320,0)">
+          <text x="16" y="18" class="lbl">SHARED TRUNK</text>
+          <path class="trunk grow" d="M40 132 L100 124 L160 114"/>
+          <path class="trunk grow" d="M160 114 L205 62"/>
+          <path class="trunk grow" d="M160 114 L212 98"/>
+          <path class="trunk grow" d="M160 114 L206 170"/>
+          <path class="trunk grow" d="M160 114 L200 216"/>
+          <g class="nodedot">
+            <circle cx="100" cy="124" r="4.5"/><circle cx="160" cy="114" r="4.5"/>
+          </g>
+          <circle cx="40" cy="132" r="8" class="nest"/>
+          <g class="patch">
+            <circle cx="205" cy="62" r="5.5"/><circle cx="212" cy="98" r="5.5"/>
+            <circle cx="206" cy="170" r="5.5"/><circle cx="200" cy="216" r="5.5"/>
+          </g>
+          <text x="16" y="246" class="cost">2 nodes</text>
+        </g>
+      </svg>
+    </div>
+    <figcaption>
+      Trunks, twigs and sharing are not rules anybody wrote. They fall out of the single greedy
+      step: a patch sitting behind another pays only for the hops past it, so branches merge
+      instead of running in parallel.
+    </figcaption>
+  </figure>
+  <p>
+    The property I value more than optimality is that this is <em>one decision, held between
+    refreshes</em> and reviewable before it is built. &ldquo;41 patches covered by 22 sites and 57
+    nodes&rdquo; is a sentence a per-tick greedy planner could never produce about itself.
+  </p>
+</section>
+
+<section>
+  <span class="problemclass">Constrained allocation &middot; the money</span>
+  <h2>Three subsystems, one bank account</h2>
+  <p>
+    Economy, tech and military all want cash, and the cheapest thing is rarely the most
+    urgent. So none of them spends directly. Each publishes its state and proposes actions
+    carrying a cost and a priority, and a broker picks the best set each tick against the
+    cash actually available.
+  </p>
+  <p>
+    The interesting part is deadlines. Tech has them &mdash; a research tier that lands two
+    minutes late may as well not have been bought &mdash; so a subsystem can ask something the
+    broker can genuinely answer: <em>given current income, how much must I hold back now to
+    afford this at the moment I need it?</em>
+  </p>
+  <div class="formula">reserve = f(income rate, cash on hand, target, deadline)
+<span class="c">// hold the minimum that still clears the deadline, and leave
+// everything above it for the economy to keep compounding</span></div>
+  <p>
+    That turns &ldquo;save up for tech&rdquo; from a hand-tuned constant into a projection, and the
+    economy keeps every credit that is not genuinely spoken for. The military bridge is the
+    same shape, and is the next one to land.
+  </p>
+</section>
+
+<section>
+  <span class="problemclass">Graph connectivity &middot; staying alive</span>
+  <h2>Where redundancy is worth paying for</h2>
+  <p>
+    Everything hangs off a chain back to the nest, so cutting one node can kill a whole branch
+    &mdash; not only the nodes, but the harvesting structures riding on them. Players answer
+    this by building loops. &ldquo;Add redundancy&rdquo; is unbounded advice, though: every extra link
+    costs money and most of them buy nothing.
+  </p>
+  <p>
+    The network is a graph, so there is an exact answer. The nodes whose loss disconnects
+    something behind them are the graph&rsquo;s <strong>articulation points</strong>, and one
+    Hopcroft&ndash;Tarjan pass finds all of them. A link that removes a cut vertex provably
+    converts a single point of failure into a loop; a link anywhere else does not. The planner
+    proposes only the former.
+  </p>
+</section>
+
+<section>
+  <span class="problemclass">Measurement &middot; the part that changed everything</span>
+  <h2>I stopped tuning it by feel</h2>
+  <p>
+    Every search above needs a forward model &mdash; something to answer &ldquo;if I build this,
+    what will I be earning in three minutes?&rdquo; Mine is deliberately crude and entirely
+    measured, fitted from instrumented games rather than guessed:
+  </p>
+  <div class="formula">cycle(d)    = 2d/9 + 400/9.5 + 400/50       <span class="c">round trip, seconds</span>
+crowd(N)    = 1.0 / 0.85 / 0.70            <span class="c">workers get in each other's way</span>
+income(N,d) = min(N,18) &times; 400 &times; crowd(N) / cycle(d)</div>
+  <p>
+    It ignores terrain, enemies, and where any individual worker actually is. It does not need
+    to be right the way a physics engine is right &mdash; it needs to rank two build orders
+    correctly over three minutes, and it is re-anchored to real game state every planning tick.
+  </p>
+  <p>
+    The same instinct runs through the rest of the project. I mined <strong>2,619 recorded
+    matches</strong> from the server to find what strong human commanders actually build and when,
+    so the bot has a benchmark to be judged against instead of my opinion about how it ought
+    to play.
+  </p>
+</section>
+
+<section>
+  <h2>Watching it think</h2>
+  <p>
+    The plan is written to disk and served to a browser viewer while the game runs, so the
+    shape of the network can be looked at rather than inferred from whatever got built. That
+    turned out to be the single most useful debugging decision in the project.
+  </p>
+  <div class="slot">
+    <span class="t">Recording of a live round goes here</span>
+    <span class="s">layer viewer &middot; network growth over ~25 minutes</span>
+  </div>
+</section>
+
+<div class="limits">
+  <h2>What it still gets wrong</h2>
+  <ul>
+    <li><b>The military half is far behind the economy.</b> The economy expands well. The army
+      is still learning when to commit to a fight rather than stand around being theoretically
+      ready for one.</li>
+    <li><b>It reads terrain poorly.</b> The planner measures everything on the flat, which is
+      correct for build ranges and wrong for anything a unit has to walk. It will occasionally
+      put a harvesting structure on a cliff above the resource it wants.</li>
+    <li><b>Good players still beat it comfortably.</b> Which is the correct outcome for now,
+      and most of the reason it is still fun to work on.</li>
+  </ul>
+</div>
+
+<footer>
+  Silica &mdash; Bohemia Incubator. Mod written in C# on MelonLoader; analysis in Python.<br>
+  A side project, and an excuse to use a Steiner tree for something.
+</footer>
+</div>
