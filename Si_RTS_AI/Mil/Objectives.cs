@@ -694,6 +694,9 @@ namespace Si_RTS_AI.Mil
         {
             if (o.Status != Status.Active) return;
             o.Status = Status.Proposed; o.AssignedEff = 0f; o.AssignedUnits = 0; o.ForceEngaged = false;
+            // Held, or the next refresh raises the same force for the same
+            // objective and the defence pre-empts it again: 103 times in round three.
+            _holdUntil[o.Key] = now + HOLD_AFTER_FAIL_S;
             MilLog.Msg($"[OBJ] #{o.Id} PRE-EMPTED {o.Kind} — {why}");
         }
 

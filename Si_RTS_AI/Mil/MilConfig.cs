@@ -46,6 +46,14 @@ namespace Si_RTS_AI.Mil
         /// <summary>Cash the military always leaves the economy, once the worker
         /// reserve no longer applies: three of the dearest eco action.</summary>
         internal static int   EcoFloorCash         = 4500;
+        /// <summary>A force DEFENDING our own ground leaves only when clearly
+        /// losing: below this ratio, not below the doctrine's refuse band. A coin
+        /// flip beside our spires beats certainly losing the site. PLACEHOLDER.</summary>
+        internal static float DefendRefuseBelow    = 0.5f;
+        /// <summary>A defence may pull an offensive force back only when its
+        /// arrival is this close, seconds. Round three pre-empted 103 times on
+        /// forecasts minutes away.</summary>
+        internal static float PreemptWithinS       = 90f;
 
         internal static void Reload()
         {
@@ -59,6 +67,8 @@ namespace Si_RTS_AI.Mil
             ReconEnabled           = RtsaiConfig.Bool ("mil.recon",                true);
             StandoffM              = RtsaiConfig.Float("mil.standoffM",            450f);
             EcoFloorCash           = RtsaiConfig.Int  ("mil.ecoFloorCash",         4500);
+            DefendRefuseBelow      = RtsaiConfig.Float("mil.defendRefuseBelow",    0.5f);
+            PreemptWithinS         = RtsaiConfig.Float("mil.preemptWithinS",       90f);
             MilLog.Msg($"[MIL/V3] config: homeFloor={HomeFloorCash} horizon={ForecastHorizonS:F0}s " +
                        $"raidShare={RaidShare:F2} staging={StagingPatienceS:F0}s fob={FobProducers} " +
                        $"defW={DefenceWeight:F2} recon={ReconEnabled} standoff={StandoffM:F0}m | " +

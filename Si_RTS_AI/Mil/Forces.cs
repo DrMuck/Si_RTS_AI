@@ -292,7 +292,8 @@ namespace Si_RTS_AI.Mil
                     // an economy eaten while the army is out is the one failure
                     // that cannot be recovered from. Engaged forces are left
                     // alone: pulling units out of a fight is how a push dies.
-                    if (avail < o.RequiredEff && o.Rank <= 1 && !o.Offensive)
+                    bool imminent = float.IsInfinity(o.DeadlineAt) ? o.DefenceEff > 0f : o.DeadlineAt - now <= MilConfig.PreemptWithinS;
+                    if (avail < o.RequiredEff && o.Rank <= 1 && !o.Offensive && imminent)
                     {
                         for (int f = Active.Count - 1; f >= 0 && avail < o.RequiredEff; f--)
                         {
@@ -389,7 +390,7 @@ namespace Si_RTS_AI.Mil
             if (_reserve.Units.Count > 0 && _reservePoint != Vector3.zero)
             {
                 float th = Intel.EffectiveNear(Centroid(_reserve), ENGAGE_RADIUS_M);
-                urgent = th > 0f && Kernel.Ratio(_reserve.Eff + OwnDefenceNear(Centroid(_reserve)), th) < Doctrine.RefuseBelow;
+                urgent = th > 0f && Kernel.Ratio(_reserve.Eff + OwnDefenceNear(Centroid(_reserve)), th) < MilConfig.DefendRefuseBelow;
             }
             if (!urgent && now - _lastReserveMoveAt < RESERVE_REPOSITION_S && _reservePoint != Vector3.zero) return;
             _lastReserveMoveAt = now;
@@ -440,7 +441,7 @@ namespace Si_RTS_AI.Mil
                 Vector3 c = Centroid(_reserve);
                 float theirs = Intel.EffectiveNear(c, ENGAGE_RADIUS_M);
                 float ours = _reserve.Eff + OwnDefenceNear(c);
-                if (theirs > 0f && Kernel.Ratio(ours, theirs) < Doctrine.RefuseBelow)
+                if (theirs > 0f && Kernel.Ratio(ours, theirs) < MilConfig.DefendRefuseBelow)
                 {
                     _reserveFallBackUntil = now + 90f;
                     MilLog.Every("reserve:fallback", 30f, $"[FORCE] reserve gives ground: {Kernel.Describe(ours, theirs)} — standing nearer the Nest for 90s");
@@ -478,7 +479,7 @@ namespace Si_RTS_AI.Mil
                 // two scouts finds their army came home; the refresh re-reads the
                 // defence every fifteen seconds, and a force that has not yet
                 // fought turns back when the kernel would now refuse the fight.
-                if ((force.Phase == State.Staging || force.Phase == State.Advancing) &&
+                if ((force.Phase == State.Staging || force.Phase == State.Advancing) && o.Offensive &&
                     o.DefenceEff > 0f && Kernel.Ratio(force.Eff, o.DefenceEff) < Doctrine.RefuseBelow)
                 {
                     Withdrawals++;
@@ -536,10 +537,11 @@ namespace Si_RTS_AI.Mil
                         // Outnumbered at contact is a reason to leave NOW, not after
                         // losses: the archive says nothing predicts a parity fight
                         // and below it the answer is disengage.
-                        if (theirs > 0f && ratio < Doctrine.RefuseBelow)
+                        float refuseAt = o.Offensive ? Doctrine.RefuseBelow : MilConfig.DefendRefuseBelow;
+                        if (theirs > 0f && ratio < refuseAt)
                         {
                             Withdrawals++;
-                            string why = $"{Kernel.Describe(ours, theirs)} — {Doctrine.Advice(band)}";
+                            string why = $"{Kernel.Describe(ours, theirs)} — {(o.Offensive ? Doctrine.Advice(band) : "clearly losing our own ground")}";
                             force.Rally = Fields.RallyFor(Centroid(force), o.Where, MilConfig.StandoffM * 2f, force.Flying);
                             SetPhase(force, State.Withdrawing, now, why);
                             Objectives.NoteWithdrawn(o, why, now);

@@ -575,3 +575,28 @@ have noisy velocities, so build 4 forecasts only from tracks watched ten
 seconds or more. The kernel's mean p(win) of 0.63 against 44 % of fights won
 says the AI-vs-AI unit weights from the 0.9.42 archive need refitting on these
 rounds once `combat.jsonl` v2 has a few hundred rows.
+
+### Round 3 — full, 2026-09-05 16:12, NarakaCity, 40 min at 1x, build 3
+
+| | round 3 | round 2 |
+|---|---|---|
+| military cash converted | 642,340 (439 units, 35 producers, 4 busy at the end) | 689,900 |
+| cash exchange | **0.64** | 0.97 |
+| alien structures lost to the enemy | **44** | 0 |
+| withdrawals | **79** | 4 |
+| objectives pre-empted | **103** | 0 |
+| economy at 25 min | **68 Bio Caches**, 11 Cysts, cash 7k | 30 Bio Caches, cash 3k |
+
+The economy floor worked beyond expectation: with the military no longer
+draining the bank the blueprint reached 68 sites by minute 25. Two of the new
+rules then fought each other. "Refuse at contact" was applied to defence
+forces, which walked away from spire-covered sites at 1:1 and handed 44
+structures to the enemy; and "defence pre-empts offence" fired on every
+forecast minutes away, so every offensive force was dissolved on the refresh
+after it formed and re-raised on the next (103 pre-emptions, 13 of them the
+KillHQ force). Build 5: a force defending our own ground leaves only below
+`mil.defendRefuseBelow` (0.5); a defence may pre-empt only when its arrival is
+within `mil.preemptWithinS` (90 s), and a pre-empted objective is held for two
+minutes. Both are the kind of rule the plan warned about — a categorical
+override of a continuous cost — and both are labelled placeholders to be read
+against the next rounds.
