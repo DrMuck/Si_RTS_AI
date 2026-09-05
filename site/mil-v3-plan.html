@@ -32,7 +32,7 @@ main strong{font-weight:600}
 .meta{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--ink2);margin-bottom:28px}
 </style>
 <div class="wrap">
-<nav class="toc"><div class="eyebrow">Si_RTS_AI · military v3</div><ul><li><a href="#0-why-the-current-layer-fails-in-one-paragraph-each">0. Why the current layer fails, in one paragraph each</a></li><li><a href="#1-what-0-9-46-gives-us-that-august-did-not">1. What 0.9.46 gives us that August did not</a></li><li><a href="#2-principles-carried-forward-stated-once">2. Principles carried forward, stated once</a></li><li><a href="#3-architecture">3. Architecture</a></li><li><a href="#4-modules">4. Modules</a></li><li><a href="#5-the-rules-numbered-so-they-can-be-counted">5. The rules, numbered, so they can be counted</a></li><li><a href="#6-build-order-and-round-protocol">6. Build order and round protocol</a></li><li><a href="#7-what-is-deliberately-not-in-v3-0">7. What is deliberately not in v3.0</a></li><li><a href="#8-cpu-and-gpu-later">8. CPU and GPU, later</a></li><li><a href="#9-risks-named">9. Risks, named</a></li></ul></nav>
+<nav class="toc"><div class="eyebrow">Si_RTS_AI · military v3</div><ul><li><a href="#0-why-the-current-layer-fails-in-one-paragraph-each">0. Why the current layer fails, in one paragraph each</a></li><li><a href="#1-what-0-9-46-gives-us-that-august-did-not">1. What 0.9.46 gives us that August did not</a></li><li><a href="#2-principles-carried-forward-stated-once">2. Principles carried forward, stated once</a></li><li><a href="#3-architecture">3. Architecture</a></li><li><a href="#4-modules">4. Modules</a></li><li><a href="#5-the-rules-numbered-so-they-can-be-counted">5. The rules, numbered, so they can be counted</a></li><li><a href="#6-build-order-and-round-protocol">6. Build order and round protocol</a></li><li><a href="#7-what-is-deliberately-not-in-v3-0">7. What is deliberately not in v3.0</a></li><li><a href="#8-cpu-and-gpu-later">8. CPU and GPU, later</a></li><li><a href="#9-risks-named">9. Risks, named</a></li><li><a href="#10-round-log">10. Round log</a></li></ul></nav>
 <main>
 <div class="meta">MIL_V3_PLAN.md · branch beta · Silica 0.9.46 · 2026-09-05</div>
 <h1>Military v3 — the rebuild plan</h1>
@@ -655,4 +655,145 @@ it; everything in v3.0 is shaped so it can use it.</p>
   is not caught by the move-order gates; the co-op gate needs the same filter
   extended before a played co-op round.</li>
 </ul>
+<h2 id="10-round-log">10. Round log</h2>
+<h3 id="round-1-smoke-2026-09-05-15-17-narakacity-20-min-at-2x-v0-92-0-build-1">Round 1 — smoke, 2026-09-05 15:17, NarakaCity, 20 min at 2x, v0.92.0 build 1</h3>
+<p>Everything switched on at once (execute, produce, offence, spires), because a
+smoke round on this box can afford to look silly and a played one cannot.</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>military cash spent by minute 20</td>
+<td>229,640 (135 units, 13 producers)</td>
+</tr>
+<tr>
+<td>cash idle at the end</td>
+<td>0.1 minutes of income (August: 332k unspent)</td>
+</tr>
+<tr>
+<td>producers busy, round average</td>
+<td>84 %</td>
+</tr>
+<tr>
+<td>army engaged</td>
+<td>69 %</td>
+</tr>
+<tr>
+<td>objectives activated / done / failed</td>
+<td>32 / 17 / 3</td>
+</tr>
+<tr>
+<td>two-sided cash exchange</td>
+<td>1.46 in our favour; 6,350 : 672 where a defence force plus a spire met a Sol push</td>
+</tr>
+<tr>
+<td>economy cash-blocked</td>
+<td>22 % of samples — the military was taking the eco's cash</td>
+</tr>
+</tbody>
+</table>
+<p>What the round found, and what changed for build 2 and 3:</p>
+<ul>
+<li>The reserve held its units forever and every objective got one unit —
+  the trickle in a different coat. Now the reserve releases each tick and a
+  force is raised only when the free pool can pay the whole price (rule 3).</li>
+<li><code>ControlMap</code> was rebuilt for whichever team ticked first, so "our ground"
+  was Sol's; intercepts fired on Sol scouts at Sol's own base. Alien only now.</li>
+<li>A visible structure unstamped for 1.5 s was forgotten and rediscovered a
+  second later, which read as "target destroyed" to a raid twelve seconds old.
+  Forget grace is now six seconds, and bases carry a persistent identity.</li>
+<li>Demand summed every unaffordable raid's full price and asked for 200,000 eff
+  of production; only active objectives and the one reserve target count now.</li>
+<li>A base priced against two scouts turned out to answer with an army. Three
+  rules, not a constant: the enemy estimate per team is floored on its recent
+  peak (five-minute half-life); a base that beats a raid is remembered as
+  having answered with that force (ten-minute half-life); a force that has not
+  fought yet turns back when the refreshed price would make the kernel refuse.</li>
+<li>Defence outranked offence on paper only: a KillHQ force marched west while a
+  33,000-eff Sol army walked into the forward base. A defence objective may now
+  pre-empt any offensive force that has not yet fought.</li>
+<li>The military spent the economy's cash. It now leaves three of the dearest eco
+  action in the bank at all times (<code>mil.ecoFloorCash</code>), plus the worker reserve
+  while the economy is still converting.</li>
+<li>Staging patience was a flat 45 s and every long march "advanced on patience"
+  with stragglers kilometres behind. Patience is now the slowest member's walk
+  plus the margin.</li>
+</ul>
+<p>Fog is gated (19 % of the map active, 86 % explored at minute 13); the early
+knowledge of both enemy HQs came from the scout star, not omniscience.</p>
+<h3 id="round-2-full-2026-09-05-15-30-narakacity-40-min-at-1x-build-2">Round 2 — full, 2026-09-05 15:30, NarakaCity, 40 min at 1x, build 2</h3>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>round 2</th>
+<th>August rounds</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>military cash converted</td>
+<td>689,900 (481 units, 35 producers)</td>
+<td>332k left unspent</td>
+</tr>
+<tr>
+<td>cash idle at the end</td>
+<td>2.7 min of income</td>
+<td>49 % of income</td>
+</tr>
+<tr>
+<td>army engaged</td>
+<td>96 %</td>
+<td>—</td>
+</tr>
+<tr>
+<td>objectives activated / done</td>
+<td>93 / 73</td>
+<td>none existed</td>
+</tr>
+<tr>
+<td>two-sided engagements</td>
+<td>27</td>
+<td>1</td>
+</tr>
+<tr>
+<td>cash exchange</td>
+<td>0.97</td>
+<td>1.6–1.8</td>
+</tr>
+<tr>
+<td><strong>alien structures lost to the enemy</strong></td>
+<td><strong>0</strong></td>
+<td>48 / 100</td>
+</tr>
+<tr>
+<td>enemy structures killed</td>
+<td>12</td>
+<td>0 / 12</td>
+</tr>
+<tr>
+<td>economy at 25 min</td>
+<td>30 Bio Caches, 8 Cysts, 178 shrimps, cash 3k</td>
+<td>eco-only soak: ~26 Bio Caches</td>
+</tr>
+</tbody>
+</table>
+<p>The economy was never touched and the army converted everything it was given.
+What it did badly: it fought at parity too often (the retreat rule of build 2
+fired only after losses; build 3 refuses at contact), the reserve stood at a
+forward point and traded 24k for 14k there (build 4 gives ground when
+outmatched and weights the FOB less), and it built 35 producers that ran 35 %
+busy because the demand rule summed every unaffordable raid and nothing
+checked the unit cap (build 3 counts only active objectives plus one reserve
+target; build 4 refuses producers the cap cannot feed). Twenty-eight
+DefendEco objectives were raised for arrivals that never came — fresh clusters
+have noisy velocities, so build 4 forecasts only from tracks watched ten
+seconds or more. The kernel's mean p(win) of 0.63 against 44 % of fights won
+says the AI-vs-AI unit weights from the 0.9.42 archive need refitting on these
+rounds once <code>combat.jsonl</code> v2 has a few hundred rows.</p>
 </main></div>

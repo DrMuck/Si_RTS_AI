@@ -547,3 +547,31 @@ What the round found, and what changed for build 2 and 3:
 
 Fog is gated (19 % of the map active, 86 % explored at minute 13); the early
 knowledge of both enemy HQs came from the scout star, not omniscience.
+
+### Round 2 — full, 2026-09-05 15:30, NarakaCity, 40 min at 1x, build 2
+
+| | round 2 | August rounds |
+|---|---|---|
+| military cash converted | 689,900 (481 units, 35 producers) | 332k left unspent |
+| cash idle at the end | 2.7 min of income | 49 % of income |
+| army engaged | 96 % | — |
+| objectives activated / done | 93 / 73 | none existed |
+| two-sided engagements | 27 | 1 |
+| cash exchange | 0.97 | 1.6–1.8 |
+| **alien structures lost to the enemy** | **0** | 48 / 100 |
+| enemy structures killed | 12 | 0 / 12 |
+| economy at 25 min | 30 Bio Caches, 8 Cysts, 178 shrimps, cash 3k | eco-only soak: ~26 Bio Caches |
+
+The economy was never touched and the army converted everything it was given.
+What it did badly: it fought at parity too often (the retreat rule of build 2
+fired only after losses; build 3 refuses at contact), the reserve stood at a
+forward point and traded 24k for 14k there (build 4 gives ground when
+outmatched and weights the FOB less), and it built 35 producers that ran 35 %
+busy because the demand rule summed every unaffordable raid and nothing
+checked the unit cap (build 3 counts only active objectives plus one reserve
+target; build 4 refuses producers the cap cannot feed). Twenty-eight
+DefendEco objectives were raised for arrivals that never came — fresh clusters
+have noisy velocities, so build 4 forecasts only from tracks watched ten
+seconds or more. The kernel's mean p(win) of 0.63 against 44 % of fights won
+says the AI-vs-AI unit weights from the 0.9.42 archive need refitting on these
+rounds once `combat.jsonl` v2 has a few hundred rows.

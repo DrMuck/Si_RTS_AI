@@ -193,15 +193,16 @@ def main():
                     continue
                 if not (start <= ts <= end):
                     continue
-                victim = "Alien" if "<Alien>" in line.split("structure_kill")[-1][:80] else "Human"
-                if "Alien" in line.split("structure_kill")[0][-60:]:
-                    attacker = "Alien"
-                else:
-                    attacker = "Human"
+                m3 = re.search(r'"[^"]*<([^>]*)>" triggered "structure_kill".*?[(]struct_team "([^"]*)"[)]', line)
+                if not m3:
+                    continue
+                attacker, victim = m3.group(1), m3.group(2)
                 if victim == "Alien" and attacker != "Alien":
-                    lost["alien structures lost"] += 1
-                elif victim == "Human" and attacker == "Alien":
-                    killed["enemy structures killed"] += 1
+                    lost["alien structures lost to the enemy"] += 1
+                elif victim != "Alien" and attacker == "Alien":
+                    killed["enemy structures killed by us"] += 1
+                elif victim == "Alien" and attacker == "Alien":
+                    lost["alien structures lost to decay/self"] += 1
         print("\n-- structures (server kill log) --")
         for k, v in list(lost.items()) + list(killed.items()):
             print(f"  {k}: {v}")

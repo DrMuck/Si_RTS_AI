@@ -373,7 +373,7 @@ namespace Si_RTS_AI.Mil
         // ---- the reserve ---------------------------------------------------------
 
         static Vector3 _reservePoint;
-        static float _lastReserveMoveAt;
+        static float _lastReserveMoveAt, _reserveFallBackUntil;
         static readonly List<(Vector3 pos, float weight)> _assets = new List<(Vector3, float)>();
         static readonly List<Vector3> _candidates = new List<Vector3>();
 
@@ -385,7 +385,13 @@ namespace Si_RTS_AI.Mil
             Measure(_reserve);
 
             // Where it stands: re-decided slowly, on the walk-time field.
-            if (now - _lastReserveMoveAt < RESERVE_REPOSITION_S && _reservePoint != Vector3.zero) return;
+            bool urgent = false;
+            if (_reserve.Units.Count > 0 && _reservePoint != Vector3.zero)
+            {
+                float th = Intel.EffectiveNear(Centroid(_reserve), ENGAGE_RADIUS_M);
+                urgent = th > 0f && Kernel.Ratio(_reserve.Eff + OwnDefenceNear(Centroid(_reserve)), th) < Doctrine.RefuseBelow;
+            }
+            if (!urgent && now - _lastReserveMoveAt < RESERVE_REPOSITION_S && _reservePoint != Vector3.zero) return;
             _lastReserveMoveAt = now;
             Vector3 nest = Intel.Nest;
             if (nest == Vector3.zero) return;
@@ -422,7 +428,28 @@ namespace Si_RTS_AI.Mil
 
             // A forward base pulls the reserve to it: the next push starts there.
             Vector3 fob = ProductionV3.ForwardBase;
-            if (fob != Vector3.zero) _assets.Add((fob, 2.5f));
+            if (fob != Vector3.zero) _assets.Add((fob, 1f));
+
+            // THE RESERVE IS NOT A FORCE THAT FIGHTS WHATEVER ARRIVES. Round two:
+            // eleven engagements on the reserve's ground, 24k lost for 14k, at
+            // a standing point pulled forward by the FOB. When what stands
+            // within reach outmatches it (spires counted on our side), it gives
+            // ground toward the Nest for a while rather than trade at parity.
+            if (_reserve.Units.Count > 0)
+            {
+                Vector3 c = Centroid(_reserve);
+                float theirs = Intel.EffectiveNear(c, ENGAGE_RADIUS_M);
+                float ours = _reserve.Eff + OwnDefenceNear(c);
+                if (theirs > 0f && Kernel.Ratio(ours, theirs) < Doctrine.RefuseBelow)
+                {
+                    _reserveFallBackUntil = now + 90f;
+                    MilLog.Every("reserve:fallback", 30f, $"[FORCE] reserve gives ground: {Kernel.Describe(ours, theirs)} — standing nearer the Nest for 90s");
+                }
+            }
+            if (now < _reserveFallBackUntil)
+            {
+                _assets.Clear(); _assets.Add((nest, 1f));
+            }
 
             float speed = 9f;
             var pt = Fields.BestStandingPoint(_candidates, _assets, speed, out float worst);
@@ -498,8 +525,13 @@ namespace Si_RTS_AI.Mil
                     {
                         if (now - force.LastTargetCheckAt < KERNEL_CHECK_S) break;
                         force.LastTargetCheckAt = now;
+                        // Our own spires count on our side, exactly as theirs count
+                        // on theirs when a base is priced: a defence force at a
+                        // spire-covered cluster was withdrawing at 0.65 while the
+                        // spires it stood beside would have carried the fight.
+                        float ours = force.Eff + OwnDefenceNear(Centroid(force));
                         float theirs = Intel.EffectiveNear(Centroid(force), ENGAGE_RADIUS_M) + DefenceStructsNear(o, Centroid(force));
-                        float ratio = Kernel.Ratio(force.Eff, theirs);
+                        float ratio = Kernel.Ratio(ours, theirs);
                         var band = Doctrine.Classify(ratio);
                         // Outnumbered at contact is a reason to leave NOW, not after
                         // losses: the archive says nothing predicts a parity fight
@@ -507,7 +539,7 @@ namespace Si_RTS_AI.Mil
                         if (theirs > 0f && ratio < Doctrine.RefuseBelow)
                         {
                             Withdrawals++;
-                            string why = $"{Kernel.Describe(force.Eff, theirs)} — {Doctrine.Advice(band)}";
+                            string why = $"{Kernel.Describe(ours, theirs)} — {Doctrine.Advice(band)}";
                             force.Rally = Fields.RallyFor(Centroid(force), o.Where, MilConfig.StandoffM * 2f, force.Flying);
                             SetPhase(force, State.Withdrawing, now, why);
                             Objectives.NoteWithdrawn(o, why, now);
@@ -550,6 +582,31 @@ namespace Si_RTS_AI.Mil
                 float dx = k.Pos.x - at.x, dz = k.Pos.z - at.z;
                 if (dx * dx + dz * dz <= ENGAGE_RADIUS_M * ENGAGE_RADIUS_M) d += k.Cost * MilConfig.DefenceWeight;
             });
+            return d;
+        }
+
+        /// <summary>Effective value of our Defense-class structures within the
+        /// engagement radius of a point, weighted like the enemy's.</summary>
+        static float OwnDefenceNear(Vector3 at)
+        {
+            float d = 0f;
+            try
+            {
+                var structs = _team?.Structures;
+                if (structs == null) return 0f;
+                for (int i = 0; i < structs.Count; i++)
+                {
+                    var s = structs[i];
+                    if (s?.ObjectInfo == null || s.IsDestroyed) continue;
+                    bool def = false; try { def = (s.ObjectInfo.StructureType & StructureType.Defense) != 0; } catch { }
+                    if (!def) continue;
+                    float dx = s.transform.position.x - at.x, dz = s.transform.position.z - at.z;
+                    if (dx * dx + dz * dz > ENGAGE_RADIUS_M * ENGAGE_RADIUS_M) continue;
+                    int cost = 0; try { cost = s.ObjectInfo.Cost; } catch { }
+                    d += cost * MilConfig.DefenceWeight;
+                }
+            }
+            catch { }
             return d;
         }
 

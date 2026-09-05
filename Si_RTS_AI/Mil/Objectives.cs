@@ -504,6 +504,10 @@ namespace Si_RTS_AI.Mil
             {
                 var t = tracks[i];
                 if (t.Effective < 2000f || !t.Seen) continue;
+                // A group we have watched for a while, not a cluster that formed
+                // as a scout passed: BreakArmy forces were raised and released
+                // every few seconds against tracks that vanished as fast.
+                if (now - t.FirstSeenAt < 20f) continue;
                 bool threatens = t.InsideOurGround || t.Moving && _nest != Vector3.zero &&
                                  Vector3.Angle(t.Vel, _nest - t.Pos) < 45f;
                 if (!threatens) continue;

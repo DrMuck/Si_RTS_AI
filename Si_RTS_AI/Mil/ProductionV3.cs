@@ -340,6 +340,12 @@ namespace Si_RTS_AI.Mil
                 _want.TryGetValue(name, out int want);
                 if (want < 1) want = 1;
                 int cap = Mathf.Max(1, MilitaryConfig.MaxProducersPerType);
+                // A PRODUCER THE CAP CANNOT FEED IS A BUILDING THAT IDLES. Round
+                // two built 35 producers and ran them 35% busy: the unit cap was
+                // full and the demand rule kept asking. Room for two more of the
+                // dearest unit this type makes, per producer wanted, or no more.
+                int room = CapRoomFor(team, name);
+                if (room >= 0 && room < 2 * (have + 1)) { _want[name] = Mathf.Min(want, Mathf.Max(1, have)); continue; }
 
                 // (a) saturated with idle cash
                 _typeBusy.TryGetValue(name, out bool busy);
@@ -430,6 +436,31 @@ namespace Si_RTS_AI.Mil
             if (n.IndexOf("Spawning Cyst", StringComparison.OrdinalIgnoreCase) >= 0 ||
                 n.IndexOf("Spawner", StringComparison.OrdinalIgnoreCase) >= 0) return true;
             return false;
+        }
+
+        /// <summary>How many more of the heaviest unit this producer type makes
+        /// the team cap still allows; -1 when the cap is unknown or unlimited.</summary>
+        static int CapRoomFor(Team team, string producerName)
+        {
+            try
+            {
+                var sample = FindOne(team, producerName);
+                var opts = sample?.ConstructionOptions;
+                if (opts == null) return -1;
+                int heaviest = 0; UnitCapEntry entry = null;
+                foreach (var opt in opts)
+                {
+                    if (opt?.ObjectInfo == null) continue;
+                    bool isUnit = false; try { isUnit = opt.IsUnit; } catch { }
+                    if (!isUnit) continue;
+                    if (WorkerNames.Contains(opt.ObjectInfo.DisplayName ?? "")) continue;
+                    int w = opt.ObjectInfo.UnitCapValue;
+                    if (w > heaviest) { heaviest = w; entry = team.GetUnitTypeCapEntryForUnit(opt.ObjectInfo); }
+                }
+                if (entry == null || heaviest <= 0 || entry.Max <= 0) return -1;
+                return (entry.Max - entry.Current) / heaviest;
+            }
+            catch { return -1; }
         }
 
         static Structure FindOne(Team team, string name)

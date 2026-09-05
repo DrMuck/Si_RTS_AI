@@ -502,6 +502,10 @@ namespace Si_RTS_AI.Mil
                     continue;
                 }
                 if (!t.Moving) continue;
+                // A velocity needs a few observations to mean anything: fresh
+                // clusters raised 29 defences in round two, 28 of which nothing
+                // ever reached.
+                if (Time.time - t.FirstSeenAt < 10f) continue;
                 float ang = Vector3.Angle(t.Vel, to);
                 if (ang > HEADING_TOL_DEG) continue;
                 float eta = (dist - radiusM) / Mathf.Max(1f, t.Speed);
