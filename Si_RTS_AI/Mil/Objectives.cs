@@ -148,6 +148,10 @@ namespace Si_RTS_AI.Mil
         internal static void Tick(Team team)
         {
             if (!MilConfig.Enabled || team == null) return;
+            // A PLAYER IN THE ALIEN COMMANDER SEAT COMMANDS. The game disables its
+            // own AI commander then, and so does this layer, exactly as vanilla
+            // would: it must never spend a player's cash or move a player's units.
+            try { if (!Silica.AI.AIManager.IsCommanderEnabled(team)) return; } catch { }
             _team = team;
             float now = Time.time;
             try
