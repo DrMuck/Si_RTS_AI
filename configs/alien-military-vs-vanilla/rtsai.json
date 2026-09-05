@@ -262,9 +262,9 @@
     }
   },
   "endRoundAfterMinutes": 60,
-  "serverFpsCap": 144,
+  "serverFpsCap": 0,
   "siteAnchorCheckS": 0.5,
   "perfTimers": true,
-  "perfProbes": "GameManager:Update,OrderedUpdateManager:LateUpdate,OrderedUpdateManager:FixedUpdate,OrderedUpdateManager:CallFixedLateUpdate,GameManager:SensorTickPart1,GameManager:SensorTickPart2,GameManager:SensorTickPart3,Sensor:TickSensors,TargetGrid:Update,FogOfWar:OnUpdate,FogOfWar:LateUpdate,NetworkLayer:Update,NetworkGameServer:Update,NetworkComponent:TickNetworkObjects,NetworkTransformComponent:UpdatePositionLate,AstarPath:Update,Unit:OnUpdateNavmeshCutter,ConstructionSite:Update,ConstructionSite:OrderedUpdate,ConstructionPlacement:UpdateAllActivePlacementsEnqueueSnappedRotation,CreatureDecapod:OrderedUpdate,CreatureDecapod:OrderedFixedUpdate,CreatureDecapod:OrderedLateUpdate,Soldier:OrderedUpdate,Soldier:OrderedFixedUpdate,Soldier:OrderedLateUpdateAll,Harvester:OrderedUpdate,Harvester:OrderedFixedUpdate,VehicleWheeled:OrderedUpdate,VehicleWheeled:OrderedFixedUpdate,VehicleHovered:OrderedUpdate,VehicleHovered:OrderedFixedUpdate,VehicleAir:OrderedUpdate,VehicleAir:OrderedFixedUpdate,BomberCraft:OrderedFixedUpdate,Structure:OrderedUpdate,AlienStructure:OrderedUpdate,HumanStructure:OrderedUpdate,TurretAimEnemy:OrderedFixedUpdate,VehicleTurret:OrderedUpdateAllTurrets,StructureMeshCombiner:OrderedLateUpdateAll,AIAiming:UpdateAim,OverrideManager:Update,AIAlienAgent:OnOrderedUpdate,AIAlienHarvesterAgent:OnOrderedUpdate,AIHarvesterAgent:OnOrderedUpdate",
+  "perfProbes": "",
   "layerSnapshots": true
 }
