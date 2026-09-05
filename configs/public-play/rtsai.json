@@ -247,5 +247,7 @@
     }
   },
   "serverFpsCap": 144,
-  "siteAnchorCheckS": 0.5
+  "siteAnchorCheckS": 0.5,
+  "perfTimers": false,
+  "perfProbes": ""
 }
