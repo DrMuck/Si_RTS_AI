@@ -621,3 +621,21 @@ Build 6 lets the reserve follow an affordable offensive objective as further
 waves up to the 4x ceiling, and values units per cash until the unit cap is
 half used (per-slot pricing early was buying Dragonflies). The late-round
 cash pile is cap-bound; spires and a forward Nest are the next claimants.
+
+### Round 5 — full, 2026-09-05 17:42, NarakaCity, 40 min at 1x, build 6 (waves)
+
+| | round 5 | round 4 |
+|---|---|---|
+| cash exchange | 1.01 | 1.07 |
+| alien structures lost / enemy killed | 12 / 14, **the Sol HQ at minute 37** (a Defiler, KillHQ force 188k) | 13 / 12, the Centauri HQ |
+| defence objectives done | 22 of 22 | 32 of 33 |
+| withdrawals / pre-emptions | 17 / 4 | 14 / 24 |
+| producers | 16, cap rule holding | 22 |
+| army engaged at the end | 75 % | 27 % |
+| economy | stalled at 20 Bio Caches from minute 15 — a node planned beyond 3D reach (ECO_OPEN_ITEMS) | 25 |
+
+The wave rule did what it was for: the reserve followed the HQ attack and the
+Sol Headquarters fell at minute 37, one round after the Centauri HQ. Cash
+piled to 80k from minute 25 for an eco reason this time, the stalled
+expansion, not a military one. Two HQs in two rounds is the capability; both
+in one round is timing, and the timing lever is pathing and a forward Nest.
