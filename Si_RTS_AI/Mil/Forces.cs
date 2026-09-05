@@ -843,6 +843,15 @@ namespace Si_RTS_AI.Mil
             force.OrdersIssued += list.Count;
         }
 
+        /// <summary>
+        /// ONE ATTACK ORDER PER UNIT, NO COHESION GROUP. The formation move is
+        /// kept for the staging leg only: its UnitCohesionGroup re-issues slot
+        /// moves to every member while they walk, and in round five that was
+        /// roughly two orders for every one this layer issued — 13,000 military
+        /// order events against 4,370 of ours. An attack order on the target
+        /// does not go through the group, and the units already stand together
+        /// when they leave the rally.
+        /// </summary>
         static void AttackTarget(Force force, Target target, float now)
         {
             Gather(force);
@@ -850,9 +859,20 @@ namespace Si_RTS_AI.Mil
             Vector3 at;
             try { at = target.transform.position; } catch { return; }
             force.LastOrderDest = at; force.LastOrderAt = now; force.LastTarget = target;
-            var list = new List<BaseGameObject>(_scratch);
-            Issue(() => StrategyMode.PerformMoveAttack(list, at, target, AgentMoveSpeed.Fast, true), list.Count);
-            force.OrdersIssued += list.Count;
+            var def = AttackDefinition();
+            int n = 0;
+            for (int i = 0; i < _scratch.Count; i++)
+            {
+                var u = _scratch[i];
+                var agent = u.OrderAgent;
+                if (agent == null) continue;
+                if (def != null)
+                    Issue(() => agent.IssueOrder(def, new OrderTarget(at, target), OrderIssueParams.Ai(AgentMoveSpeed.Fast)), 1);
+                else
+                    Issue(() => agent.IssueResolvedOrder(at, target, OrderIssueParams.Ai(AgentMoveSpeed.Fast)), 1);
+                n++;
+            }
+            force.OrdersIssued += n;
         }
 
         static void AttackMove(Force force, Vector3 dest, float now)
