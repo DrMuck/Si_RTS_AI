@@ -163,6 +163,10 @@ namespace Si_RTS_AI.Planning
                     float teamIncome = 0f;
                     try { teamIncome = Perception.EcoRateSampler.GetAvgIncomePerSec(ctx.Team); } catch { }
                     string dtStr = dtTo15 >= float.MaxValue ? "inf" : $"{dtTo15:F0}s";
+                    // A team with no cash, no shrimps and no producers is not in
+                    // the round (humans-vs-humans, 2026-09-05): one line a second
+                    // of zeros for an hour says nothing.
+                    if (ctx.Cash == 0 && shrimps == 0 && producers == 0) return;
                     MelonLogger.Msg($"[TECH/RESERVE] cash={ctx.Cash} shrimps={shrimps} " +
                                     $"perShrimp={perShrimp:F2}/s producers={producers} " +
                                     $"committedCysts={committedCysts} " +
