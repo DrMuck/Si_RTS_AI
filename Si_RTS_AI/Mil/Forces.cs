@@ -233,8 +233,10 @@ namespace Si_RTS_AI.Mil
             if (force.Eff > force.PeakEff) force.PeakEff = force.Eff;
             if (force.Obj != null)
             {
-                force.Obj.AssignedEff = force.Eff; force.Obj.AssignedUnits = force.Units.Count;
-                if (force.Eff > force.Obj.PeakAssignedEff) force.Obj.PeakAssignedEff = force.Eff;
+                float sum = 0f; int n = 0;
+                for (int ff = 0; ff < Active.Count; ff++) if (Active[ff].Obj == force.Obj) { sum += Active[ff].Eff; n += Active[ff].Units.Count; }
+                force.Obj.AssignedEff = sum; force.Obj.AssignedUnits = n;
+                if (sum > force.Obj.PeakAssignedEff) force.Obj.PeakAssignedEff = sum;
             }
         }
 
@@ -264,14 +266,34 @@ namespace Si_RTS_AI.Mil
                 }
                 if (IsRaid(o) && force == null && raidHeld >= raidBudget) continue;
 
-                // A committed force does not absorb reinforcements: the next wave
-                // is a new objective or the reserve. A forming or staging one does.
-                if (force != null && force.Phase != State.Forming && force.Phase != State.Staging) continue;
+                // A committed force does not absorb reinforcements. THE NEXT WAVE
+                // IS A NEW FORCE FOR THE SAME OBJECTIVE, raised while the first
+                // is out and only up to the doctrine's ceiling — "commit once,
+                // commit everything" for the win condition, rather than a
+                // reserve of 65k standing at home while 40k fights at their HQ.
+                bool wave = false;
+                if (force != null && force.Phase != State.Forming && force.Phase != State.Staging)
+                {
+                    if (!o.Offensive || o.Kind == Objectives.Kind.Recon) continue;
+                    float committed = AssignedTo(o);
+                    float ceilingAll = Mathf.Max(o.RequiredEff, o.CeilingEff);
+                    if (committed >= ceilingAll) continue;
+                    float avail0 = 0f;
+                    for (int k = 0; k < free.Count; k++)
+                    {
+                        string fn = ""; try { fn = free[k].ObjectInfo?.DisplayName ?? ""; } catch { }
+                        avail0 += Kernel.EffectiveOf(fn);
+                    }
+                    // A wave is worth sending when it is at least half the price.
+                    if (avail0 < o.RequiredEff * 0.5f) continue;
+                    force = null; wave = true;
+                }
                 if (force == null && free.Count == 0) continue;
 
                 float ceiling = Mathf.Max(o.RequiredEff, o.CeilingEff);
+                if (wave) ceiling = Mathf.Max(o.RequiredEff, o.CeilingEff - AssignedTo(o));
                 float have = force?.Eff ?? 0f;
-                if (have >= o.RequiredEff) continue;
+                if (!wave && have >= o.RequiredEff) continue;
 
                 // ALL OR NOTHING. A force is raised only when the free pool can
                 // pay the whole price now; otherwise the units stay in the
@@ -295,9 +317,9 @@ namespace Si_RTS_AI.Mil
                     bool imminent = float.IsInfinity(o.DeadlineAt) ? o.DefenceEff > 0f : o.DeadlineAt - now <= MilConfig.PreemptWithinS;
                     if (avail < o.RequiredEff && o.Rank <= 1 && !o.Offensive && imminent)
                     {
-                        for (int f = Active.Count - 1; f >= 0 && avail < o.RequiredEff; f--)
+                        for (int pf = Active.Count - 1; pf >= 0 && avail < o.RequiredEff; pf--)
                         {
-                            var other = Active[f];
+                            var other = Active[pf];
                             if (other.Obj == null || !other.Obj.Offensive) continue;
                             if (other.Phase == State.Engaged || other.Phase == State.Withdrawing) continue;
                             Objectives.NotePreempted(other.Obj, $"{o.Kind}#{o.Id} needs {o.RequiredEff:F0} eff and only {avail:F0} is free", now);
@@ -308,10 +330,10 @@ namespace Si_RTS_AI.Mil
                                 avail += Kernel.EffectiveOf(fn);
                             }
                             other.Units.Clear();
-                            Active.RemoveAt(f);
+                            Active.RemoveAt(pf);
                         }
                     }
-                    if (avail < o.RequiredEff) continue;
+                    if (!wave && avail < o.RequiredEff) continue;
                 }
 
                 // Take preferred pool first, nearest to the objective, until the price is met.
@@ -331,6 +353,7 @@ namespace Si_RTS_AI.Mil
                         {
                             force = new Force { Id = ++_nextId, Obj = o, StateSince = now };
                             Active.Add(force);
+                            if (wave) MilLog.Msg($"[FORCE] {force.Name} second wave: {AssignedTo(o):F0} eff already out, ceiling {Mathf.Max(o.RequiredEff, o.CeilingEff):F0}");
                         }
                         free.RemoveAt(idx);
                         force.Units.Add(u);
@@ -352,8 +375,17 @@ namespace Si_RTS_AI.Mil
 
         static Force Find(Objectives.Objective o)
         {
+            for (int f = 0; f < Active.Count; f++)
+                if (Active[f].Obj == o && (Active[f].Phase == State.Forming || Active[f].Phase == State.Staging)) return Active[f];
             for (int f = 0; f < Active.Count; f++) if (Active[f].Obj == o) return Active[f];
             return null;
+        }
+
+        static float AssignedTo(Objectives.Objective o)
+        {
+            float e = 0f;
+            for (int f = 0; f < Active.Count; f++) if (Active[f].Obj == o) e += Active[f].Eff;
+            return e;
         }
 
         static int Nearest(List<Unit> pool, Vector3 to, Objectives.Pool pref)
@@ -492,7 +524,7 @@ namespace Si_RTS_AI.Mil
                 switch (force.Phase)
                 {
                     case State.Forming:
-                        if (force.Units.Count > 0 && force.Eff >= o.RequiredEff)
+                        if (force.Units.Count > 0 && (force.Eff >= o.RequiredEff || (force.Eff >= o.RequiredEff * 0.5f && AssignedTo(o) > force.Eff)))
                         {
                             force.StartPos = Centroid(force);
                             force.Rally = Fields.RallyFor(force.StartPos, o.Where, MilConfig.StandoffM, force.Flying);

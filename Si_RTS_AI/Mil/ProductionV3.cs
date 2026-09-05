@@ -276,7 +276,14 @@ namespace Si_RTS_AI.Mil
                     if (gap <= 0f && idleMin < 3f) continue;
                     int capW = Mathf.Max(1, UnitStats.CapWeightOf(n));
                     try { capW = Mathf.Max(1, opt.ObjectInfo.UnitCapValue); } catch { }
-                    float valuePerCap = Doctrine.ValueOf(n) * cost / capW;
+                    // PER CAP SLOT ONLY WHEN THE CAP IS WHAT BINDS. Early, cash is the
+                    // constraint and a slot is free, so a unit is worth its fitted
+                    // value per cash; pricing per slot then bought Dragonflies
+                    // (0.76 of their price, but expensive) for raids. Once the cap
+                    // is more than half used, the slot is the scarce thing.
+                    float valuePerCap = CapTight(team, opt.ObjectInfo)
+                        ? Doctrine.ValueOf(n) * cost / capW
+                        : Doctrine.ValueOf(n) * 100f;
                     float fit = Fit(n);
                     float score = Mathf.Max(gap, 200f) * valuePerCap * fit;
                     if (score > bestScore) { bestScore = score; best = opt; bestWhy = $"{n}: gap {gap:F0} x {valuePerCap:F0}/cap x fit {fit:F2}"; }
@@ -303,6 +310,17 @@ namespace Si_RTS_AI.Mil
                     MilLog.Every("prod:" + typeName + ":" + res, 60f, $"[MIL/PROD] {typeName} could not queue {best.ObjectInfo.DisplayName}: {res}");
                 }
             }
+        }
+
+        static bool CapTight(Team team, ObjectInfo oi)
+        {
+            try
+            {
+                var entry = team.GetUnitTypeCapEntryForUnit(oi);
+                if (entry == null || entry.Max <= 0) return false;
+                return entry.Current > entry.Max * 0.5f;
+            }
+            catch { return false; }
         }
 
         static bool CapRoom(Team team, ObjectInfo oi)
