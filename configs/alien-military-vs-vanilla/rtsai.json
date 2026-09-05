@@ -262,5 +262,8 @@
     }
   },
   "endRoundAfterMinutes": 60,
-  "serverFpsCap": 144
+  "serverFpsCap": 144,
+  "perfTimers": true,
+  "perfProbes": "GameManager:Update,OrderedUpdateManager:LateUpdate,OrderedUpdateManager:CallFixedLateUpdate,GameManager:SensorTickPart1,GameManager:SensorTickPart2,GameManager:SensorTickPart3,FogOfWar:OnUpdate,FogOfWar:LateUpdate,NetworkLayer:Update,AIAlienAgent:OnOrderedUpdate,AIHumanoidAgent:OnOrderedUpdate,AIAlienHarvesterAgent:OnOrderedUpdate,AIHarvesterAgent:OnOrderedUpdate,AITurretAgent:OnOrderedUpdate,Soldier:OrderedUpdate,VehicleHovered:OrderedUpdate,VehicleWheeled:OrderedUpdate,AlienStructure:OrderedUpdate,HumanStructure:OrderedUpdate,ConstructionSite:Update,AstarPath:Update,Unit:OnUpdateNavmeshCutter",
+  "layerSnapshots": true
 }

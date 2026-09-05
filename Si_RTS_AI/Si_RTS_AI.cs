@@ -8,7 +8,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 
-[assembly: MelonInfo(typeof(Si_RTS_AI.Si_RTS_AI), "Si_RTS_AI", "0.92.11", "DrMuck")]
+[assembly: MelonInfo(typeof(Si_RTS_AI.Si_RTS_AI), "Si_RTS_AI", "0.92.12", "DrMuck")]
 [assembly: MelonGame("Bohemia Interactive", "Silica")]
 
 namespace Si_RTS_AI
@@ -116,6 +116,10 @@ namespace Si_RTS_AI
             TestHarnessNs.TestHarness.Init();
             Planning.EcoPlannerConfig.Init();
             Planning.BlueprintConfig.Init();
+            // Probes into the game's frame for the fps investigation; reads
+            // rtsai.json, so the config is loaded first.
+            try { Planning.RtsaiConfig.Reload(); Perception.PerfProbes.Init(HarmonyInstance); }
+            catch (Exception ex) { MelonLogger.Warning("[RTSA/PROBE] init failed: " + ex.Message); }
         }
 
         public override void OnUpdate()
@@ -133,6 +137,7 @@ namespace Si_RTS_AI
             // definition. Whether game time keeps pace with the requested
             // multiple is a separate question, measured in TimeScaleControl.
             float dt = UnityEngine.Time.unscaledDeltaTime;
+            Perception.PerfProbes.OnFrame();
             if (dt > 0.0001f)
             {
                 float instFps = 1f / dt;
@@ -184,7 +189,7 @@ namespace Si_RTS_AI
         // many milliseconds of wall clock went by, next to the frame rate. If
         // ours is a few percent while fps halves, the drop is the game's.
         static double _budgetOursMs, _budgetWallMs, _budgetWorstMs;
-        static int _budgetFrames;
+        static int _budgetFrames, _budgetGc0, _budgetGc2;
         static void BudgetFrame(float dt, long startTs)
         {
             double ours = (System.Diagnostics.Stopwatch.GetTimestamp() - startTs) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
@@ -192,9 +197,19 @@ namespace Si_RTS_AI
             if (ours > _budgetWorstMs) _budgetWorstMs = ours;
             if (_budgetWallMs < 60000.0) return;
             float fps = _budgetFrames / (float)(_budgetWallMs / 1000.0);
+            int gc0 = System.GC.CollectionCount(0), gc2 = System.GC.CollectionCount(2);
+            long heapMb = System.GC.GetTotalMemory(false) / 1000000L;
+            int structures = 0, sites = 0, units = 0;
+            try { structures = Structure.Structures.Count; } catch { }
+            try { sites = ConstructionSite.ConstructionSites.Count; } catch { }
+            try { units = Unit.Units.Count; } catch { }
             string line = $"[RTSA/PERF] budget: ours {_budgetOursMs:F0} ms of {_budgetWallMs:F0} ms wall " +
                           $"({100.0 * _budgetOursMs / _budgetWallMs:F1}%), worst frame {_budgetWorstMs:F0} ms, " +
-                          $"fps {fps:F0}, frame {_budgetWallMs / _budgetFrames:F1} ms";
+                          $"fps {fps:F0}, frame {_budgetWallMs / _budgetFrames:F1} ms | " +
+                          Perception.PerfProbes.TakeMinute() +
+                          $" | fixedDt {UnityEngine.Time.fixedDeltaTime * 1000f:F0} ms, gc0 +{gc0 - _budgetGc0} gc2 +{gc2 - _budgetGc2}, " +
+                          $"heap {heapMb} MB | units {units} structures {structures} sites {sites}";
+            _budgetGc0 = gc0; _budgetGc2 = gc2;
             MelonLogger.Msg(line);
             try { AppendToRound(line); } catch { }
             _budgetOursMs = 0; _budgetWallMs = 0; _budgetWorstMs = 0; _budgetFrames = 0;
@@ -304,12 +319,14 @@ namespace Si_RTS_AI
                     long tLayer = 0, tBcMetrics = 0, tShrimpState = 0, tEcoRate = 0, tPlan = 0, tMil = 0;
                     if (tn.Contains("Alien"))
                     {
-                        tLayer     = TimedMs(() => Perception.MapLayers.LayerReplay.MaybeSnapshot(_telemetryTickCounter, team));
+                        if (Planning.RtsaiConfig.Bool("layerSnapshots", true))
+                            tLayer = TimedMs(() => Perception.MapLayers.LayerReplay.MaybeSnapshot(_telemetryTickCounter, team));
                         tBcMetrics = TimedMs(() => Perception.BcMetrics.TickAlien(team));
                     }
                     else if (tn.Contains("Sol") || tn.Contains("Cent"))
                     {
-                        tLayer     = TimedMs(() => Perception.MapLayers.LayerReplay.MaybeSnapshotHuman(_telemetryTickCounter, team));
+                        if (Planning.RtsaiConfig.Bool("layerSnapshots", true))
+                            tLayer = TimedMs(() => Perception.MapLayers.LayerReplay.MaybeSnapshotHuman(_telemetryTickCounter, team));
                         tBcMetrics = TimedMs(() => Perception.BcMetrics.TickHuman(team));
                     }
                     tShrimpState = TimedMs(() => Perception.ShrimpStateSampler.Tick(team));
