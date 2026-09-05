@@ -24,6 +24,52 @@ namespace Si_RTS_AI.Planning
         // is 120s so a 20s under/over-estimate barely moves scores.
         const float DEFAULT_BUILD_REMAINING_S = 20f;
 
+        /// <summary>First time each construction site was seen, by instance id.
+        /// Sites vanish from the list when built or destroyed, so the memory is
+        /// pruned against the live list.</summary>
+        static readonly System.Collections.Generic.Dictionary<int, float> _siteFirstSeen =
+            new System.Collections.Generic.Dictionary<int, float>();
+        static readonly System.Collections.Generic.HashSet<int> _stallLogged =
+            new System.Collections.Generic.HashSet<int>();
+        const float STALLED_SITE_S = 120f;
+
+        static bool IsStalledSite(ConstructionSite cs, string name)
+        {
+            try
+            {
+                int id = cs.GetInstanceID();
+                float now = UnityEngine.Time.time;
+                if (!_siteFirstSeen.TryGetValue(id, out float first)) { _siteFirstSeen[id] = now; return false; }
+                float prog = 0f;
+                try { prog = cs.ProgressTime01; } catch { }
+                if (prog > 0.001f) { _siteFirstSeen[id] = now; return false; }   // building: not stalled
+                if (now - first < STALLED_SITE_S) return false;
+                if (_stallLogged.Add(id))
+                {
+                    var p = cs.transform.position;
+                    MelonLogger.Msg($"[PLAN/Build] {name} site at ({p.x:F0},{p.z:F0}) has not started in " +
+                                    $"{now - first:F0}s — not counted as in flight any more");
+                }
+                return true;
+            }
+            catch { return false; }
+        }
+
+        static void PruneStallMemory()
+        {
+            if (_siteFirstSeen.Count == 0) return;
+            var live = new System.Collections.Generic.HashSet<int>();
+            try
+            {
+                var sites = ConstructionSite.ConstructionSites;
+                if (sites != null) for (int i = 0; i < sites.Count; i++) if (sites[i] != null) live.Add(sites[i].GetInstanceID());
+            }
+            catch { return; }
+            var gone = new System.Collections.Generic.List<int>();
+            foreach (var id in _siteFirstSeen.Keys) if (!live.Contains(id)) gone.Add(id);
+            for (int i = 0; i < gone.Count; i++) { _siteFirstSeen.Remove(gone[i]); _stallLogged.Remove(gone[i]); }
+        }
+
         public static EcoState Build(Team team)
         {
             var s = new EcoState();
@@ -135,6 +181,7 @@ namespace Si_RTS_AI.Planning
             }
             catch (System.Exception ex) { MelonLogger.Warning("[PLAN/Build] structs: " + ex.Message); }
 
+            PruneStallMemory();
             // ---- In-progress construction sites ----
             try
             {
@@ -147,6 +194,15 @@ namespace Si_RTS_AI.Planning
                         string n = cs.ObjectInfo.DisplayName ?? "";
                         Vector3 p = cs.transform.position;
                         float readyAt = DEFAULT_BUILD_REMAINING_S;
+                        // A SITE THAT NEVER STARTS IS NOT IN FLIGHT. NarakaCity round 5
+                        // of 2026-09-05: fifteen Node sites the game accepted and never
+                        // began (out of reach of a finished anchor in 3D) sat at 0%
+                        // progress from minute 15 to the end, counted as "unbuilt
+                        // nodes", and held the node front at 15/15 — the whole
+                        // expansion stopped at 20 Bio Caches. A site at zero progress
+                        // after the grace is skipped here; NodeManager already gives up
+                        // on that ground after three stalls.
+                        if (IsStalledSite(cs, n)) continue;
                         if (n == "Bio Cache")
                             s.bcs.Add(new EcoState.Bc { pos = p, finished = false, readyAt = readyAt, storage = 0, storageCap = 4000 });
                         else if (n == "Lesser Spawning Cyst")
