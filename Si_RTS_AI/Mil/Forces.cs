@@ -72,6 +72,8 @@ namespace Si_RTS_AI.Mil
         const float ARRIVED_M         = 90f;
         const float ORDER_MOVED_M     = 90f;
         const float ORDER_BACKSTOP_S  = 60f;
+        const float MIN_REORDER_S     = 15f;    // a force turns at most this often
+        const float BIG_JUMP_M        = 300f;   // unless the destination is somewhere else entirely
         const float ENGAGE_RADIUS_M   = 600f;
         const float KERNEL_CHECK_S    = 4f;
         const float RESERVE_REPOSITION_S = 40f;
@@ -534,7 +536,14 @@ namespace Si_RTS_AI.Mil
                         break;
                     case State.Staging:
                     {
-                        if (AnyFighting(force)) { SetPhase(force, State.Engaged, now, "contact while staging"); break; }
+                        // Contact at the rally does not send the force off to its
+                        // far target: the units fight where they stand and staging
+                        // goes on. Only a losing fight ends it.
+                        if (AnyFighting(force) && Losing(force, o, now, out string lost))
+                        {
+                            Withdraw(force, o, now, lost);
+                            break;
+                        }
                         // Patience scales with the walk: the slowest member on
                         // the field from where it formed, plus the margin.
                         float walk = Fields.WalkTimeBetween(force.StartPos, force.Rally, SlowestSpeed(force), force.Flying);
@@ -557,26 +566,9 @@ namespace Si_RTS_AI.Mil
                     case State.Engaged:
                     {
                         if (now - force.LastTargetCheckAt < KERNEL_CHECK_S) break;
-                        force.LastTargetCheckAt = now;
-                        // Our own spires count on our side, exactly as theirs count
-                        // on theirs when a base is priced: a defence force at a
-                        // spire-covered cluster was withdrawing at 0.65 while the
-                        // spires it stood beside would have carried the fight.
-                        float ours = force.Eff + OwnDefenceNear(Centroid(force));
-                        float theirs = Intel.EffectiveNear(Centroid(force), ENGAGE_RADIUS_M) + DefenceStructsNear(o, Centroid(force));
-                        float ratio = Kernel.Ratio(ours, theirs);
-                        var band = Doctrine.Classify(ratio);
-                        // Outnumbered at contact is a reason to leave NOW, not after
-                        // losses: the archive says nothing predicts a parity fight
-                        // and below it the answer is disengage.
-                        float refuseAt = o.Offensive ? Doctrine.RefuseBelow : MilConfig.DefendRefuseBelow;
-                        if (theirs > 0f && ratio < refuseAt)
+                        if (Losing(force, o, now, out string why))
                         {
-                            Withdrawals++;
-                            string why = $"{Kernel.Describe(ours, theirs)} — {(o.Offensive ? Doctrine.Advice(band) : "clearly losing our own ground")}";
-                            force.Rally = Fields.RallyFor(Centroid(force), o.Where, MilConfig.StandoffM * 2f, force.Flying);
-                            SetPhase(force, State.Withdrawing, now, why);
-                            Objectives.NoteWithdrawn(o, why, now);
+                            Withdraw(force, o, now, why);
                         }
                         else if (!AnyFighting(force) && !EnemyNear(force) && now - force.StateSince > 20f)
                         {
@@ -600,10 +592,64 @@ namespace Si_RTS_AI.Mil
             }
         }
 
+        /// <summary>
+        /// Outnumbered at contact is a reason to leave NOW, not after losses:
+        /// the archive says nothing predicts a parity fight and below it the
+        /// answer is disengage. Our own spires count on our side, exactly as
+        /// theirs count on theirs when a base is priced: a defence force at a
+        /// spire-covered cluster was withdrawing at 0.65 while the spires it
+        /// stood beside would have carried the fight. Throttled to KERNEL_CHECK_S.
+        /// </summary>
+        static bool Losing(Force force, Objectives.Objective o, float now, out string why)
+        {
+            why = null;
+            if (now - force.LastTargetCheckAt < KERNEL_CHECK_S) return false;
+            force.LastTargetCheckAt = now;
+            float ours = force.Eff + OwnDefenceNear(Centroid(force));
+            float theirs = Intel.EffectiveNear(Centroid(force), ENGAGE_RADIUS_M) + DefenceStructsNear(o, Centroid(force));
+            float ratio = Kernel.Ratio(ours, theirs);
+            var band = Doctrine.Classify(ratio);
+            float refuseAt = o.Offensive ? Doctrine.RefuseBelow : MilConfig.DefendRefuseBelow;
+            if (theirs > 0f && ratio < refuseAt)
+            {
+                why = $"{Kernel.Describe(ours, theirs)} — {(o.Offensive ? Doctrine.Advice(band) : "clearly losing our own ground")}";
+                return true;
+            }
+            return false;
+        }
+
+        static void Withdraw(Force force, Objectives.Objective o, float now, string why)
+        {
+            Withdrawals++;
+            force.Rally = Fields.RallyFor(Centroid(force), o.Where, MilConfig.StandoffM * 2f, force.Flying);
+            SetPhase(force, State.Withdrawing, now, why);
+            Objectives.NoteWithdrawn(o, why, now);
+        }
+
+        /// <summary>An order may be replaced when the last one is older than
+        /// MIN_REORDER_S, or when the force has never been given a target.</summary>
+        static bool MayReorder(Force force, float now)
+            => force.LastTarget == null && force.LastOrderAt <= 0f || now - force.LastOrderAt >= MIN_REORDER_S;
+
+        /// <summary>A destination that jumped far enough to be a different place
+        /// altogether is worth a turn at any time.</summary>
+        static bool BigJump(Force force, Vector3 dest)
+        {
+            float dx = force.LastOrderDest.x - dest.x, dz = force.LastOrderDest.z - dest.z;
+            return dx * dx + dz * dz > BIG_JUMP_M * BIG_JUMP_M;
+        }
+
         static void SetPhase(Force force, State s, float now, string why)
         {
+            // A PHASE IS NOT AN ORDER. This used to wipe LastOrderDest so the next
+            // tick issued a fresh order for every phase change, and forces flip
+            // between Staging, Engaged and Advancing every few seconds in bursts:
+            // public round 2026-09-05 23:47, 275 such flips, 95 within ten seconds
+            // of the previous one. Every flip turned a Goliath from "attack the
+            // HQ" to "walk to the rally" and back — DrMuck: "they seem to rotate a
+            // lot". Orders now change only when the destination or the target
+            // changes, and not more often than MIN_REORDER_S apart.
             force.Phase = s; force.StateSince = now;
-            force.LastOrderDest = new Vector3(float.NaN, 0f, 0f);   // force a fresh order
             MilLog.Msg($"[FORCE] {force.Name} -> {s}: {why}");
         }
 
@@ -723,16 +769,23 @@ namespace Si_RTS_AI.Mil
                     case State.Advancing:
                     case State.Engaged:
                     {
-                        if (!o.Attack) { if (Moved(force, o.Where) || Stalled(force, now)) MoveFormation(force, o.Where, now); break; }
+                        bool may = MayReorder(force, now);
+                        if (!o.Attack)
+                        {
+                            if ((Moved(force, o.Where) && (may || BigJump(force, o.Where))) || Stalled(force, now)) MoveFormation(force, o.Where, now);
+                            break;
+                        }
                         var target = TargetOf(o);
                         if (target != null)
                         {
-                            if (force.LastTarget != target || Stalled(force, now)) AttackTarget(force, target, now);
+                            bool targetGone = force.LastTarget != null && force.LastTarget != target && TargetDead(force.LastTarget);
+                            if ((force.LastTarget != target && (may || force.LastTarget == null || targetGone)) || Stalled(force, now))
+                                AttackTarget(force, target, now);
                         }
                         else
                         {
                             Vector3 at = o.TrackRef != null ? o.TrackRef.Predicted() : o.Where;
-                            if (Moved(force, at) || Stalled(force, now)) AttackMove(force, at, now);
+                            if ((Moved(force, at) && (may || BigJump(force, at))) || Stalled(force, now)) AttackMove(force, at, now);
                         }
                         break;
                     }
@@ -765,6 +818,11 @@ namespace Si_RTS_AI.Mil
             _reserve.LastOrderAt = now;
             Issue(() => StrategyMode.PerformMoveAttack(stray, _reservePoint, null, AgentMoveSpeed.Fast, false), stray.Count);
             _reserve.OrdersIssued += stray.Count;
+        }
+
+        static bool TargetDead(Target t)
+        {
+            try { return t == null || t.gameObject == null || !t.gameObject.activeInHierarchy; } catch { return true; }
         }
 
         static Target TargetOf(Objectives.Objective o)
