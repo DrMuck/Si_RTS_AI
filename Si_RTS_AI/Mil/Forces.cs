@@ -583,8 +583,15 @@ namespace Si_RTS_AI.Mil
                         {
                             Withdraw(force, o, now, why);
                         }
-                        else if (!AnyFighting(force) && !EnemyNear(force) && now - force.StateSince > 20f)
+                        else if (!AnyFighting(force) && !EnemyNear(force) && now - force.StateSince > 20f
+                                 && (Centroid(force) - o.Where).sqrMagnitude >= (o.Radius + ENGAGE_RADIUS_M) * (o.Radius + ENGAGE_RADIUS_M))
                         {
+                            // Only a force still short of its objective has anywhere
+                            // to press on to. A defence force standing at the site it
+                            // defends flipped Engaged/Advancing every twenty seconds
+                            // as enemies came and went — overnight round 1, 887 phase
+                            // changes in an hour, 414 of them this pair. At the
+                            // objective it stays engaged until the objective ends.
                             SetPhase(force, State.Advancing, now, "no contact, pressing on");
                         }
                         else if (!o.ForceEngaged &&
@@ -788,6 +795,19 @@ namespace Si_RTS_AI.Mil
                             if ((Moved(force, o.Where) && (may || BigJump(force, o.Where))) || Stalled(force, now)) MoveFormation(force, o.Where, now);
                             break;
                         }
+                        // HOLD GROUND. A defence force that has reached its site gets
+                        // one attack-move onto the site and is then left alone: the
+                        // units engage whatever comes into range on their own, and
+                        // re-pointing them at every track leader that wandered past
+                        // was most of the 13,790 military orders of overnight round 1.
+                        // It is re-ordered only if it drifted off the site or stalled.
+                        bool atSite = !o.Offensive &&
+                                      (Centroid(force) - o.Where).sqrMagnitude < (o.Radius + ENGAGE_RADIUS_M) * (o.Radius + ENGAGE_RADIUS_M);
+                        if (atSite)
+                        {
+                            if ((Moved(force, o.Where) && (may || BigJump(force, o.Where))) || Stalled(force, now)) AttackMove(force, o.Where, now);
+                            break;
+                        }
                         var target = TargetOf(o);
                         if (target != null)
                         {
@@ -798,7 +818,10 @@ namespace Si_RTS_AI.Mil
                         else
                         {
                             Vector3 at = o.TrackRef != null ? o.TrackRef.Predicted() : o.Where;
-                            if ((Moved(force, at) && (may || BigJump(force, at))) || Stalled(force, now)) AttackMove(force, at, now);
+                            // A track drifts every tick; only a real displacement
+                            // is worth turning the force for.
+                            bool moved = o.TrackRef != null ? BigJump(force, at) : Moved(force, at);
+                            if ((moved && (may || BigJump(force, at))) || Stalled(force, now)) AttackMove(force, at, now);
                         }
                         break;
                     }
