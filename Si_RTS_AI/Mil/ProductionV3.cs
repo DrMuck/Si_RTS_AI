@@ -122,7 +122,14 @@ namespace Si_RTS_AI.Mil
             try { if (EcoPlanner.EcoStarvedOfCash) return 0; } catch { }
             int cash = 0;
             try { cash = team.TotalResources; } catch { }
-            int reserve = WorkerPlan.CanStillConvertCash ? MilitaryConfig.EcoReserve : 0;
+            // THE ECONOMY KEEPS ITS NEXT PLACEMENT. The first v3 round spent
+            // 229k on the army by minute twenty with cash pinned at 600-4000
+            // and the economy cash-blocked 22% of the round: the 45s starvation
+            // window only holds the military off AFTER a placement is refused.
+            // So a floor of three of the dearest eco action (a Lesser Cyst)
+            // stays in the bank at all times, and the full worker reserve while
+            // the economy is still converting cash into workers that earn.
+            int reserve = WorkerPlan.CanStillConvertCash ? MilitaryConfig.EcoReserve : MilConfig.EcoFloorCash;
             try { reserve += MoneyBroker.GetReservedCash(team); } catch { }
             return Mathf.Max(0, cash - reserve);
         }

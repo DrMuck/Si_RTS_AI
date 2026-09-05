@@ -43,6 +43,9 @@ namespace Si_RTS_AI.Mil
         /// <summary>Allow the layer to plan (and with Execute, build) spires.
         /// Mirrors mil.spires.execute for the v3 site source.</summary>
         internal static float StandoffM            = 450f;
+        /// <summary>Cash the military always leaves the economy, once the worker
+        /// reserve no longer applies: three of the dearest eco action.</summary>
+        internal static int   EcoFloorCash         = 4500;
 
         internal static void Reload()
         {
@@ -55,6 +58,7 @@ namespace Si_RTS_AI.Mil
             ScreenMemoryHalfLifeS  = RtsaiConfig.Float("mil.screenMemoryHalfLifeS", 300f);
             ReconEnabled           = RtsaiConfig.Bool ("mil.recon",                true);
             StandoffM              = RtsaiConfig.Float("mil.standoffM",            450f);
+            EcoFloorCash           = RtsaiConfig.Int  ("mil.ecoFloorCash",         4500);
             MilLog.Msg($"[MIL/V3] config: homeFloor={HomeFloorCash} horizon={ForecastHorizonS:F0}s " +
                        $"raidShare={RaidShare:F2} staging={StagingPatienceS:F0}s fob={FobProducers} " +
                        $"defW={DefenceWeight:F2} recon={ReconEnabled} standoff={StandoffM:F0}m | " +

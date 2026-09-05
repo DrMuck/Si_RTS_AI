@@ -97,6 +97,23 @@ namespace Si_RTS_AI.Mil
         internal static readonly List<Objective> Portfolio = new List<Objective>(16);
         static readonly Dictionary<string, Objective> _byKey = new Dictionary<string, Objective>();
         static readonly Dictionary<string, float> _holdUntil = new Dictionary<string, float>();
+
+        /// <summary>
+        /// WHAT A BASE ACTUALLY ANSWERED WITH. The kernel prices a base against
+        /// the force it can SEE there; a human HQ answers a two-Crab raid with
+        /// infantry that did not exist when the raid was priced. When an
+        /// offensive objective fails, the largest enemy force met near the
+        /// target is remembered for that base and every later price starts from
+        /// it. Half-life ten minutes: a base can be reinforced or stripped.
+        /// </summary>
+        static readonly Dictionary<int, (float eff, float at)> _baseAnswer = new Dictionary<int, (float, float)>();
+        const float ANSWER_HALF_LIFE_S = 600f;
+
+        static float AnsweredWith(Intel.Base b)
+        {
+            if (b == null || !_baseAnswer.TryGetValue(b.Id, out var a)) return 0f;
+            return a.eff * Mathf.Pow(0.5f, (Time.time - a.at) / ANSWER_HALF_LIFE_S);
+        }
         static readonly List<Intel.Arrival> _arr = new List<Intel.Arrival>(8);
         static readonly List<Intel.Base> _stale = new List<Intel.Base>(4);
 
@@ -122,7 +139,7 @@ namespace Si_RTS_AI.Mil
 
         internal static void ResetForNewRound()
         {
-            Portfolio.Clear(); _byKey.Clear(); _holdUntil.Clear();
+            Portfolio.Clear(); _byKey.Clear(); _holdUntil.Clear(); _baseAnswer.Clear();
             _lastRefreshAt = _lastCheckAt = _lastLogAt = 0f;
             _nextId = 0; _team = null; _nest = Vector3.zero;
             ArmyEff = 0f; ArmyCash = 0; NextOffensivePrice = 0f; NextOffensiveWhat = "";
@@ -381,7 +398,7 @@ namespace Si_RTS_AI.Mil
             {
                 var b = bases[i];
                 float reinforce = Intel.EffectiveNear(b.Centre, BASE_REACH_M);
-                float local = Mathf.Max(b.LocalDefenceEff, reinforce);
+                float local = Mathf.Max(b.LocalDefenceEff, Mathf.Max(reinforce, AnsweredWith(b)));
 
                 // KillHQ — the win condition.
                 if (b.HasHq)
@@ -687,6 +704,15 @@ namespace Si_RTS_AI.Mil
         {
             o.Status = s; o.EndedAt = now; o.Outcome = why;
             if (s == Status.Failed) _holdUntil[o.Key] = now + HOLD_AFTER_FAIL_S;
+            if (s == Status.Failed && o.Offensive && o.BaseRef != null)
+            {
+                float met = Mathf.Max(o.DefenceEff, Intel.EffectiveNear(o.Where, 700f));
+                // A force that was beaten by something it never saw was beaten by
+                // at least its own size over the commit band.
+                if (o.ForceEngaged && o.PeakAssignedEff > 0f) met = Mathf.Max(met, o.PeakAssignedEff / Doctrine.CommitAt * 1.5f);
+                _baseAnswer[o.BaseRef.Id] = (met, now);
+                MilLog.Msg($"[OBJ] base {Intel.Short(o.BaseRef.Team)}#{o.BaseRef.Id} answered with ~{met:F0} eff — remembered");
+            }
             MilLog.Msg($"[OBJ] #{o.Id} {(s == Status.Done ? "DONE" : "FAILED")} {o.Kind} — {why} " +
                        $"(active {now - o.ActivatedAt:F0}s, peak force {o.PeakAssignedEff:F0} eff)");
             WriteRow(o, now);

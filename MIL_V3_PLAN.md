@@ -500,3 +500,50 @@ it; everything in v3.0 is shaped so it can use it.
 - **Order gates.** An attack-move is an `Attack` definition with no object and
   is not caught by the move-order gates; the co-op gate needs the same filter
   extended before a played co-op round.
+
+## 10. Round log
+
+### Round 1 — smoke, 2026-09-05 15:17, NarakaCity, 20 min at 2x, v0.92.0 build 1
+
+Everything switched on at once (execute, produce, offence, spires), because a
+smoke round on this box can afford to look silly and a played one cannot.
+
+| | value |
+|---|---|
+| military cash spent by minute 20 | 229,640 (135 units, 13 producers) |
+| cash idle at the end | 0.1 minutes of income (August: 332k unspent) |
+| producers busy, round average | 84 % |
+| army engaged | 69 % |
+| objectives activated / done / failed | 32 / 17 / 3 |
+| two-sided cash exchange | 1.46 in our favour; 6,350 : 672 where a defence force plus a spire met a Sol push |
+| economy cash-blocked | 22 % of samples — the military was taking the eco's cash |
+
+What the round found, and what changed for build 2 and 3:
+
+- The reserve held its units forever and every objective got one unit —
+  the trickle in a different coat. Now the reserve releases each tick and a
+  force is raised only when the free pool can pay the whole price (rule 3).
+- `ControlMap` was rebuilt for whichever team ticked first, so "our ground"
+  was Sol's; intercepts fired on Sol scouts at Sol's own base. Alien only now.
+- A visible structure unstamped for 1.5 s was forgotten and rediscovered a
+  second later, which read as "target destroyed" to a raid twelve seconds old.
+  Forget grace is now six seconds, and bases carry a persistent identity.
+- Demand summed every unaffordable raid's full price and asked for 200,000 eff
+  of production; only active objectives and the one reserve target count now.
+- A base priced against two scouts turned out to answer with an army. Three
+  rules, not a constant: the enemy estimate per team is floored on its recent
+  peak (five-minute half-life); a base that beats a raid is remembered as
+  having answered with that force (ten-minute half-life); a force that has not
+  fought yet turns back when the refreshed price would make the kernel refuse.
+- Defence outranked offence on paper only: a KillHQ force marched west while a
+  33,000-eff Sol army walked into the forward base. A defence objective may now
+  pre-empt any offensive force that has not yet fought.
+- The military spent the economy's cash. It now leaves three of the dearest eco
+  action in the bank at all times (`mil.ecoFloorCash`), plus the worker reserve
+  while the economy is still converting.
+- Staging patience was a flat 45 s and every long march "advanced on patience"
+  with stragglers kilometres behind. Patience is now the slowest member's walk
+  plus the margin.
+
+Fog is gated (19 % of the map active, 86 % explored at minute 13); the early
+knowledge of both enemy HQs came from the scout star, not omniscience.

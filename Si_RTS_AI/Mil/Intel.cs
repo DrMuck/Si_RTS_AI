@@ -164,7 +164,7 @@ namespace Si_RTS_AI.Mil
 
         internal static void ResetForNewRound()
         {
-            _tracks.Clear(); _known.Clear(); _bases.Clear(); _baseCountHist.Clear();
+            _tracks.Clear(); _known.Clear(); _bases.Clear(); _baseCountHist.Clear(); _teamPeak.Clear();
             _harvesters.Clear();
             _corridor = new float[0];
             Array.Clear(_sector, 0, _sector.Length);
@@ -398,14 +398,26 @@ namespace Si_RTS_AI.Mil
         static void Summarise()
         {
             float eff = 0f; int cash = 0, pil = 0;
+            var byTeam = new Dictionary<string, float>();
             for (int i = 0; i < _tracks.Count; i++)
             {
                 var t = _tracks[i];
                 eff += t.Effective * t.Confidence;
                 cash += Mathf.RoundToInt(t.Cash * t.Confidence);
                 pil += t.Piloted;
+                byTeam.TryGetValue(t.Team, out float had);
+                byTeam[t.Team] = had + t.Effective * t.Confidence;
             }
-            EnemyEffective = eff; EnemyCash = cash; EnemyPiloted = pil;
+            float now = Time.time;
+            foreach (var kv in byTeam)
+            {
+                if (!_teamPeak.TryGetValue(kv.Key, out var pk) ||
+                    kv.Value >= pk.eff * Mathf.Pow(0.5f, (now - pk.at) / TEAM_PEAK_HALF_S))
+                    _teamPeak[kv.Key] = (kv.Value, now);
+            }
+            float floor = 0f;
+            foreach (var kv in _teamPeak) floor += kv.Value.eff * Mathf.Pow(0.5f, (now - kv.Value.at) / TEAM_PEAK_HALF_S);
+            EnemyEffective = Mathf.Max(eff, floor); EnemyCash = cash; EnemyPiloted = pil;
         }
 
         // ---- corridors --------------------------------------------------------
@@ -522,8 +534,17 @@ namespace Si_RTS_AI.Mil
             float e = 0f;
             for (int i = 0; i < _tracks.Count; i++)
                 if (_tracks[i].Team == team) e += _tracks[i].Effective * _tracks[i].Confidence;
+            // AN ARMY SEEN FIVE MINUTES AGO IS PROBABLY STILL THERE. Tracks drop
+            // when the scout that saw them dies, and the price of their HQ then
+            // fell to whatever two Crabs could see. The team's largest recent
+            // army decays with a five-minute half-life and floors the estimate.
+            if (_teamPeak.TryGetValue(team, out var pk))
+                e = Mathf.Max(e, pk.eff * Mathf.Pow(0.5f, (Time.time - pk.at) / TEAM_PEAK_HALF_S));
             return e;
         }
+
+        const float TEAM_PEAK_HALF_S = 300f;
+        static readonly Dictionary<string, (float eff, float at)> _teamPeak = new Dictionary<string, (float, float)>();
 
         internal static Track NearestTrack(Vector3 p, float maxM)
         {

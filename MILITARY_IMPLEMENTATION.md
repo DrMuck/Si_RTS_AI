@@ -1,3 +1,5 @@
+> **Superseded 2026-09-05 by `MIL_V3_PLAN.md`** — the code this describes was retired on 2026-09-05. Kept as history.
+
 # Military — what is actually built
 
 Companion to `MILITARY_DESIGN.md` (the plan) and `MILITARY_TACTICS.md` (the

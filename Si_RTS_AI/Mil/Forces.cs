@@ -447,6 +447,20 @@ namespace Si_RTS_AI.Mil
                 var force = Active[f];
                 var o = force.Obj;
                 if (o == null) continue;
+                // THE PRICE CAN RISE WHILE THE FORCE WALKS. A raid priced against
+                // two scouts finds their army came home; the refresh re-reads the
+                // defence every fifteen seconds, and a force that has not yet
+                // fought turns back when the kernel would now refuse the fight.
+                if ((force.Phase == State.Staging || force.Phase == State.Advancing) &&
+                    o.DefenceEff > 0f && Kernel.Ratio(force.Eff, o.DefenceEff) < Doctrine.RefuseBelow)
+                {
+                    Withdrawals++;
+                    string why = $"the price rose: {Kernel.Describe(force.Eff, o.DefenceEff)}";
+                    force.Rally = Fields.RallyFor(Centroid(force), o.Where, MilConfig.StandoffM * 2f, force.Flying);
+                    SetPhase(force, State.Withdrawing, now, why);
+                    Objectives.NoteWithdrawn(o, why, now);
+                    continue;
+                }
                 switch (force.Phase)
                 {
                     case State.Forming:

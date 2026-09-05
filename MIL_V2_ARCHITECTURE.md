@@ -1,3 +1,5 @@
+> **Superseded 2026-09-05 by `MIL_V3_PLAN.md`** — the framework was built as v3 on 2026-09-05. Kept as history.
+
 # Military v2 — the framework
 
 **Branch `military-v2`, started 2026-08-12. This is the working spec for the
