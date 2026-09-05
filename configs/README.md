@@ -186,3 +186,25 @@ money and crediting it back, so `cumulIncome` reported cash the AI never had.
 Use `storageBufferCaches` instead if the bank clips (100 caches is about +400k
 capacity, placed at minute 10). Those sit at the Nest with no patches, so they
 add no worker capacity and do not raise the shrimp ceiling.
+
+## `public-play/`
+
+**Players play; the alien RTS AI commands only while nobody holds the alien
+commander seat**, exactly as vanilla's AI would. Set up 2026-09-05 for the
+Silica Saturday rounds.
+
+- `TestMode = false`, `HeadlessTest_AutoStartRound = false`,
+  `HeadlessTest_FakeTeamJoin = false`, `EnemyBroke = false`,
+  `VersusAutoSelectMode = "NONE"` — no harness at all; the server runs its own
+  votes, map cycle and round ends.
+- `EcoAssistWithHumanCommander = false` and `lockAlienCommander: false` — a
+  player who takes the seat gets the whole team; every planner (eco, tech,
+  scouts, objectives, forces, production, spires) returns while
+  `AIManager.IsCommanderEnabled` is false for the alien team.
+- `military` fully on and `mil.spires.execute: true`: the v3 layer plays the
+  aliens when the seat is empty.
+- Logging is untouched: round logs, `combat.jsonl` v2, `objectives.jsonl`
+  and the `.melon.log` copy keep recording, which is the point of the evening.
+
+Switch back to development with `alien-military-vs-vanilla/` (server stopped
+for the MelonPreferences half, as always).
