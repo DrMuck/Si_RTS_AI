@@ -600,3 +600,24 @@ within `mil.preemptWithinS` (90 s), and a pre-empted objective is held for two
 minutes. Both are the kind of rule the plan warned about — a categorical
 override of a continuous cost — and both are labelled placeholders to be read
 against the next rounds.
+
+### Round 4 — full, 2026-09-05 17:00, NarakaCity, 40 min at 1x, build 5
+
+| | round 4 | round 3 | round 2 |
+|---|---|---|---|
+| cash exchange | 1.07 | 0.64 | 0.97 |
+| alien structures lost to the enemy | 13 | 44 | 0 |
+| enemy structures killed | 12, **including the Centauri HQ at minute 35** (a Goliath, after five Refineries, a Light Factory and a Turret) | 12 | 12 |
+| withdrawals / pre-emptions | 14 / 24 | 79 / 103 | 4 / 0 |
+| objectives done, defence | DefendEco 22 of 22, DefendProduction 10 of 11 | 22 of 61, 1 of 25 | 28 of 28 |
+| army engaged at the end | 27 % — a **173-unit, 287k reserve** stood at home while 48k fought at the Sol HQ | | 96 % |
+| cash at 40 min | 100k, 1 of 23 producers busy (unit cap) | 85k | 73k |
+
+The first HQ the military layer has killed on its own. The defence side is
+now solid: every eco defence completed and the base lost 13 structures against
+44. What is left is the offence's half of the doctrine — "commit everything":
+the reserve sat on 287k while the KillHQ force fought at 48k against 68k.
+Build 6 lets the reserve follow an affordable offensive objective as further
+waves up to the 4x ceiling, and values units per cash until the unit cap is
+half used (per-slot pricing early was buying Dragonflies). The late-round
+cash pile is cap-bound; spires and a forward Nest are the next claimants.
