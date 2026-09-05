@@ -59,7 +59,10 @@ namespace Si_RTS_AI.Mil
             public float PeakEff;
             public int   OrdersIssued;
             public Vector3 StartPos;            // where it formed, for the staging walk estimate
-            public string Name => Obj == null ? "reserve" : $"{Obj.Kind}#{Obj.Id}";
+            // Kind#objective/force: a second wave for the same objective is a
+            // separate force, and under the old name its Staging lines interleaved
+            // with the first wave's Engaged lines as if one force were flapping.
+            public string Name => Obj == null ? "reserve" : $"{Obj.Kind}#{Obj.Id}/{Id}";
         }
 
         internal static readonly List<Force> Active = new List<Force>(8);
