@@ -208,3 +208,22 @@ Silica Saturday rounds.
 
 Switch back to development with `alien-military-vs-vanilla/` (server stopped
 for the MelonPreferences half, as always).
+
+## `overnight-2way/` and `overnight-3way/`
+
+**Unattended performance rounds (2026-09-05 evening plan).** Same harness as
+`alien-military-vs-vanilla/` (60-minute force-end, fake client, auto-start,
+rounds cycle on NarakaCity), with the round-ten diagnostic settings: anchor-check
+throttle on (`siteAnchorCheckS` 0.5), `perfProbes` empty, `serverFpsCap` 0 so the
+frame time is the work itself from minute one. The only difference between the
+two folders is one line:
+
+```
+overnight-2way   VersusAutoSelectMode = "HUMANS_VS_ALIENS"            aliens vs one human team
+overnight-3way   VersusAutoSelectMode = "HUMANS_VS_HUMANS_VS_ALIENS"  aliens vs Sol and Centauri
+```
+
+Read a round with the `[RTSA/PERF] budget` lines in its round log: frame ms,
+units, structures, sites, anchor checks, once a minute. Keep the perf mod
+(`Mods/~disabled/Si_ModPerfMonitor.dll`) off for these: its wrappers on hot
+methods cost more than the throttle saves.
