@@ -477,12 +477,27 @@ namespace Si_RTS_AI.Planning
                     // chain runs parallel past the obstacle and then comes back
                     // to the planned line — and is capped at what keeps
                     // consecutive hops inside reach.
+                    // HOPS ARE MEASURED ON THE GROUND. The count from Relax is a
+                    // flat estimate; on a slope each hop is shorter and there are
+                    // more of them, and the chain runs until the Bio Cache site
+                    // is within reach in three dimensions, not until the flat
+                    // count is used up. See Perception.Ground.
                     float lateral = 0f;
                     int holdHops = 0;
-                    for (int h = 1; h <= hops; h++)
+                    float along = 0f;
+                    Vector3 walk = anchor;
+                    for (int h = 1; h <= MAX_HOPS_PER_SITE * 3; h++)
                     {
-                        Vector3 straight = new Vector3(anchor.x + dx * HopM * h, anchor.y,
-                                                       anchor.z + dz * HopM * h);
+                        if (len - along <= EcoSimulator.NODE_REACH_M
+                            && Perception.Ground.WithinReach(target, walk, EcoSimulator.NODE_REACH_M)) break;
+                        Vector3 stepped = Perception.Ground.StepToward(walk, target, HopM);
+                        float sdx = stepped.x - walk.x, sdz = stepped.z - walk.z;
+                        float stepLen = Mathf.Sqrt(sdx * sdx + sdz * sdz);
+                        if (stepLen < 1f) break;
+                        along += stepLen;
+                        walk = stepped;
+                        Vector3 straight = new Vector3(anchor.x + dx * along, anchor.y,
+                                                       anchor.z + dz * along);
                         Vector3 np = Offset(straight, dx, dz, lateral);
                         if (EcoPlanner.IsObstructed(np))
                         {
@@ -496,8 +511,8 @@ namespace Si_RTS_AI.Planning
                         }
                         if (NearAnyNetPoint(np, NodeMergeM)) continue;
                         Items.Add(new Item { kind = Kind.Node, pos = np, from = prev, branch = branch,
-                                             site = sites, pathM = anchorPt.pathM + HopM * h, why = "reach" });
-                        _net.Add(new NetPoint { pos = np, branch = branch, pathM = anchorPt.pathM + HopM * h });
+                                             site = sites, pathM = anchorPt.pathM + along, why = "reach" });
+                        _net.Add(new NetPoint { pos = np, branch = branch, pathM = anchorPt.pathM + along });
                         prev = np;
                     }
                 }

@@ -2927,10 +2927,7 @@ namespace Si_RTS_AI.Planning
                         float len = Mathf.Sqrt(bestSq);
                         if (len < 1f) continue;
                         float hop = EcoSimulator.NODE_REACH_M * 0.75f;
-                        Vector3 step = new Vector3(
-                            anchor.x + (to.x - anchor.x) * (hop / len),
-                            anchor.y,
-                            anchor.z + (to.z - anchor.z) * (hop / len));
+                        Vector3 step = Perception.Ground.StepToward(anchor, to, hop);   // shorter on a slope
 
                         TryFireAction(new Candidate
                         {
@@ -4836,9 +4833,15 @@ namespace Si_RTS_AI.Planning
                 return false;
             }
 
-            for (float t = hop; t < len; t += hop)
+            // Sequential steps measured on the ground: each one is at most a
+            // hop from the previous point in three dimensions.
+            Vector3 prevPt = from;
+            for (int guard = 0; guard < 32; guard++)
             {
-                Vector3 candidate = from + unit * t;
+                Vector3 candidate = Perception.Ground.StepToward(prevPt, to, hop);
+                float remaining = Mathf.Sqrt((to.x - candidate.x) * (to.x - candidate.x) + (to.z - candidate.z) * (to.z - candidate.z));
+                if (remaining < 1f || Mathf.Abs(candidate.x - prevPt.x) + Mathf.Abs(candidate.z - prevPt.z) < 0.5f) break;
+                prevPt = candidate;
                 // Already filled by this loop, an earlier chain, or anything
                 // else standing there — but NOT by the loop's own endpoints.
                 //
@@ -4945,7 +4948,7 @@ namespace Si_RTS_AI.Planning
             Vector3 dir = goal - from;
             float len = Mathf.Sqrt(dir.x * dir.x + dir.z * dir.z);
             if (len < 1f) return false;
-            pos = from + dir * (step / len);
+            pos = Perception.Ground.StepToward(from, goal, step);   // shorter on a slope
             // Same detour geometry as everywhere else.
             pos = Blueprint.SteppedAsideFromObstruction(pos, dir.x / len, dir.z / len);
             return true;
@@ -5034,7 +5037,7 @@ namespace Si_RTS_AI.Planning
             Vector3 dir = goal - from;
             float len = Mathf.Sqrt(dir.x * dir.x + dir.z * dir.z);
             if (len < 1f) return false;
-            pos = from + dir * (Mathf.Min(hop, len) / len);
+            pos = Perception.Ground.StepToward(from, goal, hop);   // shorter on a slope
             if (!IsObstructed(pos)) return true;
 
             // STEER AROUND WHAT WE HAVE LEARNED IS UNBUILDABLE.
@@ -5232,25 +5235,25 @@ namespace Si_RTS_AI.Planning
         static bool IsChainReachable(Vector3 pos, EcoState s, float reachM = -1f,
                                     bool unfinishedNodesAnchor = false)
         {
+            // ON THE GROUND, NOT ON THE MAP. The game lets a site be PLACED by
+            // the distance in the plane and lets it PROGRESS only by the
+            // distance in three dimensions to a functional anchor
+            // (ConstructionSite.GetFriendlyStructureNearby). A hop that passes
+            // here in 2D and fails there in 3D is a site at 0% forever, and the
+            // branch behind it with it: NarakaCity (1075,845), two rounds
+            // running. See Perception.Ground.
             float reach = reachM > 0f ? reachM : CHAIN_REACH_M;
-            float r2 = reach * reach;
             var nest = s.nestPos;
-            if (nest != Vector3.zero)
-            {
-                float dx = pos.x - nest.x, dz = pos.z - nest.z;
-                if (dx * dx + dz * dz <= r2) return true;
-            }
+            if (nest != Vector3.zero && Perception.Ground.WithinReach(pos, nest, reach)) return true;
             for (int i = 0; i < s.bcs.Count; i++)
             {
                 if (!s.bcs[i].finished) continue;          // must be BUILT to anchor
-                float dx = pos.x - s.bcs[i].pos.x, dz = pos.z - s.bcs[i].pos.z;
-                if (dx * dx + dz * dz <= r2) return true;
+                if (Perception.Ground.WithinReach(pos, s.bcs[i].pos, reach)) return true;
             }
             for (int i = 0; i < s.cysts.Count; i++)
             {
                 if (!s.cysts[i].finished) continue;        // must be BUILT to anchor
-                float dx = pos.x - s.cysts[i].pos.x, dz = pos.z - s.cysts[i].pos.z;
-                if (dx * dx + dz * dz <= r2) return true;
+                if (Perception.Ground.WithinReach(pos, s.cysts[i].pos, reach)) return true;
             }
             for (int i = 0; i < s.nodes.Count; i++)
             {
@@ -5262,8 +5265,7 @@ namespace Si_RTS_AI.Planning
                 // distant anchor and lands far from its patch. Waiting the ~20s
                 // for the Node to finish lets the same BC hug the biotics.
                 if (!s.nodes[i].finished && !unfinishedNodesAnchor) continue;
-                float dx = pos.x - s.nodes[i].pos.x, dz = pos.z - s.nodes[i].pos.z;
-                if (dx * dx + dz * dz <= r2) return true;
+                if (Perception.Ground.WithinReach(pos, s.nodes[i].pos, reach)) return true;
             }
             return false;
         }

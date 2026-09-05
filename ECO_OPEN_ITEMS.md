@@ -492,3 +492,15 @@ on the plan and outside it in the game, and the site then reads "+0n" forever.
 Fix shape: measure hop length with the height from `Mil.Fields.HeightAt`
 (sampled once per map) in both the planner and the executor — one function,
 both sides, per the 2026-08-07 lesson.
+
+**Confirmed and fixed in v0.92.10 (2026-09-05 evening).** Decompiled 0.9.46:
+placement (`ConstructionPreview.GetWithinBaseStructuresDistanceAndFogOfWar`)
+uses `GameMath.Distance2D` and accepts unfinished sites as anchors; progress
+(`ConstructionSite.GetFriendlyStructureNearby`) uses `GameMath.Distance` (3D)
+against FUNCTIONAL anchors only. Round 6 reproduced it exactly: node (1195,860)
+complete at 682 s, node (1075,845) placed 121 m away in the plane and stuck at
+0%, six more nodes queued behind it. `Perception/Ground.cs` samples the terrain
+under both ends; `IsChainReachable` tests reach in 3D and every node step
+(`Blueprint` hop loop, front step, `NextNodeTowards`, the loop-fill bridge)
+goes through `Ground.StepToward`, which shortens a hop until it is within a
+hop on the ground. The opener's hops (near the Nest) are unchanged.
