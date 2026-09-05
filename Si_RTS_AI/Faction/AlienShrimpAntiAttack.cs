@@ -142,14 +142,16 @@ namespace Si_RTS_AI.Faction
         // is anything other than AITask_Harvest, refuse the move. This keeps the
         // harvest cycle intact (Task=Harvest → moves allowed for the biotics↔BC
         // loop) while blocking every scatter path we've seen.
-        [HarmonyPatch(typeof(Unit), nameof(Unit.OnMoveOrder))]
+        [HarmonyPatch(typeof(AIOrderProcessor), nameof(AIOrderProcessor.IssueOrder))]
         static class Patch_Unit_OnMoveOrder
         {
-            static bool Prefix(Unit __instance)
+            static bool Prefix(AIOrderProcessor __instance, OrderDefinition definition, ref bool __result)
             {
                 try
                 {
-                    if (__instance == null || !IsShrimp(__instance)) return true;
+                    if (!OrderCompat.IsMoveOrder(definition)) return true;
+                    var unit = __instance.OwnerUnit();
+                    if (unit == null || !IsShrimp(unit)) return true;
                     if (PlannerOverride) return true;
                     // Human-commander opt-out. When a real player takes over the
                     // alien team the AI commander is disabled — in that case
@@ -157,11 +159,11 @@ namespace Si_RTS_AI.Faction
                     // own shrimps without our anti-scatter filter interfering.
                     try
                     {
-                        var t = __instance.Team;
+                        var t = unit.Team;
                         if (t != null && !Silica.AI.AIManager.IsCommanderEnabled(t)) return true;
                     }
                     catch { }
-                    var task = __instance.CurrentTask;
+                    var task = unit.CurrentTask;
                     string taskName = task?.GetType().Name ?? "(null)";
                     if (taskName == "AITask_Harvest")
                     {
@@ -172,6 +174,7 @@ namespace Si_RTS_AI.Faction
                     BlockedMoveOrder_NonHarvest++;
                     BlockedMoveByTaskName.TryGetValue(taskName, out int b);
                     BlockedMoveByTaskName[taskName] = b + 1;
+                    __result = false;
                     return false;
                 }
                 catch (Exception ex)

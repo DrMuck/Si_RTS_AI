@@ -763,7 +763,7 @@ namespace Si_RTS_AI.Planning
             try
             {
                 PlannerOverride = true;
-                u.OnMoveOrder(pos, AgentMoveSpeed.Fast);
+                u.IssueMoveOrder(pos, AgentMoveSpeed.Fast);
                 _ordersIssued++; _ordersTotal++;
             }
             catch (Exception ex) { MelonLogger.Warning("[BATTALION] OnMoveOrder threw: " + ex.Message); }
@@ -806,21 +806,24 @@ namespace Si_RTS_AI.Planning
         /// scouts use, and it stacks: Harmony skips the original if EITHER prefix
         /// returns false. Inert while military.execute is off, because Owns is.
         /// </summary>
-        [HarmonyPatch(typeof(Unit), nameof(Unit.OnMoveOrder))]
+        [HarmonyPatch(typeof(AIOrderProcessor), nameof(AIOrderProcessor.IssueOrder))]
         static class Patch_Unit_OnMoveOrder_Battalion
         {
-            static bool Prefix(Unit __instance)
+            static bool Prefix(AIOrderProcessor __instance, OrderDefinition definition, ref bool __result)
             {
                 try
                 {
-                    if (__instance == null || !Owns(__instance)) return true;
+                    if (!OrderCompat.IsMoveOrder(definition)) return true;
+                    var unit = __instance.OwnerUnit();
+                    if (unit == null || !Owns(unit)) return true;
                     if (PlannerOverride) return true;
                     try
                     {
-                        var t = __instance.Team;
+                        var t = unit.Team;
                         if (t != null && !AIManager.IsCommanderEnabled(t)) return true;
                     }
                     catch { }
+                    __result = false;
                     return false;
                 }
                 catch { return true; }

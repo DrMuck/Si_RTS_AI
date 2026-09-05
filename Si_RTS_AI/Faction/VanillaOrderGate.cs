@@ -110,16 +110,19 @@ namespace Si_RTS_AI.Faction
 
         // ---- the doors -------------------------------------------------
 
-        [HarmonyPatch(typeof(Unit), nameof(Unit.OnMoveOrder))]
+        [HarmonyPatch(typeof(AIOrderProcessor), nameof(AIOrderProcessor.IssueOrder))]
         static class Patch_Unit_OnMoveOrder_Coop
         {
-            static bool Prefix(Unit __instance)
+            static bool Prefix(AIOrderProcessor __instance, OrderDefinition definition, ref bool __result)
             {
                 try
                 {
-                    if (__instance == null) return true;
-                    if (!ShouldBlock(__instance.Team)) return true;
+                    if (!OrderCompat.IsMoveOrder(definition)) return true;
+                    var unit = __instance.OwnerUnit();
+                    if (unit == null) return true;
+                    if (!ShouldBlock(unit.Team)) return true;
                     _blockedMove++;
+                    __result = false;
                     return false;
                 }
                 catch { return true; }

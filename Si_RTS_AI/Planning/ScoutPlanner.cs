@@ -808,7 +808,7 @@ namespace Si_RTS_AI.Planning
             try
             {
                 PlannerOverride = true;
-                u.OnMoveOrder(pos, AgentMoveSpeed.Fast);
+                u.IssueMoveOrder(pos, AgentMoveSpeed.Fast);
             }
             catch (Exception ex) { MelonLogger.Warning("[SCOUT] OnMoveOrder threw: " + ex.Message); }
             finally { PlannerOverride = false; }
@@ -844,22 +844,25 @@ namespace Si_RTS_AI.Planning
         // second prefix on the same method; the original is skipped if EITHER
         // returns false, which is the behaviour we want.
 
-        [HarmonyPatch(typeof(Unit), nameof(Unit.OnMoveOrder))]
+        [HarmonyPatch(typeof(AIOrderProcessor), nameof(AIOrderProcessor.IssueOrder))]
         static class Patch_Unit_OnMoveOrder_Scout
         {
-            static bool Prefix(Unit __instance)
+            static bool Prefix(AIOrderProcessor __instance, OrderDefinition definition, ref bool __result)
             {
                 try
                 {
-                    if (__instance == null || !IsScout(__instance)) return true;
+                    if (!OrderCompat.IsMoveOrder(definition)) return true;
+                    var unit = __instance.OwnerUnit();
+                    if (unit == null || !IsScout(unit)) return true;
                     if (PlannerOverride) return true;
                     // Hand control back if a human took the commander seat.
                     try
                     {
-                        var t = __instance.Team;
+                        var t = unit.Team;
                         if (t != null && !AIManager.IsCommanderEnabled(t)) return true;
                     }
                     catch { }
+                    __result = false;
                     return false;   // vanilla does not get to re-task our scouts
                 }
                 catch { return true; }

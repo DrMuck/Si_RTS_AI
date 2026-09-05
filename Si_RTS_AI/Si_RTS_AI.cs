@@ -641,12 +641,12 @@ namespace Si_RTS_AI
             if (_eventsHooked) return;
             try
             {
-                GameEvents.OnUnitReceivedAttackOrder -= OnUnitReceivedAttackOrder;
-                GameEvents.OnUnitReceivedAttackOrder += OnUnitReceivedAttackOrder;
-                GameEvents.OnUnitReceivedMoveOrder   -= OnUnitReceivedMoveOrder;
-                GameEvents.OnUnitReceivedMoveOrder   += OnUnitReceivedMoveOrder;
-                GameEvents.OnUnitReceivedStopOrder   -= OnUnitReceivedStopOrder;
-                GameEvents.OnUnitReceivedStopOrder   += OnUnitReceivedStopOrder;
+                GameEvents.OnObjectReceivedAttackOrder -= OnUnitReceivedAttackOrder;
+                GameEvents.OnObjectReceivedAttackOrder += OnUnitReceivedAttackOrder;
+                GameEvents.OnObjectReceivedMoveOrder   -= OnUnitReceivedMoveOrder;
+                GameEvents.OnObjectReceivedMoveOrder   += OnUnitReceivedMoveOrder;
+                GameEvents.OnObjectReceivedStopOrder   -= OnUnitReceivedStopOrder;
+                GameEvents.OnObjectReceivedStopOrder   += OnUnitReceivedStopOrder;
 
                 GameEvents.OnPlayerSelectUnit        -= OnPlayerSelectUnit;
                 GameEvents.OnPlayerSelectUnit        += OnPlayerSelectUnit;
@@ -703,8 +703,9 @@ namespace Si_RTS_AI
             return "commander=ai";
         }
 
-        static void OnUnitReceivedAttackOrder(Unit unit, Target target)
+        static void OnUnitReceivedAttackOrder(BaseGameObject obj, Target target)
         {
+            var unit = obj as Unit;
             if (unit == null) return;
             var team = unit.Team;
             GetActionTally(team);   // ensure legacy dict exists (kept for compat)
@@ -721,8 +722,9 @@ namespace Si_RTS_AI
                 $"unit={UnitDisplay(unit)} kind=attack tgt={tgtDesc}");
         }
 
-        static void OnUnitReceivedMoveOrder(Unit unit, Vector3 destination)
+        static void OnUnitReceivedMoveOrder(BaseGameObject obj, Vector3 destination)
         {
+            var unit = obj as Unit;
             if (unit == null) return;
             var team = unit.Team;
             GetActionTally(team);
@@ -738,8 +740,9 @@ namespace Si_RTS_AI
                 $"dst=({destination.x:F0},{destination.y:F0},{destination.z:F0})");
         }
 
-        static void OnUnitReceivedStopOrder(Unit unit)
+        static void OnUnitReceivedStopOrder(BaseGameObject obj)
         {
+            var unit = obj as Unit;
             if (unit == null) return;
             var team = unit.Team;
             GetActionTally(team);

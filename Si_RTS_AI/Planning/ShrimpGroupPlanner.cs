@@ -2172,7 +2172,7 @@ namespace Si_RTS_AI.Planning
             try
             {
                 Faction.AlienShrimpAntiAttack.PlannerOverride = true;
-                u.OnMoveOrder(pos, AgentMoveSpeed.Fast);
+                u.IssueMoveOrder(pos, AgentMoveSpeed.Fast);
             }
             catch (System.Exception ex) { MelonLogger.Warning("[SHRIMP-GRP] OnMoveOrder threw: " + ex.Message); }
             finally { Faction.AlienShrimpAntiAttack.PlannerOverride = false; }

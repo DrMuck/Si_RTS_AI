@@ -501,7 +501,7 @@ namespace Si_RTS_AI.Faction
 
         static void IssueMoveOrder(Unit u, Vector3 pos, AgentMoveSpeed speed)
         {
-            try { u.OnMoveOrder(pos, speed); }
+            try { u.IssueMoveOrder(pos, speed); }
             catch (Exception ex) { MelonLogger.Warning("[RTSA/HARV] OnMoveOrder threw: " + ex.Message); }
         }
 
