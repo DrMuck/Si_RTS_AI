@@ -52,7 +52,7 @@ namespace Si_RTS_AI.Mil
             public readonly List<Unit> Units = new List<Unit>();
             public float Eff, Cash;
             public Vector3 Rally, Dest;
-            public float StateSince, LastOrderAt, LastTargetCheckAt;
+            public float StateSince, LastOrderAt, LastTargetCheckAt, ContactSince;
             public Vector3 LastOrderDest;
             public Target LastTarget;
             public bool  Flying;
@@ -76,6 +76,7 @@ namespace Si_RTS_AI.Mil
         const float ORDER_MOVED_M     = 90f;
         const float ORDER_BACKSTOP_S  = 60f;
         const float MIN_REORDER_S     = 15f;    // a force turns at most this often
+        const float CONTACT_HOLD_S    = 6f;     // contact en route must last this long to count
         const float BIG_JUMP_M        = 300f;   // unless the destination is somewhere else entirely
         const float ENGAGE_RADIUS_M   = 600f;
         const float KERNEL_CHECK_S    = 4f;
@@ -559,7 +560,16 @@ namespace Si_RTS_AI.Mil
                     case State.Advancing:
                     {
                         bool atObjective = (Centroid(force) - o.Where).sqrMagnitude < (o.Radius + ENGAGE_RADIUS_M) * (o.Radius + ENGAGE_RADIUS_M);
-                        if (AnyFighting(force) || (atObjective && EnemyNear(force)))
+                        // CONTACT HAS TO LAST. A stray shot at one member made the
+                        // whole force "engaged" for a tick and "advancing" again
+                        // twenty seconds later, and each flip was a log line and a
+                        // kernel check. Contact en route now has to persist for
+                        // CONTACT_HOLD_S before it counts; at the objective it counts
+                        // at once, because that is the fight the force came for.
+                        bool contact = AnyFighting(force) || (atObjective && EnemyNear(force));
+                        if (!contact) force.ContactSince = 0f;
+                        else if (force.ContactSince <= 0f) force.ContactSince = now;
+                        if (contact && (atObjective || now - force.ContactSince >= CONTACT_HOLD_S))
                         {
                             SetPhase(force, State.Engaged, now, atObjective ? "contact at the objective" : "contact en route");
                             if (atObjective) Objectives.NoteEngaged(o, force.Eff, now);
