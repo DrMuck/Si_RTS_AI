@@ -508,9 +508,10 @@ namespace Si_RTS_AI.Mil
                 if (Time.time - t.FirstSeenAt < 10f) continue;
                 float ang = Vector3.Angle(t.Vel, to);
                 if (ang > HEADING_TOL_DEG) continue;
+                // Straight-line only. The field refinement here cost one
+                // Dijkstra per track per site per refresh — hundreds a pass on
+                // a sixty-site base — and was the server hitch DrMuck saw.
                 float eta = (dist - radiusM) / Mathf.Max(1f, t.Speed);
-                float walk = Fields.WalkTimeBetween(p, asset, t.MeanSpeed);
-                if (walk > 0f && !float.IsInfinity(walk)) eta = Mathf.Max(eta, walk * 0.8f);
                 if (eta > horizonS) continue;
                 into.Add(new Arrival { Track = t, EtaS = eta, Effective = t.Effective, Confidence = t.Confidence });
             }

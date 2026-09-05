@@ -274,7 +274,7 @@ namespace Si_RTS_AI
                     if (team == null) continue;
 
                     string tn = team.name ?? "";
-                    long tLayer = 0, tBcMetrics = 0, tShrimpState = 0, tEcoRate = 0, tPlan = 0;
+                    long tLayer = 0, tBcMetrics = 0, tShrimpState = 0, tEcoRate = 0, tPlan = 0, tMil = 0;
                     if (tn.Contains("Alien"))
                     {
                         tLayer     = TimedMs(() => Perception.MapLayers.LayerReplay.MaybeSnapshot(_telemetryTickCounter, team));
@@ -299,10 +299,11 @@ namespace Si_RTS_AI
                         // switches say: tracks and walkability are data, and the
                         // rounds that need them most are the ones with the
                         // decisions turned off.
-                        try { Mil.Fields.BuildTick(); }
-                        catch (Exception ex) { MelonLogger.Warning("[MIL/FIELDS] threw: " + ex.Message); }
-                        try { Mil.Intel.Tick(team); }
-                        catch (Exception ex) { MelonLogger.Warning("[INTEL] threw: " + ex.Message); }
+                        tMil += TimedMs(() => { try { Mil.Fields.BuildTick(); }
+                                                catch (Exception ex) { MelonLogger.Warning("[MIL/FIELDS] threw: " + ex.Message); } });
+                        tMil += TimedMs(() => { try { Mil.Intel.Tick(team); }
+                                                catch (Exception ex) { MelonLogger.Warning("[INTEL] threw: " + ex.Message); } });
+                        Mil.MilLog.Flush();
                         // Inside FactionControl below would be wrong: static
                         // defence is the thing that keeps an eco-only round
                         // alive, and those are exactly the rounds the military
@@ -374,12 +375,12 @@ namespace Si_RTS_AI
 
                             // MILITARY V3, IN THE ORDER IT DECIDES: what is worth
                             // doing, which units do it, what to build next.
-                            try { Mil.Objectives.Tick(team); }
-                            catch (Exception ex) { MelonLogger.Warning("[OBJ] threw: " + ex.Message); }
-                            try { Mil.Forces.Tick(team); }
-                            catch (Exception ex) { MelonLogger.Warning("[FORCE] threw: " + ex.Message); }
-                            try { Mil.ProductionV3.Tick(team); }
-                            catch (Exception ex) { MelonLogger.Warning("[MIL/PROD] threw: " + ex.Message); }
+                            tMil += TimedMs(() => { try { Mil.Objectives.Tick(team); }
+                                                    catch (Exception ex) { MelonLogger.Warning("[OBJ] threw: " + ex.Message); } });
+                            tMil += TimedMs(() => { try { Mil.Forces.Tick(team); }
+                                                    catch (Exception ex) { MelonLogger.Warning("[FORCE] threw: " + ex.Message); } });
+                            tMil += TimedMs(() => { try { Mil.ProductionV3.Tick(team); }
+                                                    catch (Exception ex) { MelonLogger.Warning("[MIL/PROD] threw: " + ex.Message); } });
                             // The instrument, last, so it grades the tick that
                             // just happened rather than the one before it.
                             Perception.Utilisation.Tick(team);
@@ -391,14 +392,14 @@ namespace Si_RTS_AI
                     RecentModWork.AddPlanKick(tPlan);
 
                     long total = tLayer + tBcMetrics + tShrimpState + tEcoRate + tPlan
-                               + tThreat + tControl;
+                               + tThreat + tControl + tMil;
                     if (total >= SLOW_TICK_LOG_THRESHOLD_MS)
                     {
                         MelonLogger.Msg("[RTSA/PERF] slow tick team=" + tn +
                                         " total=" + total + "ms  layer=" + tLayer +
                                         " bcmetrics=" + tBcMetrics + " shrimpstate=" + tShrimpState +
                                         " ecorate=" + tEcoRate + " plan=" + tPlan +
-                                        " threat=" + tThreat + " control=" + tControl);
+                                        " threat=" + tThreat + " control=" + tControl + " mil=" + tMil);
                     }
                 }
             }

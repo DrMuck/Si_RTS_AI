@@ -209,7 +209,7 @@ namespace Si_RTS_AI.Mil
             if (_cache.TryGetValue(key, out var e) && now - e.at < CACHE_S) return e.f;
             var f = SolveFrom(seed, flying);
             _cache[key] = (now, f);
-            if (_cache.Count > 64) _cache.Clear();
+            if (_cache.Count > 32) _cache.Clear();
             return f;
         }
 
@@ -329,7 +329,14 @@ namespace Si_RTS_AI.Mil
                 }
                 return best0;
             }
-            // One field per asset, read at each candidate.
+            // One field per asset, read at each candidate — capped at the eight
+            // heaviest assets, because sixty solves every forty seconds was a
+            // visible hitch and the standing point is decided by the few that
+            // matter anyway.
+            var top = new List<(Vector3 pos, float weight)>(assets);
+            top.Sort((x, y) => y.weight.CompareTo(x.weight));
+            if (top.Count > 8) top.RemoveRange(8, top.Count - 8);
+            assets = top;
             var fields = new Field[assets.Count];
             for (int a = 0; a < assets.Count; a++) fields[a] = Cached(assets[a].pos, false);
             Vector3 best = candidates[0]; float bestWorst = float.MaxValue;

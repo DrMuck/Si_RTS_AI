@@ -580,6 +580,8 @@ namespace Si_RTS_AI.Mil
             }
             if (mainOffence != null) _fights.Add((mainOffence.Centre, 1.5f));
             if (_fights.Count == 0) _fights.Add((nest, 1f));
+            // At most six fight points: each is one field solve per site refresh.
+            if (_fights.Count > 6) { _fights.Sort((x, y) => y.weight.CompareTo(x.weight)); _fights.RemoveRange(6, _fights.Count - 6); }
 
             // Candidates: our functional structures. Stride to keep it cheap.
             var cands = new List<Vector3>();

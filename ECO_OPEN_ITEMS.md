@@ -480,3 +480,15 @@ would still never be reached.
 
 Related: `orphaned=7 decaying=6` in the same log is what redundancy is
 supposed to prevent, so this is already costing structures, not just risk.
+
+## 2026-09-05 — a node planned beyond 3D reach stalls the expansion
+
+DrMuck, round 5 of the military v3 day: "the eco expansion is stuck, because
+one node is probably placed too far away at (1049.5, 869.8) and is not built —
+3D distance is relevant." The blueprint and the executor measure hops in the
+XZ plane (`SqXZ`, `NodeMergeM`); the game's `MaximumBaseStructureDistance`
+test is three-dimensional, so a hop across a height change can be inside reach
+on the plan and outside it in the game, and the site then reads "+0n" forever.
+Fix shape: measure hop length with the height from `Mil.Fields.HeightAt`
+(sampled once per map) in both the planner and the executor — one function,
+both sides, per the 2026-08-07 lesson.
