@@ -24,7 +24,7 @@ namespace Si_RTS_AI.Perception
         static Terrain[] _terrains;
         static float _refreshAt;
 
-        internal static void ResetForNewRound() { _terrains = null; _refreshAt = 0f; }
+        internal static void ResetForNewRound() { _terrains = null; _refreshAt = 0f; _shortenedLogged = 0; }
 
         static Terrain[] Terrains()
         {
@@ -94,6 +94,15 @@ namespace Si_RTS_AI.Perception
         /// the chain takes more hops, on a cliff it takes short ones, and the
         /// planned line is kept. Never shorter than a quarter hop, because a
         /// wall is a wall and the obstruction memory is the tool for that.
+        ///
+        /// SOLVED, NOT SHRUNK BY A FACTOR. The first build of this started at a
+        /// full hop and cut it to 80% whenever the ground test failed, and a
+        /// full hop fails that test for ANY rise at all, one metre included.
+        /// Round seven on NarakaCity: median node spacing 87 m against 110 m
+        /// the round before, 198 nodes by minute 20 against 126. DrMuck saw it
+        /// on the map before the numbers did. So the step is the exact
+        /// horizontal length that fits the rise measured at the candidate,
+        /// sqrt(hop^2 - rise^2), re-measured where that lands.
         /// </summary>
         internal static Vector3 StepToward(Vector3 from, Vector3 to, float hopM)
         {
@@ -104,14 +113,28 @@ namespace Si_RTS_AI.Perception
             float ux = dx / len, uz = dz / len;
             float y0 = HeightAt(from);
             float minStep = hopM * 0.25f;
-            for (int i = 0; i < 6; i++)
+            float hop2 = hopM * hopM;
+            Vector3 p = new Vector3(from.x + ux * step, from.y, from.z + uz * step);
+            for (int i = 0; i < 4; i++)
             {
-                var p = new Vector3(from.x + ux * step, from.y, from.z + uz * step);
                 float dy = HeightAt(p) - y0;
-                if (step * step + dy * dy <= hopM * hopM || step <= minStep) return p;
-                step = Mathf.Max(minStep, step * 0.8f);
+                if (step * step + dy * dy <= hop2 + 1f || step <= minStep) break;
+                float fit = Mathf.Sqrt(Mathf.Max(hop2 - dy * dy, minStep * minStep));
+                // Never lengthen on a re-measure, and always make progress.
+                step = Mathf.Min(step - 1f, fit);
+                if (step < minStep) step = minStep;
+                p = new Vector3(from.x + ux * step, from.y, from.z + uz * step);
             }
-            return new Vector3(from.x + ux * step, from.y, from.z + uz * step);
+            if (step < hopM * 0.85f && step < len && _shortenedLogged < 40)
+            {
+                _shortenedLogged++;
+                float dyFinal = HeightAt(p) - y0;
+                MelonLoader.MelonLogger.Msg($"[GROUND] hop from ({from.x:F0},{from.z:F0}) h{y0:F0} toward ({to.x:F0},{to.z:F0}) " +
+                                            $"shortened {Mathf.Min(hopM, len):F0}->{step:F0} m, rise {dyFinal:F0} m");
+            }
+            return p;
         }
+
+        static int _shortenedLogged;
     }
 }
