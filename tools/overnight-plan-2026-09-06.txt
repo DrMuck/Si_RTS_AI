@@ -1,0 +1,9 @@
+# name|config-dir|probes|optimizer|koh
+r1-3way-clean|overnight-3way|off|on|on
+r2-2way-clean|overnight-2way|off|on|on
+r3-3way-probes|overnight-3way|on|on|on
+r4-2way-probes|overnight-2way|on|on|on
+r5-3way-no-optimizer|overnight-3way|off|off|on
+r6-3way-no-koh|overnight-3way|off|on|off
+r7-3way-clean|overnight-3way|off|on|on
+r8-2way-clean|overnight-2way|off|on|on
