@@ -8,7 +8,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 
-[assembly: MelonInfo(typeof(Si_RTS_AI.Si_RTS_AI), "Si_RTS_AI", "0.92.14", "DrMuck")]
+[assembly: MelonInfo(typeof(Si_RTS_AI.Si_RTS_AI), "Si_RTS_AI", "0.92.15", "DrMuck")]
 [assembly: MelonGame("Bohemia Interactive", "Silica")]
 
 namespace Si_RTS_AI
@@ -208,6 +208,7 @@ namespace Si_RTS_AI
                           $"fps {fps:F0}, frame {_budgetWallMs / _budgetFrames:F1} ms | " +
                           Perception.PerfProbes.TakeMinute() +
                           $" | anchor-checks ran {Perception.ServerPatches.Evaluated} skipped {Perception.ServerPatches.Skipped}" +
+                          $" | late-update guard: animator skips {Perception.ServerPatches.AnimatorSkips}, contained {Perception.ServerPatches.LateUpdateExceptions}" +
                           $" | fixedDt {UnityEngine.Time.fixedDeltaTime * 1000f:F0} ms, gc0 +{gc0 - _budgetGc0} gc2 +{gc2 - _budgetGc2}, " +
                           $"heap {heapMb} MB | units {units} structures {structures} sites {sites}";
             _budgetGc0 = gc0; _budgetGc2 = gc2;
