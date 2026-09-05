@@ -34,7 +34,7 @@ namespace Si_RTS_AI.Perception
     {
         static bool _done;
         static float _holdS;
-        static readonly Dictionary<IntPtr, float> _lastNoAt = new Dictionary<IntPtr, float>();
+        static readonly Dictionary<int, float> _lastNoAt = new Dictionary<int, float>();
         internal static long Skipped, Evaluated;
 
         internal static void Init(HarmonyLib.Harmony harmony)
@@ -60,7 +60,7 @@ namespace Si_RTS_AI.Perception
         {
             try
             {
-                var key = __instance.Pointer;
+                int key = __instance.GetInstanceID();
                 float now = Time.time;
                 if (_lastNoAt.TryGetValue(key, out float at) && now - at < _holdS)
                 {
