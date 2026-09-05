@@ -8,7 +8,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 
-[assembly: MelonInfo(typeof(Si_RTS_AI.Si_RTS_AI), "Si_RTS_AI", "0.87.0", "DrMuck")]
+[assembly: MelonInfo(typeof(Si_RTS_AI.Si_RTS_AI), "Si_RTS_AI", "0.92.0", "DrMuck")]
 [assembly: MelonGame("Bohemia Interactive", "Silica")]
 
 namespace Si_RTS_AI
@@ -295,6 +295,14 @@ namespace Si_RTS_AI
                     {
                         try { Mil.Shadow.Tick(team); }
                         catch (Exception ex) { MelonLogger.Warning("[MIL/SHADOW] threw: " + ex.Message); }
+                        // Perception for the military layer runs whatever the
+                        // switches say: tracks and walkability are data, and the
+                        // rounds that need them most are the ones with the
+                        // decisions turned off.
+                        try { Mil.Fields.BuildTick(); }
+                        catch (Exception ex) { MelonLogger.Warning("[MIL/FIELDS] threw: " + ex.Message); }
+                        try { Mil.Intel.Tick(team); }
+                        catch (Exception ex) { MelonLogger.Warning("[INTEL] threw: " + ex.Message); }
                         // Inside FactionControl below would be wrong: static
                         // defence is the thing that keeps an eco-only round
                         // alive, and those are exactly the rounds the military
@@ -307,7 +315,12 @@ namespace Si_RTS_AI
                     if ((team.name ?? "").Contains("Alien")) Perception.QueenStatus.Evaluate(team);
                     long tThreat = TimedMs(() => { Perception.ThreatMap.Observe(team);
                                                     Perception.ThreatMap.Tick(team); });
-                    long tControl = TimedMs(() => Perception.ControlMap.Rebuild(team));
+                    // OURS MEANS THE ALIEN'S. Rebuild used to run for every team in
+                    // turn under a 2s throttle, so whichever team ticked first
+                    // defined "our" ground — Sol, on this rig. Every ControlGain
+                    // reader was measuring the wrong side.
+                    long tControl = tn.Contains("Alien")
+                        ? TimedMs(() => Perception.ControlMap.Rebuild(team)) : 0;
                     Planning.NodeManager.Tick(team);
                     tEcoRate     = TimedMs(() => Perception.EcoRateSampler.Tick(team));
                     RecentModWork.AddLayer(tLayer);
@@ -359,16 +372,14 @@ namespace Si_RTS_AI
                             // Bio Cache candidates are fog-gated.
                             Planning.ScoutPlanner.Tick(team);
 
-                            try { Planning.MilitaryBlueprint.Tick(team); }
-                            catch (Exception ex) { MelonLogger.Warning("[MIL] blueprint threw: " + ex.Message); }
-                            try { Planning.DefencePlanner.Tick(team); }
-                            catch (Exception ex) { MelonLogger.Warning("[MIL] defence threw: " + ex.Message); }
-                            try { Planning.MissionPlanner.Tick(team); }
-                            catch (Exception ex) { MelonLogger.Warning("[MIL] missions threw: " + ex.Message); }
-                            try { Planning.BattalionManager.Tick(team); }
-                            catch (Exception ex) { MelonLogger.Warning("[MIL] battalions threw: " + ex.Message); }
-                            try { Faction.MilitaryProduction.Tick(team); }
-                            catch (Exception ex) { MelonLogger.Warning("[MIL] production threw: " + ex.Message); }
+                            // MILITARY V3, IN THE ORDER IT DECIDES: what is worth
+                            // doing, which units do it, what to build next.
+                            try { Mil.Objectives.Tick(team); }
+                            catch (Exception ex) { MelonLogger.Warning("[OBJ] threw: " + ex.Message); }
+                            try { Mil.Forces.Tick(team); }
+                            catch (Exception ex) { MelonLogger.Warning("[FORCE] threw: " + ex.Message); }
+                            try { Mil.ProductionV3.Tick(team); }
+                            catch (Exception ex) { MelonLogger.Warning("[MIL/PROD] threw: " + ex.Message); }
                             // The instrument, last, so it grades the tick that
                             // just happened rather than the one before it.
                             Perception.Utilisation.Tick(team);
@@ -418,6 +429,23 @@ namespace Si_RTS_AI
                 if (!string.IsNullOrEmpty(summary))
                     AppendToRound(summary);
 
+                // THE CONSOLE LOG DIES WITH THE NEXT SERVER START. Every military
+                // line from the 2026-08-13 rounds was lost that way. Keep a copy
+                // beside the round log, taken while the round's lines are still
+                // in it.
+                try
+                {
+                    string src = Path.Combine("MelonLoader", "Latest.log");
+                    if (File.Exists(src) && !string.IsNullOrEmpty(_roundLogPath))
+                    {
+                        string dst = Path.ChangeExtension(_roundLogPath, null) + ".melon.log";
+                        using (var fin = new FileStream(src, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                        using (var fout = new FileStream(dst, FileMode.Create, FileAccess.Write, FileShare.Read))
+                            fin.CopyTo(fout);
+                    }
+                }
+                catch (Exception ex) { MelonLogger.Warning("[RTSA] could not copy Latest.log: " + ex.Message); }
+
                 string p31 = Suppression.Phase31_Production.BuildRoundSummaryFragment();
                 if (!string.IsNullOrEmpty(p31))
                     AppendToRound(p31);
@@ -450,7 +478,7 @@ namespace Si_RTS_AI
                 if (!string.IsNullOrEmpty(sc))
                     AppendToRound(sc);
 
-                string mp = Faction.MilitaryProduction.BuildRoundSummaryFragment();
+                string mp = Mil.ProductionV3.BuildRoundSummaryFragment();
                 if (!string.IsNullOrEmpty(mp))
                     AppendToRound(mp);
 
@@ -530,12 +558,16 @@ namespace Si_RTS_AI
             Mil.SpirePlanner.ResetForNewRound();
             Faction.AlienCommanderLock.Reload();
             Faction.AlienCommanderLock.ResetForNewRound();
-            Planning.DefencePlanner.ResetForNewRound();
-            Planning.MissionPlanner.ResetForNewRound();
             Planning.ArmyPlan.ResetForNewRound();
-            Planning.MilitaryBlueprint.ResetForNewRound();
             Perception.Utilisation.ResetForNewRound();
-            Planning.BattalionManager.ResetForNewRound();
+            Mil.MilLog.ResetForNewRound();
+            Mil.UnitStats.Reload();
+            Mil.MilConfig.Reload();
+            Mil.Intel.ResetForNewRound();
+            Mil.Fields.ResetForNewRound();
+            Mil.Objectives.ResetForNewRound();
+            Mil.Forces.ResetForNewRound();
+            Mil.ProductionV3.ResetForNewRound();
             Perception.UnitValues.ResetForNewRound();
             Perception.ShrimpStateSampler.ResetForNewRound();
             Perception.GameConstantsDumper.ResetForNewRound();
@@ -545,7 +577,6 @@ namespace Si_RTS_AI
             Planning.TechPlanner.ResetForNewRound();
             Faction.SuppressHumanAI.ResetForNewRound();
             Faction.VanillaOrderGate.ResetForNewRound();
-            Faction.MilitaryProduction.ResetForNewRound();
             Perception.MapLayers.LayerReplay.OnNewRound(sceneName);
             _sceneReady = true;
 

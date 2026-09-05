@@ -17,6 +17,9 @@
     <Reference Include="UnityEngine">           <HintPath>..\include\netstandard2.1\UnityEngine.dll</HintPath> </Reference>
     <Reference Include="UnityEngine.CoreModule"><HintPath>..\include\netstandard2.1\UnityEngine.CoreModule.dll</HintPath></Reference>
     <Reference Include="UnityEngine.TerrainModule"><HintPath>..\include\netstandard2.1\UnityEngine.TerrainModule.dll</HintPath></Reference>
+    <Reference Include="Drawing"><HintPath>../include/netstandard2.1/Drawing.dll</HintPath></Reference>
+    <Reference Include="PackageTools"><HintPath>../include/netstandard2.1/PackageTools.dll</HintPath></Reference>
+    <Reference Include="AstarPathfindingProject"><HintPath>../include/netstandard2.1/AstarPathfindingProject.dll</HintPath></Reference>
     <Reference Include="Newtonsoft.Json">       <HintPath>..\include\netstandard2.1\Newtonsoft.Json.dll</HintPath></Reference>
   </ItemGroup>
 </Project>

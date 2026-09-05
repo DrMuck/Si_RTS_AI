@@ -103,7 +103,7 @@ namespace Si_RTS_AI.Perception
                     $"producers {ProducersBusy * 100f:F0}% busy | " +
                     $"map {MapHeld * 100f:F0}% held | " +
                     $"eco cash-blocked {EcoStarvedShare * 100f:F0}% of the round | " +
-                    Planning.BattalionManager.OrderRateReport(_armyUnits));
+                    $"orders {Mil.Forces.OrdersIssued} total, {Mil.Forces.Withdrawals} withdrawals");
             }
             catch (System.Exception ex)
             { MelonLogger.Warning("[UTIL] tick threw: " + ex.Message); }
@@ -124,22 +124,11 @@ namespace Si_RTS_AI.Perception
             // four times its requirement is the surplus parked at home, and
             // counting that as "engaged" would hide exactly the failure this
             // meter exists to show.
-            int engaged = 0, total = 0;
             _armyUnits = 0;
-            try
-            {
-                foreach (var b in Planning.BattalionManager.Battalions)
-                {
-                    total += b.Value;
-                    _armyUnits += b.Units.Count;
-                    if (b.Kind == Planning.MissionPlanner.Kind.Garrison)
-                        engaged += Mathf.Min(b.Value, b.RequiredValue);
-                    else if (b.Phase == Planning.BattalionManager.State.Committed)
-                        engaged += b.Value;
-                }
-            }
+            float engagedEff = 0f, totalEff = 0f;
+            try { Mil.Forces.Engagement(out engagedEff, out totalEff); _armyUnits = Mil.Forces.UnitsCommanded(); }
             catch { }
-            ArmyEngaged = total > 0 ? engaged / (float)total : 0f;
+            ArmyEngaged = totalEff > 0f ? engagedEff / totalEff : 0f;
 
             // ---- producers: busy fraction over the round --------------------
             ProducersBusy = _totalSamples > 0 ? _busySamples / (float)_totalSamples : 0f;

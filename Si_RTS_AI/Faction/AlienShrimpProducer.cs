@@ -402,7 +402,7 @@ namespace Si_RTS_AI.Faction
                 // share would silently produce nothing at all.
                 // Empty set — and so no effect — unless the layer is on AND the
                 // economy has stopped being able to convert the cash.
-                if (MilitaryProduction.IsClaimed(s)) continue;
+                if (Mil.ProductionV3.IsClaimed(s)) continue;
                 cystsSeen++;
 
                 // Nearest BC to this Cyst (unbounded distance — every Cyst

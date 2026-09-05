@@ -74,6 +74,10 @@ namespace Si_RTS_AI.Mil
         internal static float RefuseBelow   { get; private set; } = 1.25f;
         internal static float CommitAt      { get; private set; } = 2.0f;
         internal static float WastefulAbove { get; private set; } = 4.0f;
+        /// <summary>Slope of the win curve, P(A wins) = sigmoid(K * ln(effA/effB)). From the AI-vs-AI fit.</summary>
+        internal static float K { get; private set; } = 1.437f;
+        /// <summary>Exchange exponent: loss ratio scales as forceRatio^-Beta. 0.60 AI-vs-AI (MIL_V2 s4).</summary>
+        internal static float Beta { get; private set; } = 0.60f;
         static string _era = "unknown";
         static DateTime _lastWrite;
 
@@ -126,6 +130,8 @@ namespace Si_RTS_AI.Mil
                 _era = era == null ? "unstamped"
                      : $"trajectory>={era["trajectorySince"]}, values>={era["unitValueSince"]}";
                 var src = root["source"] as JObject;
+                if (src?["k"] != null) K = (float)src["k"];
+                if (src?["beta"] != null) Beta = (float)src["beta"];
 
                 Loaded = _value.Count > 0 || _trajectory.Count > 0;
                 MelonLogger.Msg($"[MIL/DOC] loaded {PATH}: {_value.Count} unit values, " +

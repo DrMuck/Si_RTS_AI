@@ -124,7 +124,7 @@
   "bridgeMode": "loop",
   "chainExtendPerTick": 2,
   "chainExtendDemandPerTick": 3,
-  "timeScale": 1,
+  "timeScale": 2,
   "tapReachMode": "measured",
   "blueprintDrivesPhase2": true,
   "replanIntervalS": 30,
@@ -261,5 +261,5 @@
       "nestByMin": 8
     }
   },
-  "endRoundAfterMinutes": 60
+  "endRoundAfterMinutes": 20
 }

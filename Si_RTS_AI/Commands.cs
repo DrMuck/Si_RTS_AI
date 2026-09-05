@@ -176,30 +176,31 @@ namespace Si_RTS_AI
                 return;
             }
 
-            float growth = Planning.MissionPlanner.ArmyGrowthPerS;
-            string growthText = growth == float.MaxValue ? "warmup" : growth.ToString("F1") + "/s";
-
             cfg.AppendLine($"  execute={Planning.MilitaryConfig.Execute} " +
                            $"produce={Planning.MilitaryConfig.Produce} " +
                            $"offence={Planning.MilitaryConfig.Offence}");
-            cfg.AppendLine($"  posture={Planning.MissionPlanner.Current} " +
-                           $"army={Planning.MissionPlanner.ArmyValue} " +
-                           $"growth={growthText} " +
-                           $"theirs~{Planning.MissionPlanner.EnemyEstimate} " +
-                           $"knownStructures={Perception.ThreatMap.KnownCount}");
-            cfg.AppendLine($"  units commanded: {Planning.BattalionManager.UnitsCommanded()}, " +
-                           $"produced this round: {Faction.MilitaryProduction.QueuedThisRound}");
+            cfg.AppendLine($"  army={Mil.Objectives.ArmyEff:F0} eff ({Mil.Objectives.ArmyCash} cash) " +
+                           $"enemy~{Mil.Intel.EnemyEffective:F0} eff tracks={Mil.Intel.Tracks.Count} " +
+                           $"known={Mil.Intel.KnownStructureCount} bases={Mil.Intel.Bases.Count} hqs={Mil.Intel.KnownEnemyHqs()}");
+            cfg.AppendLine($"  units commanded: {Mil.Forces.UnitsCommanded()} (reserve {Mil.Forces.ReserveUnits}u " +
+                           $"{Mil.Forces.ReserveEff:F0} eff at ({Mil.Forces.ReservePoint.x:F0},{Mil.Forces.ReservePoint.z:F0})), " +
+                           $"produced this round: {Mil.ProductionV3.QueuedThisRound}");
+            if (Mil.Objectives.NextOffensivePrice > 0f)
+                cfg.AppendLine($"  building toward {Mil.Objectives.NextOffensivePrice:F0} eff for {Mil.Objectives.NextOffensiveWhat}");
 
-            var missions = Planning.MissionPlanner.Missions;
-            if (missions.Count == 0) cfg.AppendLine("  no missions");
-            foreach (var m in missions)
-                cfg.AppendLine($"  mission {m.Kind}#{m.Id} need {m.RequiredValue} " +
-                               $"@({m.Objective.x:F0},{m.Objective.z:F0}) — {m.Note}");
-
-            foreach (var b in Planning.BattalionManager.Battalions)
-                cfg.AppendLine($"  battalion {b.Name} {b.Phase} {b.Units.Count}u " +
-                               $"value {b.Value}/{b.RequiredValue} " +
-                               $"-> ({b.Objective.x:F0},{b.Objective.z:F0})");
+            var objectives = Mil.Objectives.Portfolio;
+            if (objectives.Count == 0) cfg.AppendLine("  no objectives");
+            foreach (var o in objectives)
+            {
+                if (o.Status == Mil.Objectives.Status.Done || o.Status == Mil.Objectives.Status.Failed) continue;
+                cfg.AppendLine($"  {o.Kind}#{o.Id} {o.Status} need {o.RequiredEff:F0} have {o.AssignedEff:F0} " +
+                               $"pWin {o.PWin:F2} @({o.Where.x:F0},{o.Where.z:F0}) - {o.Note}");
+            }
+            foreach (var f in Mil.Forces.Active)
+            {
+                var c = Mil.Forces.Centroid(f);
+                cfg.AppendLine($"  force {f.Name} {f.Phase} {f.Units.Count}u {f.Eff:F0} eff at ({c.x:F0},{c.z:F0})");
+            }
 
             Reply(caller, cfg.ToString());
         }

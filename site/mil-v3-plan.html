@@ -1,0 +1,658 @@
+<title>Military v3 Plan</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{--bg:#f3f2ec;--bg2:#e9e8df;--ink:#1f2419;--ink2:#4c5245;--rule:#d5d3c6;--acc:#4f7d3a;--acc2:#8a5f22;--code:#eceadf;}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#151813;--bg2:#1d211a;--ink:#e3e5da;--ink2:#a7ab9d;--rule:#33382e;--acc:#8fc06a;--acc2:#d1a05b;--code:#20241d;}}
+:root[data-theme="dark"]{--bg:#151813;--bg2:#1d211a;--ink:#e3e5da;--ink2:#a7ab9d;--rule:#33382e;--acc:#8fc06a;--acc2:#d1a05b;--code:#20241d;}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"IBM Plex Sans",system-ui,Segoe UI,sans-serif;font-size:16px;line-height:1.55}
+.wrap{max-width:1180px;margin:0 auto;padding:40px 24px 80px;display:grid;grid-template-columns:230px minmax(0,72ch);gap:48px}
+@media (max-width:900px){.wrap{grid-template-columns:minmax(0,1fr)}nav.toc{position:static}}
+nav.toc{position:sticky;top:24px;align-self:start;font-size:13px}
+nav.toc .eyebrow{font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--acc);margin-bottom:10px}
+nav.toc ul{list-style:none;margin:0;padding:0;border-left:2px solid var(--rule)}
+nav.toc li a{display:block;padding:5px 12px;color:var(--ink2);text-decoration:none;border-left:2px solid transparent;margin-left:-2px}
+nav.toc li a:hover,nav.toc li a:focus{color:var(--ink);border-left-color:var(--acc);outline:none}
+main h1{font-family:"Newsreader",Georgia,serif;font-weight:600;font-size:2.4rem;line-height:1.1;margin:0 0 8px;text-wrap:balance}
+main h2{font-family:"Newsreader",Georgia,serif;font-weight:600;font-size:1.6rem;margin:2.6em 0 .6em;padding-top:.6em;border-top:1px solid var(--rule);text-wrap:balance}
+main h3{font-family:"IBM Plex Sans",sans-serif;font-weight:600;font-size:1.05rem;margin:2em 0 .5em;color:var(--acc)}
+main p{margin:0 0 1em}
+main a{color:var(--acc)}
+main code{font-family:"IBM Plex Mono",monospace;font-size:.88em;background:var(--code);padding:1px 5px;border-radius:3px}
+main pre{background:var(--code);padding:14px 16px;overflow-x:auto;border-radius:4px;font-size:.84rem;line-height:1.45}
+main pre code{background:none;padding:0}
+main table{border-collapse:collapse;width:100%;font-size:.9rem;margin:1em 0 1.4em;font-variant-numeric:tabular-nums;display:block;overflow-x:auto}
+main th,main td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--rule);vertical-align:top}
+main th{font-family:"IBM Plex Mono",monospace;font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;color:var(--ink2);font-weight:500}
+main blockquote{margin:1em 0;padding:.2em 1em;border-left:3px solid var(--acc2);color:var(--ink2)}
+main ol,main ul{padding-left:1.4em}
+main li{margin:.3em 0}
+main hr{border:0;border-top:1px solid var(--rule);margin:2em 0}
+main strong{font-weight:600}
+.meta{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--ink2);margin-bottom:28px}
+</style>
+<div class="wrap">
+<nav class="toc"><div class="eyebrow">Si_RTS_AI · military v3</div><ul><li><a href="#0-why-the-current-layer-fails-in-one-paragraph-each">0. Why the current layer fails, in one paragraph each</a></li><li><a href="#1-what-0-9-46-gives-us-that-august-did-not">1. What 0.9.46 gives us that August did not</a></li><li><a href="#2-principles-carried-forward-stated-once">2. Principles carried forward, stated once</a></li><li><a href="#3-architecture">3. Architecture</a></li><li><a href="#4-modules">4. Modules</a></li><li><a href="#5-the-rules-numbered-so-they-can-be-counted">5. The rules, numbered, so they can be counted</a></li><li><a href="#6-build-order-and-round-protocol">6. Build order and round protocol</a></li><li><a href="#7-what-is-deliberately-not-in-v3-0">7. What is deliberately not in v3.0</a></li><li><a href="#8-cpu-and-gpu-later">8. CPU and GPU, later</a></li><li><a href="#9-risks-named">9. Risks, named</a></li></ul></nav>
+<main>
+<div class="meta">MIL_V3_PLAN.md · branch beta · Silica 0.9.46 · 2026-09-05</div>
+<h1>Military v3 — the rebuild plan</h1>
+<p><strong>Written 2026-09-05, on branch <code>beta</code>, against Silica beta 0.9.46.</strong> This is
+the working spec for the military rebuild DrMuck asked for: an RTS opponent
+that shows intelligence about when and where to attack and defend, with what,
+and that sites and runs military production at high utilisation. It builds on
+<code>MIL_V2_ARCHITECTURE.md</code> (measurement, kernel, objectives) and
+<code>MILITARY_MODEL.md</code> (DrMuck's ordered objectives) and replaces the code that
+<code>MILITARY_IMPLEMENTATION.md</code> describes.</p>
+<p>Read <code>USER_RULES.md</code> §11 first if you have not: those twelve rules are the
+constraints and this document is how they are met.</p>
+<hr />
+<h2 id="0-why-the-current-layer-fails-in-one-paragraph-each">0. Why the current layer fails, in one paragraph each</h2>
+<p>Everything below is taken from the code as it stands (v0.91.0) and the two
+military rounds of 2026-08-13 (NarakaCity, 60 and 45 minutes, vanilla Sol and
+Centauri), not from memory. What those rounds measured, from the round logs,
+the server kill log and <code>combat.jsonl</code>:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>round 1 (v0.90.0)</th>
+<th>round 2 (v0.91.0)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>orders to combat units in the round</td>
+<td>60 for 383 units, <strong>0 attack orders</strong></td>
+<td>~115 for 430 units</td>
+</tr>
+<tr>
+<td>cash unspent at the end</td>
+<td>80k, flat from minute 15</td>
+<td><strong>332k, 49 % of income</strong></td>
+</tr>
+<tr>
+<td>alien structures lost</td>
+<td>48</td>
+<td>100 (56 Nodes)</td>
+</tr>
+<tr>
+<td>Shrimps lost</td>
+<td>144 of 354</td>
+<td>43 of 212</td>
+</tr>
+<tr>
+<td>enemy structures killed</td>
+<td>0</td>
+<td>12, one Centauri HQ</td>
+</tr>
+<tr>
+<td>two-sided cash exchange</td>
+<td>1.62 in our favour</td>
+<td>1.84</td>
+</tr>
+<tr>
+<td>Nest attacked</td>
+<td>never</td>
+<td>never</td>
+</tr>
+</tbody>
+</table>
+<p>Three readings matter. The exchange ratio is fine — the units are good and the
+composition prior works — so what is missing is command, not chassis. The one
+HQ kill was not the military layer's doing: the eco planner placed three
+Greater Spawning Cysts 700 m from the Centauri HQ and Behemoths spawned next
+door; Sol, which killed 75 of our structures, was never touched. And every
+<code>[MISSION]</code>, <code>[BATTALION]</code>, <code>[MIL/PROD]</code> and <code>[DEFENCE]</code> line from both rounds
+is gone, because the military layer logged only to <code>MelonLoader/Latest.log</code>,
+which the next server start overwrote. Nothing military can be reviewed after
+the fact today; that is fixed first.</p>
+<p><strong>It cannot see the enemy as a thing that moves.</strong> <code>ThreatMap</code> is two decaying
+fields and a dictionary of remembered structures. There is no notion of an
+enemy <em>group</em>, no position history, therefore no heading, no speed, no arrival
+time, and no way to tell a raid from a main push or a piloted unit from a bot.
+Every defence is sized from <em>enemy cash inside 300 m of the asset right now</em>, so
+a defence exists only once the enemy is already there, and the response arrives
+one walk-time late — 150 <code>Forming 0u</code> lines against 10 <code>Committed</code> in one round.</p>
+<p><strong>It has no forward model, so every decision is a constant.</strong> Fourteen tuned
+numbers (<code>MILITARY_OPTIMIZATION.md</code> §6), each added after a specific failure,
+each right in the case that produced it. The eco layer escaped this because it
+has <code>EcoSimulator</code> and searches over it; the military layer can only ask what a
+constant says. The offline kernel (<code>mil_sim/</code>) exists and is validated, and
+nothing in the game reads it beyond a shadow log.</p>
+<p><strong>Objectives are not first-class.</strong> There are three mission kinds and "Push" is
+a direction, not a goal. DrMuck's two ordered lists — deny expansion, weaken
+eco, weaken production, weaken army; defend Queen, eco, production, against
+guerrilla — appear in no code path. The push picks the most expensive
+affordable base cluster and walks at its centre with a plain move order.</p>
+<p><strong>Execution is move orders and hope.</strong> Units are given a destination and rely
+on auto-acquire inside <code>TargetingDistance</code>; there was no attack order in the
+mod at all. Cohesion was a centroid rule that deadlocked a 186-unit army for a
+whole round. Speed differences were unmanaged, so a push arrived as a queue,
+fastest and flimsiest first.</p>
+<p><strong>Production is a per-tick argmax and a saturation heuristic.</strong> A score picks
+one winner per producer per tick, which is why 255 Shockers stood beside 41
+Behemoths; producer count and siting are three hand-set rules that each
+defaulted to the Nest in a different way.</p>
+<p><strong>Nothing states what success would look like.</strong> A failed push is discovered in
+a replay the next morning. No mission carries an expectation, so no mission can
+report its own failure, and nothing can be learned from a round without a human
+watching it.</p>
+<h2 id="1-what-0-9-46-gives-us-that-august-did-not">1. What 0.9.46 gives us that August did not</h2>
+<p>The beta replaced per-unit order verbs with an order-processor model. The port
+commit only shimmed the move order. The full set, all server-authoritative,
+all through <code>unit.OrderAgent.IssueOrder(definition, target, params)</code> with the
+definitions on <code>GameDatabase.Database.OrderDefinitions</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Order</th>
+<th>Definition</th>
+<th>Target</th>
+<th>What the agent does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Move</td>
+<td><code>Move</code></td>
+<td>point</td>
+<td>walk there, ignore enemies unless shot</td>
+</tr>
+<tr>
+<td><strong>Attack-move</strong></td>
+<td><code>Attack</code></td>
+<td>point, <code>Object == null</code></td>
+<td>walk there engaging what it meets</td>
+</tr>
+<tr>
+<td>Attack</td>
+<td><code>Attack</code></td>
+<td>enemy <code>Target</code></td>
+<td>close and kill that object</td>
+</tr>
+<tr>
+<td>Defend</td>
+<td><code>Defend</code></td>
+<td>friendly <code>Target</code></td>
+<td>stand with it, engage what comes</td>
+</tr>
+<tr>
+<td>Stop</td>
+<td><code>Stop</code></td>
+<td>none</td>
+<td>clear path and assigned targets</td>
+</tr>
+</tbody>
+</table>
+<p>And two things the design docs assumed were impossible:</p>
+<ul>
+<li><strong><code>StrategyMode.PerformMoveAttack(List&lt;BaseGameObject&gt;, pos, target, speed, isAttack)</code></strong>
+  is the server-side implementation of a player's multi-select right-click:
+  it lays the group out on a grid facing the objective, scales every unit's
+  speed to the slowest member, and registers a <code>UnitCohesionGroup</code> that keeps
+  the shape until contact. Formation and pace-matching are one call.</li>
+<li>The game paths on the A* Pathfinding Project (<code>AstarPath</code>, <code>FloodPath</code>,
+  <code>MultiTargetPath</code>, <code>GetNearest</code>, <code>IsPathPossible</code>). Walkability is a graph we
+  can sample, and true path lengths are available on request.</li>
+</ul>
+<p>Also confirmed from the decompile: <code>Team.UnitCapEntries[].Current/Max</code> is the
+per-team cap the docs called unknown; <code>ObjectInfo</code> carries the game's own
+taxonomy (<code>StructureSelectionType.HQ</code>, <code>StructureType</code> flags
+Resource/Production/Research/Defense, <code>UnitType</code>, <code>UnitWeight</code>, <code>UnitCapType</code>,
+<code>MaxHealth</code>, <code>UIAttackRating</code>); <code>Unit.ControlledBy</code> says who is piloting;
+<code>DamageManager.Health/MaxHealth</code> is readable on anything. No hardcoded unit or
+structure list is needed anywhere in this plan.</p>
+<h2 id="2-principles-carried-forward-stated-once">2. Principles carried forward, stated once</h2>
+<ol>
+<li><strong>Few solid rules beat many tuned ones.</strong> Every number that survives is
+   either read from the game, fitted from the archive, or one of a handful of
+   labelled placeholders in <code>rtsai.json</code>.</li>
+<li><strong>Scan, plan, execute to the plan, refresh.</strong> A refresh re-scores; it never
+   cancels an executing mission. Missions end on completion, on their own
+   expectation failing, or on the kernel saying the fight is lost.</li>
+<li><strong>One owner per decision</strong>, and purpose travels with the request.</li>
+<li><strong>The Queen is a constraint, not a priority.</strong> Home defence is a floor
+   subtracted first and a veto on orders that would strip it.</li>
+<li><strong>Commit at 2–4× effective force, never at parity, split the surplus past
+   4×</strong> — measured on 58,080 fights, not tuned.</li>
+<li><strong>Never trickle.</strong> A force leaves when it is strong enough and travels as a
+   body; reinforcement is the next wave, not a stream.</li>
+<li><strong>Shadow first, one change per round, read the log before the next.</strong></li>
+<li><strong>The opener is untouchable</strong> and the economy has right of way whenever a
+   placement was refused for cash.</li>
+</ol>
+<h2 id="3-architecture">3. Architecture</h2>
+<pre><code>  PERCEPTION   Mil/Intel        enemy tracks, forecasts, corridors, bases, recon demand
+               Mil/Fields       walkability, walk-time fields, front line, danger   (pure arrays)
+  MODEL        Mil/Kernel       effective force, p_win, expected loss, raze time    (pure maths)
+  DECISION     Mil/Objectives   candidates -&gt; priced -&gt; portfolio, with expectations
+               Mil/Production   composition queue, producer count, siting, spires
+  EXECUTION    Mil/Forces       force pools, staging, formation orders, retreat, reserve
+  INSTRUMENT   Mil/Report       [INTEL] [OBJ] [FORCE] [MIL/PROD] lines, combat.jsonl v2, /military v2
+</code></pre>
+<p>Ownership:</p>
+<table>
+<thead>
+<tr>
+<th>Decision</th>
+<th>Owner</th>
+<th>Reads</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>where the enemy is, is going, and will arrive</td>
+<td><code>Intel</code></td>
+<td>game units and structures inside our fog, <code>GameFow</code></td>
+</tr>
+<tr>
+<td>how long a walk takes, what ground is safe</td>
+<td><code>Fields</code></td>
+<td>A* graph (once per map), terrain heights, <code>Intel</code>, <code>ControlMap</code></td>
+</tr>
+<tr>
+<td>what a fight costs and who wins</td>
+<td><code>Kernel</code></td>
+<td><code>mil_doctrine.json</code>, <code>rtsai_units.json</code>, live <code>ObjectInfo</code></td>
+</tr>
+<tr>
+<td>what is worth doing, ranked, and whether it worked</td>
+<td><code>Objectives</code></td>
+<td>everything above, <code>BcIncome</code>, <code>Blueprint</code></td>
+</tr>
+<tr>
+<td>which units go, formed how, and when to leave or retreat</td>
+<td><code>Forces</code></td>
+<td><code>Objectives</code>, <code>Kernel</code>, <code>Fields</code></td>
+</tr>
+<tr>
+<td>what to build, how many producers, where</td>
+<td><code>Production</code></td>
+<td><code>Objectives</code> demand, <code>Kernel</code>, <code>Fields</code>, <code>MoneyBroker</code></td>
+</tr>
+<tr>
+<td>static defence</td>
+<td><code>SpirePlanner</code> (kept)</td>
+<td><code>Intel</code> forecast and corridors instead of <code>DefencePlanner</code></td>
+</tr>
+</tbody>
+</table>
+<p><code>MissionPlanner</code>, <code>BattalionManager</code>, <code>DefencePlanner</code>, <code>MilitaryBlueprint</code> are
+retired. <code>ThreatMap</code> keeps its two fields for the viewer and for <code>ControlMap</code>;
+<code>Intel</code> supersedes it as the thing decisions read. <code>ScoutPlanner</code>,
+<code>CombatLog</code>, <code>UnitValues</code>, <code>UnitCaps</code>, <code>Doctrine</code>, <code>UnitPrior</code>, <code>Shadow</code>,
+<code>SpirePlanner</code> stay.</p>
+<h2 id="4-modules">4. Modules</h2>
+<h3 id="4-1-intel-the-enemy-as-tracks-not-stamps">4.1 Intel — the enemy as tracks, not stamps</h3>
+<p>Every stamp pass (4 Hz, only units inside our active fog) clusters visible
+enemy units into groups by 250 m single linkage and matches them to existing
+<strong>tracks</strong> by predicted position. A track carries:</p>
+<ul>
+<li>position, velocity (EMA over the last 20 s), heading, and the time last seen</li>
+<li>composition by <code>UnitType</code>/class and count, effective force (kernel), raw cash</li>
+<li><code>pilotedCount</code> from <code>Unit.ControlledBy</code> — the FPS-player signal</li>
+<li>confidence, decaying with a 90 s half-life once unseen; position extrapolated
+  along the heading for at most 30 s, then held</li>
+</ul>
+<p>Tracks give the four things the spec asks for from one structure:</p>
+<ul>
+<li><strong>Enemy army estimate</strong> = Σ track effective force × confidence, which is
+  nonzero while the enemy is out of sight and goes to zero honestly.</li>
+<li><strong>Forecast</strong> per asset of ours (Nest, earning sites, producer clusters, FOB):
+  for each track whose heading lies within 35° of the asset and whose
+  path-time (<code>Fields</code>) is under the horizon (180 s), an arrival <code>(eta, force,
+  confidence)</code>. Tracks already inside the asset radius count at eta 0.</li>
+<li><strong>Slip-through detection</strong> = a forecast on the Nest while the main force is
+  away. That is the mid-game case DrMuck named.</li>
+<li><strong>Guerrilla / FPS</strong> = a small fast track, or any track with piloted units,
+  inside our controlled ground.</li>
+</ul>
+<p><strong>Corridors.</strong> When a track first enters ground we control it records its entry
+cell into a histogram with a 10-minute half-life, and the sector it came from
+relative to the Nest. This is the only prediction the data supports — "this
+opponent has come this way before" — and it positions the reserve and the
+spires before anything is seen.</p>
+<p><strong>Bases.</strong> The existing cluster logic stays; each known structure gains
+<code>FirstSeenAt</code> and a class from <code>ObjectInfo</code> (HQ / Resource / Production /
+Defense / Research). A base gets <code>IsMain</code> (highest cost per team), <code>AgeS</code>,
+<code>IsExpansion</code> (not main, and Resource or HQ), <code>Growth</code> (structure count delta
+over 3 min), <code>LocalDefence</code> (kernel force of tracks within 500 m plus its
+Defense structures). Harvesters are tracked as units of <code>UnitType.Harvester</code>
+and attach to the nearest base as an eco target.</p>
+<p><strong>Recon demand.</strong> A base that is a candidate objective and has not been seen
+for 120 s asks for one fast unit to overfly it. Cheap, bounded to one unit per
+base, and it is what makes the price of an objective a current number rather
+than a memory. The scout star is untouched.</p>
+<h3 id="4-2-fields-walk-time-and-safe-ground-as-arrays">4.2 Fields — walk time and safe ground, as arrays</h3>
+<p>All on the existing 40 m <code>GridWorld</code> (22,500 cells on NarakaCity), all pure
+functions of arrays so they can run on a worker thread today and on a sidecar
+process or GPU later (§8).</p>
+<ul>
+<li><strong>Walkability</strong> sampled once per map from the A<em> graph (<code>GetNearest</code> per
+  cell centre, walkable within half a cell) and </em><em>slope cost</em>* from
+  <code>Terrain.SampleHeight</code>. Built over the first minute of a round, off the
+  critical path. NarakaCity's walls stop being invisible.</li>
+<li><strong>Walk-time field</strong> = multi-source Dijkstra (8-neighbour, slope-weighted)
+  from any set of seeds, divided by a speed class. Used for: arrival ETAs,
+  producer siting ("time for its output to reach the expected fights"),
+  reserve placement ("minimise the worst arrival time to what we defend"),
+  and rally-point selection.</li>
+<li><strong>Danger field</strong> = enemy pressure (kept from <code>ThreatMap</code>) plus track reach.
+  A path cost term, so a rally point is chosen outside it and a retreat runs
+  away from it.</li>
+<li><strong>Front line</strong> = the contour where our control equals their pressure. Where
+  the reserve and the FOB sit when there is no objective.</li>
+</ul>
+<p>Precise path lengths for a handful of high-value queries (a push ETA, an FOB
+candidate) can be asked of <code>MultiTargetPath</code> asynchronously; the grid answers
+everything else.</p>
+<h3 id="4-3-kernel-the-forward-model-in-c">4.3 Kernel — the forward model, in C</h3>
+<p>One static class, same maths as <code>mil_sim/fit_kernel.py</code>, reading the same
+files:</p>
+<pre><code>effective(force)  = Σ count · cost · w[unit]          w from mil_doctrine.json (AI-vs-AI fit), 1.0 when unmeasured
+pWin(A, B)        = σ( k · ln(effA / effB) )           k from the same file
+lossRatio(r)      = r^-β                               β = 0.60 AI-vs-AI exchange exponent
+razeTime(force, S)= Σ MaxHealth(S) / Σ dps(force)      dps from the balance dump, live-modded
+priceToBeat(D)    = the smallest effective force with ratio ≥ CommitAt against D
+</code></pre>
+<p>Inputs the kernel needs and where they come from: unit cost and <code>MaxHealth</code>
+from live <code>ObjectInfo</code>; damage and cooldown from
+<code>UserData/UnitBalance_cfg/Si_UnitBalance_Dump.json</code>, which the balance mod
+rewrites every run, with a fallback of one DPS per ten cost when a unit is
+absent; static defence structures counted at cost × <code>defenceWeight</code>
+(placeholder 1.0, labelled, measured from <code>combat.jsonl</code> v2 once rows carry the
+static-defence flag).</p>
+<p>The kernel is allowed to decide only where it was validated: fights above
+<code>RefuseBelow</code> and below <code>WastefulAbove</code>. At parity it says "coin flip" and the
+planner declines. Every prediction it makes for a real engagement is logged
+beside the outcome so the calibration can be read off a round.</p>
+<h3 id="4-4-objectives-drmuck-s-lists-priced-with-expectations">4.4 Objectives — DrMuck's lists, priced, with expectations</h3>
+<p>Every 15 s the planner generates candidates, prices each with the kernel, and
+assembles a portfolio. Executing missions are re-scored, not cancelled.</p>
+<p><strong>Constraint (always first):</strong>
+- <code>DefendQueen</code> — required = max(price to beat the Nest forecast, <code>homeFloorCash</code>).
+  Never outbid. Vetoes any order that would take the reserve below it while a
+  forecast on the Nest is live.</p>
+<p><strong>Deadline-driven defence, ordered by arrival time:</strong>
+- <code>DefendEco(site)</code> — sites earning now (<code>BcIncome</code>) or being tapped (Blueprint
+  items in flight), with a forecast arrival. Required = price to beat the
+  arriving force; deadline = eta. Only funded if a force can arrive before the
+  deadline; otherwise the answer is a spire or a producer there, and the
+  planner says so.
+- <code>DefendProduction(cluster)</code> — the same for producer clusters away from home.
+- <code>Screen(site)</code> — a standing force at the top earning exposed sites when idle
+  army exists, sized from per-site threat memory (5-minute half-life). The
+  cheap fix for "always one walk-time late".
+- <code>Intercept(track)</code> — a small fast or piloted track on our ground: the fast
+  pool at ≥ 2×.</p>
+<p><strong>Offence, in the spec's order, scored within rank by gain per expected loss:</strong>
+1. <code>DenyExpansion(base)</code> — not their main, age &lt; 6 min or still growing.
+   Gain = its cost + the ground; price = beat local defence and whatever can
+   reinforce inside the raze time.
+2. <code>RaidEco(target)</code> — Resource structures and harvester clusters with low local
+   defence. Fast pool; capped at <code>raidShare</code> (0.25) of army value so raids can
+   never starve the main force. Gain = cash destroyed.
+3. <code>RaidProduction(target)</code> — Production structures that are not HQ, same shape.
+4. <code>BreakArmy(track)</code> — only when the line pool can reach it at ≥ CommitAt and
+   it threatens something; idle enemy armies on open ground are left alone.
+5. <code>KillHQ(base)</code> — the win condition. Price = beat max(local defence, total
+   enemy estimate) at CommitAt plus the raze time under reinforcement. When it
+   is affordable it outranks everything below the constraint.</p>
+<p><strong>Portfolio assembly</strong> is greedy in that order over the free force by pool
+class, with the surplus rule: past <code>WastefulAbove</code> the excess is released to
+the next objective rather than stacked. Whatever is left is the <strong>reserve</strong>,
+which stands at the FOB front if one exists, else at a point chosen by the
+walk-time field to minimise the worst arrival time to the defended assets,
+weighted by the corridor histogram. That is "hold and push" without a posture
+machine: the reserve grows until an offensive objective becomes affordable,
+then it leaves.</p>
+<p><strong>Expectations</strong> (Goal-Driven Autonomy, finally):</p>
+<table>
+<thead>
+<tr>
+<th>Kind</th>
+<th>Expectation</th>
+<th>Checked</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>DefendQueen / DefendEco / DefendProduction</td>
+<td>asset alive and forecast cleared by eta + 60 s</td>
+<td>every tick</td>
+</tr>
+<tr>
+<td>Intercept</td>
+<td>track effective force falls 50 % within 90 s of contact</td>
+<td>every tick</td>
+</tr>
+<tr>
+<td>DenyExpansion</td>
+<td>structure count at the base stops rising within 120 s, then falls</td>
+<td>30 s</td>
+</tr>
+<tr>
+<td>RaidEco / RaidProduction</td>
+<td>target destroyed, or ≥ 1:1 cash exchange, within raze time + walk</td>
+<td>30 s</td>
+</tr>
+<tr>
+<td>BreakArmy</td>
+<td>track force falls 50 % before ours does</td>
+<td>every tick</td>
+</tr>
+<tr>
+<td>KillHQ</td>
+<td>HQ health falls monotonically once engaged; base count falls</td>
+<td>30 s</td>
+</tr>
+</tbody>
+</table>
+<p>A violated expectation ends the mission with <code>[OBJ] FAILED &lt;kind&gt; &lt;why&gt;</code>, the
+force withdraws to its rally, and the same objective key is held for 120 s.
+Every outcome is written to <code>objectives.jsonl</code> with the kernel's prediction,
+which is the dataset for learning which kinds pay (<code>LEARNING.md</code> §2).</p>
+<h3 id="4-5-forces-the-executor">4.5 Forces — the executor</h3>
+<p>Pools by class, derived from the game: <strong>Fast</strong> (speed ≥ 20 or flyer), <strong>Swarm</strong>
+(Secondary cap), <strong>Line</strong> (Primary cap, cost &lt; 3000), <strong>Heavy</strong> (Primary, cost
+≥ 3000). Scouts stay <code>ScoutPlanner</code>'s.</p>
+<p>A force is a group of units bound to one objective:</p>
+<pre><code>Forming -&gt; Staging -&gt; Advancing -&gt; Engaged -&gt; Done | Withdrawing -&gt; Forming
+</code></pre>
+<ul>
+<li><strong>Forming</strong>: fill from the free pool nearest the objective; leave when
+  effective force ≥ required. Never before.</li>
+<li><strong>Staging</strong>: one <code>PerformMoveAttack</code> (isAttack=false) to a rally point chosen
+  by <code>Fields</code> — short of the objective, outside the danger field, at most 60 s
+  from it. The game paces the group to its slowest member and holds the shape.
+  Advance when the slowest member has arrived or after <code>stagingPatience</code>
+  (45 s), whichever is first.</li>
+<li><strong>Advancing</strong>: <code>PerformMoveAttack</code> with isAttack=true against the objective's
+  <code>Target</code> (structure or track leader), or an attack-move to the point. Orders
+  are re-issued only when the destination moves more than 90 m, when a unit
+  stands idle short of it, or when the target dies; never while a unit has a
+  target.</li>
+<li><strong>Engaged</strong>: the kernel is asked every 5 s with the force as it now stands
+  against the tracks and defence within 500 m. Below <code>RefuseBelow</code> it
+  <strong>withdraws</strong> to the rally; that is the retreat rule, and it is the first one
+  this project has ever had.</li>
+<li><strong>Withdrawing</strong>: <code>Stop</code> then move, then back to Forming as a pool.</li>
+</ul>
+<p>The reserve is a standing force with <code>Defend</code> orders on the structure it
+guards, so it engages what comes without walking off.</p>
+<p>Order traffic is counted as before; the target is under 0.5 orders per unit per
+minute outside contact.</p>
+<h3 id="4-6-production-composition-count-siting-spires">4.6 Production — composition, count, siting, spires</h3>
+<p><strong>Composition as a queue with proportions.</strong> Demand comes from the portfolio:
+each unfunded or forming objective contributes its shortfall by pool class,
+and the reserve contributes a target equal to the price of the cheapest
+offensive objective on the board (or, with none known, the price to beat the
+enemy estimate). Per producer, the next unit maximises
+<code>demandGap[class] × valuePerCapSlot × counterFit</code>, where value is the doctrine
+weight over cost per cap point and counterFit is the <code>rtsai_units.json</code> counter
+against the observed enemy mix. Because the gap shrinks as units are queued,
+the result is a mix, not a winner. Crabs are queued only for a <code>Swarm</code> demand,
+which exists when an objective asks for meat in front of a line — DrMuck's
+exception, modelled as a role.</p>
+<p><strong>How many producers.</strong> Two evidence rules and nothing else: (a) every
+producer of a type busy and cash idle for two minutes of income → one more;
+(b) portfolio demand of a class cannot be delivered before its deadline by the
+current throughput → one more of the type that makes it. Both capped by cap
+room read from <code>Team.UnitCapEntries</code>. Lost producers are rebuilt at the best
+current site.</p>
+<p><strong>Where.</strong> Candidate sites are enumerated once per Blueprint revision: every
+functional structure of ours, offset one build reach toward the front. Each is
+scored by the walk-time field from the site to the expected fight cells (the
+portfolio's objectives and the corridor histogram, weighted), minus the danger
+at the site, with the network-reach constraint enforced by the same
+<code>AlienConstruction</code> anchor test the economy uses. The <strong>FOB</strong> is the best
+cluster toward the current main offensive objective and takes up to
+<code>fobProducers</code> producers once it is either covered by a force or has a spire.
+Everything is logged as <code>[MIL/SITE]</code> with the score terms so a bad site can be
+read, not guessed.</p>
+<p><strong>Spires.</strong> <code>SpirePlanner</code> keeps its rules and switches its site source from
+<code>DefencePlanner.Tasks</code> to the forecast list and the corridor histogram, plus
+the FOB. Execute goes on in the same round production v3 does.</p>
+<p><strong>Money.</strong> <code>SpendableCash</code> keeps its two categorical rules (opener untouchable,
+economy right of way when starved). Within the budget the order is: spires
+whose site has an arrival under 90 s, then units for funded objectives, then
+producers, then units for the reserve.</p>
+<h3 id="4-7-report-what-a-round-can-be-read-from">4.7 Report — what a round can be read from</h3>
+<p>Every military line goes to the round log as well as the console (the
+<code>AppendToRound</code> path the observability layer already has), and <code>Latest.log</code> is
+copied beside the round log at round end. The August rounds cannot be
+re-read; the next ones will be.</p>
+<p>The scout layer re-issues every waypoint order every 5 s — 44 % of all order
+lines in round 1 were thirty Crabs being told the same thing — and that
+changes to on-change-only with the same rule the forces use.</p>
+<ul>
+<li><code>[INTEL]</code> every 30 s: tracks (count, value, piloted), forecasts with eta,
+  bases with age and growth, recon requests.</li>
+<li><code>[OBJ]</code> every 15 s: the portfolio with price, assigned force, expectation and
+  its current reading; <code>[OBJ] DONE|FAILED</code> on completion.</li>
+<li><code>[FORCE]</code> state transitions, staging waits, retreats with the kernel ratio.</li>
+<li><code>[MIL/PROD]</code> composition demand by class, what each producer picked and why,
+  producer count decisions; <code>[MIL/SITE]</code> the ranked candidates.</li>
+<li><code>combat.jsonl</code> v2: <code>engaged</code> census per side within 400 m at the first
+  loss, <code>piloted</code> counts, <code>staticDefence</code> flag, <code>objective</code> kind, kernel
+  <code>pWin</code> at open — the four confounders <code>LEARNING.md</code> §5 says cannot be
+  reconstructed later.</li>
+<li><code>objectives.jsonl</code>: one row per finished objective.</li>
+<li><code>/military</code> v2: tracks, forecasts, objectives, forces with from/to and state,
+  candidate sites, corridor histogram. The layers viewer gets tracks as arrows
+  with a velocity tail, objectives as pins, forces as arrows styled by state.</li>
+</ul>
+<h2 id="5-the-rules-numbered-so-they-can-be-counted">5. The rules, numbered, so they can be counted</h2>
+<ol>
+<li>Home defence is a floor: <code>homeFloorCash</code>, scaled by the Nest forecast.</li>
+<li>A force commits at ≥ <code>CommitAt</code> effective ratio and refuses below
+   <code>RefuseBelow</code>; surplus past <code>WastefulAbove</code> goes elsewhere.</li>
+<li>A force leaves only when full and travels as one formation.</li>
+<li>A force retreats when the kernel reads its fight below <code>RefuseBelow</code>.</li>
+<li>Defence is funded by forecast arrival, not by presence.</li>
+<li>Offence is ranked by the spec's order, scored within rank by gain per loss.</li>
+<li>Raids may never exceed <code>raidShare</code> of army value.</li>
+<li>Producers grow on two evidences: saturation with idle cash, or a deadline
+   the throughput cannot meet.</li>
+<li>Producers stand where their output reaches the expected fights soonest,
+   discounted by danger, within network reach.</li>
+<li>A mission ends on completion, expectation failure, or rule 4. Never a timer.</li>
+</ol>
+<p>Numbers in <code>rtsai.json</code> (<code>mil.*</code>), all labelled placeholders except the three
+bands, which are fitted: <code>commit.{refuseBelow,commitAt,wastefulAbove}</code> (from
+<code>mil_doctrine.json</code>), <code>homeFloorCash</code> 12000, <code>forecastHorizonS</code> 180,
+<code>raidShare</code> 0.25, <code>stagingPatienceS</code> 45, <code>fobProducers</code> 3, <code>defenceWeight</code> 1.0,
+<code>screenMemoryHalfLifeS</code> 300. Everything else is derived.</p>
+<h2 id="6-build-order-and-round-protocol">6. Build order and round protocol</h2>
+<p>One change per round. Each step ships logging-only or default-off. The test
+rig is <code>configs/alien-military-vs-vanilla/</code> (60 min, vanilla Sol and Centauri,
+combat on), and the baseline is the two rounds of 2026-08-13.</p>
+<table>
+<thead>
+<tr>
+<th>Step</th>
+<th>Ships</th>
+<th>Switch</th>
+<th>Read in the log</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0</td>
+<td>the 0.9.46 port deployed, eco only</td>
+<td>as today</td>
+<td>blocked-order counters match August; eco alive at 25 min</td>
+</tr>
+<tr>
+<td>1</td>
+<td><code>Intel</code>, <code>Fields</code>, <code>Kernel</code></td>
+<td><code>mil.v3.shadow</code></td>
+<td>do tracks follow real groups; do forecasts precede the losses <code>combat.jsonl</code> records; kernel <code>pWin</code> vs outcomes</td>
+</tr>
+<tr>
+<td>2</td>
+<td><code>Objectives</code>, <code>Report</code>, <code>combat.jsonl</code> v2</td>
+<td>shadow</td>
+<td>does the portfolio read like a plan a person would make; do expectations resolve</td>
+</tr>
+<tr>
+<td>3</td>
+<td><code>Forces</code>, defence only</td>
+<td><code>military.execute</code>, <code>offence:false</code></td>
+<td>responses arrive before eta; Nest never attacked unopposed; structures lost vs baseline</td>
+</tr>
+<tr>
+<td>4</td>
+<td>offence</td>
+<td><code>offence:true</code></td>
+<td>expectation pass rate per kind; exchange ratio per kind; enemy HQs killed</td>
+</tr>
+<tr>
+<td>5</td>
+<td><code>Production</code> v3, siting, spires</td>
+<td><code>produce</code>, <code>mil.spires.execute</code></td>
+<td>producers ≥ 85 % busy, cash idle &lt; 2 min, army engaged &gt; 60 %, FOB stands</td>
+</tr>
+<tr>
+<td>6+</td>
+<td>overnight soak, one config</td>
+<td>—</td>
+<td>the <code>[UTIL]</code> line, <code>objectives.jsonl</code>, Nest survival, HQ kills</td>
+</tr>
+</tbody>
+</table>
+<p>Metrics that decide whether a step stays: the four utilisation meters,
+structures lost, enemy structures killed, expectation pass rate, cash exchange
+per objective kind, whether the Nest was ever attacked without a force present.</p>
+<p>Speed-ups for smoke tests only: <code>timeScale</code> 2 with the achieved-rate line
+checked; measurement rounds run at 1.</p>
+<h2 id="7-what-is-deliberately-not-in-v3-0">7. What is deliberately not in v3.0</h2>
+<p>Learned counter matrix (the prior is measured and shipped; the update loop
+needs the <code>objectives.jsonl</code> corpus first). Formations beyond the game's own
+grid. Anchor Nest for a forward base (queued behind FOB survival data). Air
+micro. Sol and Centauri (the doctrine data says one human build order covers
+both, and the objectives generalise, but the alien is the customer).</p>
+<h2 id="8-cpu-and-gpu-later">8. CPU and GPU, later</h2>
+<p><code>Fields</code> and the portfolio search are written as pure functions over arrays
+with a snapshot in and arrays out, no Unity calls inside. That is the boundary
+for moving them: first to the worker thread <code>ExpansionStrategy</code> already uses,
+then to a sidecar process on this box's GPU (the WSL2/CUDA environment exists)
+talking over the telemetry port — the mod posts a snapshot, reads back fields
+and a scored portfolio, and falls back to the in-process version when the
+sidecar is absent. The kernel is small enough that the GPU's value is in
+running many portfolio rollouts, not in one prediction. Nothing in v3.0 needs
+it; everything in v3.0 is shaped so it can use it.</p>
+<h2 id="9-risks-named">9. Risks, named</h2>
+<ul>
+<li><strong>Pathing on city maps.</strong> The 40 m grid may still misjudge narrow gaps; the
+  A* multi-target query is the fallback for the few decisions that matter.</li>
+<li><strong>Fog for structures.</strong> Bases are only ever as current as the last overflight;
+  recon demand exists for this and its cost is one fast unit at a time.</li>
+<li><strong>Human factions' behaviour under 0.9.46</strong> is unmeasured; the archive is
+  0.9.42. The bands are dimensionless and should survive; the unit weights get
+  re-fitted from the first beta rounds.</li>
+<li><strong>Order gates.</strong> An attack-move is an <code>Attack</code> definition with no object and
+  is not caught by the move-order gates; the co-op gate needs the same filter
+  extended before a played co-op round.</li>
+</ul>
+</main></div>

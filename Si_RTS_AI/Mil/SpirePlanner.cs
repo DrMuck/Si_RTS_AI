@@ -214,27 +214,42 @@ namespace Si_RTS_AI.Mil
 
         struct Site { public Vector3 Pos; public float Threat; public long Income; public string Why; }
 
-        /// <summary>Ground worth defending, most valuable first, with the Nest
-        /// appended because the Queen is a loss condition and `DefencePlanner`
-        /// only lists it once something is already near it.</summary>
+        static readonly List<(Vector3 pos, float eff, float etaS, string why)> _threatened =
+            new List<(Vector3, float, float, string)>();
+
+        /// <summary>Ground with something arriving, soonest first - from the
+        /// objective planner's forecasts - then the corridor the last incursions
+        /// used, then the forward base, then the Nest. The Queen is a loss
+        /// condition and at minute three there is no forecast to rank yet.</summary>
         static IEnumerable<Site> Sites(Team team, float minutes)
         {
-            var tasks = DefencePlanner.Tasks;
-            for (int i = 0; i < tasks.Count; i++)
+            Objectives.ThreatenedSites(_threatened);
+            _threatened.Sort((a, b) => a.etaS.CompareTo(b.etaS));
+            for (int i = 0; i < _threatened.Count; i++)
                 yield return new Site
                 {
-                    Pos = tasks[i].Pos, Threat = tasks[i].Threat,
-                    Income = tasks[i].RecentIncome,
-                    Why = $"{tasks[i].Kind} earning {tasks[i].RecentIncome} " +
-                          $"under threat {tasks[i].Threat:F0}",
+                    Pos = _threatened[i].pos, Threat = _threatened[i].eff, Income = 0,
+                    Why = $"forecast {_threatened[i].eff:F0} eff arriving in {_threatened[i].etaS:F0}s - {_threatened[i].why}",
                 };
 
             var nest = FindNest(team);
+            var bearing = Intel.CorridorBearing();
+            if (nest != Vector3.zero && bearing != Vector3.zero)
+                yield return new Site
+                {
+                    Pos = nest + bearing * 350f, Threat = 1f, Income = 0,
+                    Why = "the corridor incursions have used",
+                };
+
+            var fob = ProductionV3.ForwardBase;
+            if (fob != Vector3.zero)
+                yield return new Site { Pos = fob, Threat = 1f, Income = 0, Why = "the forward base" };
+
             if (nest != Vector3.zero)
                 yield return new Site
                 {
                     Pos = nest, Threat = 0f, Income = 0,
-                    Why = "the Nest — the Queen is the loss condition",
+                    Why = "the Nest - the Queen is the loss condition",
                 };
         }
 
@@ -253,6 +268,7 @@ namespace Si_RTS_AI.Mil
         {
             if (site.Threat <= 0f)
                 return minutes <= _nestByMin ? 1 : 0;     // the Nest, early only
+            if (site.Threat <= 1.5f) return _perSite;                 // a corridor or the FOB: one
             return site.Threat >= _heavyThreat ? _perSite + 1 : _perSite;
         }
 
@@ -341,41 +357,6 @@ namespace Si_RTS_AI.Mil
             }
             catch { }
             return n;
-        }
-
-        /// <summary>
-        /// The most valuable undefended ground.
-        ///
-        /// `DefencePlanner` already ranks assets by recent income x threat and
-        /// that is the same question asked from the other side, so it is read
-        /// rather than recomputed. The Nest is the fallback and the first
-        /// answer of the round: the Queen is a loss condition, and at minute
-        /// three there is no earning site to rank yet.
-        /// </summary>
-        static bool TryPickSite(Team team, string name, out Vector3 pos, out string why)
-        {
-            pos = Vector3.zero; why = "";
-            try
-            {
-                var tasks = DefencePlanner.Tasks;
-                for (int i = 0; i < tasks.Count; i++)
-                {
-                    var t = tasks[i];
-                    if (AlreadyCovered(team, name, t.Pos)) continue;
-                    pos = t.Pos;
-                    why = $"{t.Kind} earning {t.RecentIncome} under threat {t.Threat:F0}";
-                    return true;
-                }
-
-                var nest = FindNest(team);
-                if (nest != Vector3.zero && !AlreadyCovered(team, name, nest))
-                {
-                    pos = nest; why = "the Nest — the Queen is the loss condition";
-                    return true;
-                }
-            }
-            catch { }
-            return false;
         }
 
         /// <summary>Is there already one of these near enough that another

@@ -417,10 +417,12 @@ namespace Si_RTS_AI.Planning
                     IssueMove(u, wp);
                     sc.LastOrderAt = now;
                 }
-                else if (now - sc.LastOrderAt >= REISSUE_S)
+                else if (now - sc.LastOrderAt >= REISSUE_S && !StillMoving(u))
                 {
-                    // Vanilla keeps re-tasking these units; restating the order
-                    // on a short cadence is what actually keeps them on course.
+                    // Vanilla re-tasking is blocked at the order gate now, so a
+                    // scout only needs telling again when it has actually
+                    // stopped. Restating every five seconds regardless was 44%
+                    // of all order lines in the 2026-08-13 round.
                     IssueMove(u, sc.Waypoint);
                     sc.LastOrderAt = now;
                 }
@@ -801,6 +803,11 @@ namespace Si_RTS_AI.Planning
             p.x = Mathf.Clamp(p.x, minX, maxX);
             p.z = Mathf.Clamp(p.z, minZ, maxZ);
             return true;
+        }
+
+        static bool StillMoving(Unit u)
+        {
+            try { return u.IsMoving; } catch { return false; }
         }
 
         static void IssueMove(Unit u, Vector3 pos)

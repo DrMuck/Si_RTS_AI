@@ -199,74 +199,84 @@ namespace Si_RTS_AI.Perception
         /// </summary>
         static void WriteMilitary(HttpListenerResponse res)
         {
-            var missions = new List<object>();
-            var battalions = new List<object>();
-            string posture = "?", mix = "?";
-            int armyValue = 0, enemyEstimate = 0, known = 0;
-            float? growth = null;
+            var objectives = new List<object>();
+            var forces = new List<object>();
+            var tracks = new List<object>();
+            var bases = new List<object>();
+            string mix = "?";
+            float armyEff = 0f, enemyEff = 0f, reserveEff = 0f;
+            int known = 0;
+            float rx = 0f, rz = 0f, fx = 0f, fz = 0f;
+            int reserveUnits = 0;
 
             try
             {
-                posture       = Planning.MissionPlanner.Current.ToString();
-                armyValue     = Planning.MissionPlanner.ArmyValue;
-                enemyEstimate = Planning.MissionPlanner.EnemyEstimate;
-                float g       = Planning.MissionPlanner.ArmyGrowthPerS;
-                growth        = g == float.MaxValue ? (float?)null : g;
-                mix           = ThreatMap.EnemyMixSummary();
-                known         = ThreatMap.KnownCount;
+                armyEff = Mil.Objectives.ArmyEff;
+                enemyEff = Mil.Intel.EnemyEffective;
+                mix = ThreatMap.EnemyMixSummary();
+                known = Mil.Intel.KnownStructureCount;
+                reserveEff = Mil.Forces.ReserveEff; reserveUnits = Mil.Forces.ReserveUnits;
+                rx = Mil.Forces.ReservePoint.x; rz = Mil.Forces.ReservePoint.z;
+                fx = Mil.ProductionV3.ForwardBase.x; fz = Mil.ProductionV3.ForwardBase.z;
 
-                foreach (var m in Planning.MissionPlanner.Missions)
-                    missions.Add(new
+                foreach (var o in Mil.Objectives.Portfolio)
+                    objectives.Add(new
                     {
-                        id = m.Id,
-                        kind = m.Kind.ToString(),
-                        x = m.Objective.x,
-                        z = m.Objective.z,
-                        requiredValue = m.RequiredValue,
-                        note = m.Note ?? "",
+                        id = o.Id, kind = o.Kind.ToString(), status = o.Status.ToString(),
+                        x = o.Where.x, z = o.Where.z, radius = o.Radius,
+                        required = o.RequiredEff, assigned = o.AssignedEff, defence = o.DefenceEff,
+                        pWin = o.PWin, rank = o.Rank, offensive = o.Offensive,
+                        etaS = float.IsInfinity(o.DeadlineAt) ? (float?)null : Mathf.Max(0f, o.DeadlineAt - Time.time),
+                        note = o.Note ?? "", expectation = o.Expectation ?? "",
                     });
 
-                foreach (var b in Planning.BattalionManager.Battalions)
+                foreach (var f in Mil.Forces.Active)
                 {
-                    float cx = 0f, cz = 0f;
-                    int n = 0;
-                    foreach (var u in b.Units)
+                    var c = Mil.Forces.Centroid(f);
+                    forces.Add(new
                     {
-                        try { var p = u.transform.position; cx += p.x; cz += p.z; n++; }
-                        catch { }
-                    }
-                    battalions.Add(new
-                    {
-                        name = b.Name,
-                        kind = b.Kind.ToString(),
-                        state = b.Phase.ToString(),
-                        units = b.Units.Count,
-                        value = b.Value,
-                        requiredValue = b.RequiredValue,
-                        fromX = n > 0 ? (float?)(cx / n) : null,
-                        fromZ = n > 0 ? (float?)(cz / n) : null,
-                        toX = b.Objective.x,
-                        toZ = b.Objective.z,
+                        id = f.Id, name = f.Name, state = f.Phase.ToString(),
+                        units = f.Units.Count, eff = f.Eff,
+                        required = f.Obj?.RequiredEff ?? 0f,
+                        fromX = c.x, fromZ = c.z,
+                        toX = f.Obj?.Where.x ?? c.x, toZ = f.Obj?.Where.z ?? c.z,
+                        rallyX = f.Rally.x, rallyZ = f.Rally.z,
                     });
                 }
+
+                foreach (var t in Mil.Intel.Tracks)
+                {
+                    var p = t.Predicted();
+                    tracks.Add(new
+                    {
+                        id = t.Id, team = t.Team, x = p.x, z = p.z, vx = t.Vel.x, vz = t.Vel.z,
+                        units = t.Count, eff = t.Effective, cash = t.Cash, piloted = t.Piloted,
+                        confidence = t.Confidence, seen = t.Seen, comp = t.Force.ToString(),
+                    });
+                }
+
+                foreach (var b in Mil.Intel.Bases)
+                    bases.Add(new
+                    {
+                        team = b.Team, x = b.Centre.x, z = b.Centre.z, count = b.Count, cost = b.Cost,
+                        hq = b.HasHq, main = b.IsMain, ageS = b.AgeS, staleS = b.StaleS,
+                        growth = b.Growth, defence = b.LocalDefenceEff, harvesters = b.Harvesters,
+                    });
             }
             catch (Exception ex)
             { MelonLogger.Warning($"[RTSA/Telemetry] military build threw: {ex.Message}"); }
 
             WriteJson(res, 200, new
             {
+                version = 3,
                 map = MapLayers.LayerReplay.CurrentMap,
                 roundTime = MapLayers.LayerReplay.CurrentRoundTime,
                 enabled = Planning.MilitaryConfig.Enabled,
                 execute = Planning.MilitaryConfig.Execute,
-                posture,
-                armyValue,
-                enemyEstimate,
-                armyGrowthPerS = growth,
-                enemyMix = mix,
-                knownStructures = known,
-                missions,
-                battalions,
+                armyEff, enemyEff, enemyMix = mix, knownStructures = known,
+                reserve = new { units = reserveUnits, eff = reserveEff, x = rx, z = rz },
+                forwardBase = new { x = fx, z = fz },
+                objectives, forces, tracks, bases,
             });
         }
 

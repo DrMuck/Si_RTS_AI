@@ -10,43 +10,37 @@ using UnityEngine;
 namespace Si_RTS_AI.Perception
 {
     /// <summary>
-    /// DID THE ARMY TRADE WELL?
+    /// DID THE ARMY TRADE WELL — AND WHO WAS THERE?
     ///
-    /// The economy only started improving once rounds produced numbers. Military
-    /// has none: "never trickle units in one by one" and "re-plan, but not every
-    /// few seconds" are rules we happen to agree with and cannot currently check.
-    /// A critical-mass threshold of 15 is a guess until something counts what was
-    /// lost on each side when it was honoured and when it was not.
+    /// One row per engagement, detected by roster diffing: a unit present last
+    /// sample and gone now is a loss at its last known position; losses within
+    /// ENGAGEMENT_RADIUS_M and ENGAGEMENT_WINDOW_S of each other are one fight.
+    /// No hooks, no patches, nothing that breaks on a game update.
     ///
-    /// So, before any engagement rule is written: one row per engagement.
-    ///
-    /// HOW AN ENGAGEMENT IS DETECTED, without a death event to hook. Every unit
-    /// roster is sampled on a short cadence; a unit that was there and is now
-    /// gone is a loss, recorded at its last known position. Losses cluster in
-    /// space and time — one within ENGAGEMENT_RADIUS_M and ENGAGEMENT_WINDOW_S of
-    /// a live engagement joins it, otherwise it opens a new one — and an
-    /// engagement closes when it stops taking losses. That is fuzzy at the edges
-    /// (a unit despawning for any other reason reads as a loss) and it needs no
-    /// hooks, no patches, and nothing that can break when the game updates.
-    ///
-    /// Value is the unit's resource cost, so the exchange ratio is in the same
-    /// currency as everything else the planner reasons about.
-    ///
-    /// SHADOW BY NATURE: this observes and writes. It changes no behaviour, so it
-    /// can ship while an eco experiment is running and be trusted not to affect
-    /// it.
+    /// V2 (2026-09-05) carries the denominator LEARNING.md section 4 said was
+    /// blocking everything: `engaged` — a census of what stood within
+    /// CENSUS_RADIUS_M of the first loss, per team, with cash, composition and
+    /// how many were piloted — plus whether static defence was in range, which
+    /// objective kind owned the ground, and the kernel's p(win) for the alien
+    /// side at the moment the fight opened. Those are the confounders that
+    /// cannot be reconstructed afterwards.
     /// </summary>
     internal static class CombatLog
     {
         const float SAMPLE_INTERVAL_S    = 2f;
         const float ENGAGEMENT_RADIUS_M  = 250f;
         const float ENGAGEMENT_WINDOW_S  = 25f;
-
-        /// <summary>Below this an "engagement" is a stray unit dying somewhere,
-        /// not a fight worth a row.</summary>
+        const float CENSUS_RADIUS_M      = 400f;
         const int   MIN_LOSSES_TO_RECORD = 2;
 
-        class Roster { public readonly Dictionary<int, (string name, Vector3 pos)> Units = new Dictionary<int, (string, Vector3)>(); }
+        class Roster { public readonly Dictionary<int, (string name, Vector3 pos, bool piloted)> Units = new Dictionary<int, (string, Vector3, bool)>(); }
+
+        class Side
+        {
+            public int Units, Piloted, Cash;
+            public readonly Dictionary<string, int> Comp = new Dictionary<string, int>();
+            public float Eff;
+        }
 
         class Engagement
         {
@@ -56,6 +50,10 @@ namespace Si_RTS_AI.Perception
             public readonly Dictionary<string, int> ValueByTeam  = new Dictionary<string, int>();
             public readonly Dictionary<string, Dictionary<string,int>> Comp =
                 new Dictionary<string, Dictionary<string,int>>();
+            public readonly Dictionary<string, Side> Engaged = new Dictionary<string, Side>();
+            public bool  StaticDefence;
+            public float PWinAlien = -1f;
+            public string Objective = "none";
         }
 
         static readonly Dictionary<Team, Roster> _rosters = new Dictionary<Team, Roster>();
@@ -99,7 +97,7 @@ namespace Si_RTS_AI.Perception
                 _rosters[team] = prev;
             }
 
-            var seen = new Dictionary<int, (string, Vector3)>();
+            var seen = new Dictionary<int, (string, Vector3, bool)>();
             var units = team.Units;
             if (units != null)
             {
@@ -108,11 +106,12 @@ namespace Si_RTS_AI.Perception
                     var u = units[i];
                     if (u == null || u.ObjectInfo == null || u.IsDestroyed) continue;
                     int id = u.GetInstanceID();
-                    seen[id] = (u.ObjectInfo.DisplayName ?? "?", u.transform.position);
+                    bool piloted = false;
+                    try { piloted = u.ControlledBy != null; } catch { }
+                    seen[id] = (u.ObjectInfo.DisplayName ?? "?", u.transform.position, piloted);
                 }
             }
 
-            // Present last time, absent now: a loss, at its last known position.
             string teamName = team.name ?? "?";
             foreach (var kvp in prev.Units)
             {
@@ -138,6 +137,7 @@ namespace Si_RTS_AI.Perception
             {
                 e = new Engagement { Centre = pos, OpenedAt = now };
                 _open.Add(e);
+                try { Census(e); } catch (Exception ex) { MelonLogger.Warning("[COMBAT] census threw: " + ex.Message); }
             }
 
             e.LastLossAt = now;
@@ -149,6 +149,67 @@ namespace Si_RTS_AI.Perception
             { comp = new Dictionary<string, int>(); e.Comp[teamName] = comp; }
             comp.TryGetValue(unitName, out int c);
             comp[unitName] = c + 1;
+        }
+
+        /// <summary>Who stood within the census radius when the fight opened.
+        /// Read from the rosters — at most one sample old — so no extra
+        /// interop; workers are excluded because they are economy, not force.</summary>
+        static void Census(Engagement e)
+        {
+            float r2 = CENSUS_RADIUS_M * CENSUS_RADIUS_M;
+            var forces = new Dictionary<string, Mil.Kernel.Force>();
+            foreach (var kv in _rosters)
+            {
+                var team = kv.Key;
+                string tn = team?.name ?? "?";
+                foreach (var u in kv.Value.Units.Values)
+                {
+                    float dx = u.pos.x - e.Centre.x, dz = u.pos.z - e.Centre.z;
+                    if (dx * dx + dz * dz > r2) continue;
+                    if (u.name == "Shrimp" || u.name == "Harvester" || u.name == "Queen") continue;
+                    if (!e.Engaged.TryGetValue(tn, out var side)) { side = new Side(); e.Engaged[tn] = side; }
+                    side.Units++;
+                    if (u.piloted) side.Piloted++;
+                    side.Cash += CostOf(u.name);
+                    side.Comp.TryGetValue(u.name, out int c); side.Comp[u.name] = c + 1;
+                    if (!forces.TryGetValue(tn, out var f)) { f = new Mil.Kernel.Force(); forces[tn] = f; }
+                    f.Add(u.name);
+                }
+            }
+            foreach (var kv in forces) e.Engaged[kv.Key].Eff = kv.Value.Effective();
+
+            // Static defence in range, any team.
+            try
+            {
+                var teams = Team.Teams;
+                if (teams != null)
+                    for (int t = 0; t < teams.Count && !e.StaticDefence; t++)
+                    {
+                        var structs = teams[t]?.Structures;
+                        if (structs == null) continue;
+                        for (int i = 0; i < structs.Count; i++)
+                        {
+                            var s = structs[i];
+                            if (s?.ObjectInfo == null || s.IsDestroyed) continue;
+                            bool def = false;
+                            try { def = (s.ObjectInfo.StructureType & StructureType.Defense) != 0; } catch { }
+                            if (!def) continue;
+                            float dx = s.transform.position.x - e.Centre.x, dz = s.transform.position.z - e.Centre.z;
+                            if (dx * dx + dz * dz <= r2) { e.StaticDefence = true; break; }
+                        }
+                    }
+            }
+            catch { }
+
+            // The kernel's call for the alien side against the largest other side.
+            float alien = 0f, other = 0f;
+            foreach (var kv in e.Engaged)
+            {
+                if (kv.Key.Contains("Alien")) alien = kv.Value.Eff;
+                else other = Mathf.Max(other, kv.Value.Eff);
+            }
+            if (alien > 0f && other > 0f) e.PWinAlien = Mil.Kernel.PWin(alien, other);
+            try { e.Objective = Mil.Objectives.KindAt(e.Centre, ENGAGEMENT_RADIUS_M * 2f); } catch { }
         }
 
         static void CloseStale(float now)
@@ -170,7 +231,7 @@ namespace Si_RTS_AI.Perception
         {
             try
             {
-                var sb = new StringBuilder(384);
+                var sb = new StringBuilder(512);
                 sb.Append('{');
                 sb.Append("\"ts\":\"").Append(DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss")).Append("\",");
                 sb.Append("\"map\":\"").Append(Esc(MapLayers.LayerReplay.CurrentMap)).Append("\",");
@@ -186,32 +247,30 @@ namespace Si_RTS_AI.Perception
                     e.ValueByTeam.TryGetValue(kv.Key, out int val);
                     sb.Append('"').Append(Esc(kv.Key)).Append("\":{\"units\":").Append(kv.Value)
                       .Append(",\"value\":").Append(val).Append(",\"comp\":{");
-                    bool f2 = true;
-                    if (e.Comp.TryGetValue(kv.Key, out var comp))
-                        foreach (var c in comp)
-                        {
-                            if (!f2) sb.Append(','); f2 = false;
-                            sb.Append('"').Append(Esc(c.Key)).Append("\":").Append(c.Value);
-                        }
+                    AppendComp(sb, e.Comp.TryGetValue(kv.Key, out var comp) ? comp : null);
                     sb.Append("}}");
                 }
                 sb.Append('}');
 
-                // THE JOIN KEY. Which mission owned the ground this happened on
-                // — the only way to read exchange ratios per mission kind, and
-                // therefore the only way to find out whether holding really does
-                // trade better than fighting.
-                string kind = "none";
-                try { kind = Planning.MissionPlanner.KindAt(e.Centre, ENGAGEMENT_RADIUS_M * 2f); } catch { }
-                sb.Append(",\"missionType\":\"").Append(Esc(kind)).Append('"');
+                sb.Append(",\"engaged\":{");
+                first = true;
+                foreach (var kv in e.Engaged)
+                {
+                    if (!first) sb.Append(','); first = false;
+                    var s = kv.Value;
+                    sb.Append('"').Append(Esc(kv.Key)).Append("\":{\"units\":").Append(s.Units)
+                      .Append(",\"value\":").Append(s.Cash).Append(",\"eff\":").Append(F(s.Eff))
+                      .Append(",\"piloted\":").Append(s.Piloted).Append(",\"comp\":{");
+                    AppendComp(sb, s.Comp);
+                    sb.Append("}}");
+                }
+                sb.Append('}');
 
-                // ONE-SIDED ROWS ARE NOT EXCHANGES. 661 of 661 rows written by
-                // 2026-08-07 had losses on exactly one team: soak rounds purge
-                // the human starter units, and roster diffing cannot tell a purge
-                // or a despawn from a death. Marking it is the difference between
-                // a file with no exchange ratios in it and a file that looks like
-                // it has 661 of them.
+                sb.Append(",\"staticDefence\":").Append(e.StaticDefence ? "true" : "false");
+                if (e.PWinAlien >= 0f) sb.Append(",\"pWinAlien\":").Append(e.PWinAlien.ToString("F3", CultureInfo.InvariantCulture));
+                sb.Append(",\"missionType\":\"").Append(Esc(e.Objective)).Append('"');
                 sb.Append(",\"sides\":").Append(e.LostByTeam.Count);
+                sb.Append(",\"v\":2");
                 sb.Append('}');
 
                 string dir = Path.Combine("UserData", "RTSA");
@@ -228,14 +287,29 @@ namespace Si_RTS_AI.Perception
                     line.Append(' ').Append(kv.Key).Append(" lost ").Append(kv.Value)
                         .Append(" (").Append(val).Append(" value)");
                 }
-                MelonLogger.Msg(line.ToString());
+                line.Append(" | engaged:");
+                foreach (var kv in e.Engaged)
+                    line.Append(' ').Append(Mil.Intel.Short(kv.Key)).Append(' ').Append(kv.Value.Units).Append("u/")
+                        .Append(kv.Value.Eff.ToString("F0")).Append("eff").Append(kv.Value.Piloted > 0 ? $"({kv.Value.Piloted} piloted)" : "");
+                if (e.PWinAlien >= 0f) line.Append(" pWinAlien ").Append(e.PWinAlien.ToString("F2"));
+                if (e.StaticDefence) line.Append(" +static");
+                line.Append(" [").Append(e.Objective).Append(']');
+                Mil.MilLog.Msg(line.ToString());
             }
             catch (Exception ex) { MelonLogger.Warning("[COMBAT] write threw: " + ex.Message); }
         }
 
-        /// <summary>Unit value in cash, so exchange ratios are in the same
-        /// currency the planner already reasons about. Shared with the battalion
-        /// manager, which measures strength the same way.</summary>
+        static void AppendComp(StringBuilder sb, Dictionary<string, int> comp)
+        {
+            if (comp == null) return;
+            bool f2 = true;
+            foreach (var c in comp)
+            {
+                if (!f2) sb.Append(','); f2 = false;
+                sb.Append('"').Append(Esc(c.Key)).Append("\":").Append(c.Value);
+            }
+        }
+
         static int CostOf(string unitName) => UnitValues.CostOf(unitName);
 
         static string F(float v) => v.ToString("F0", CultureInfo.InvariantCulture);
