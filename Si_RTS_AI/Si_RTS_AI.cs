@@ -8,7 +8,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 
-[assembly: MelonInfo(typeof(Si_RTS_AI.Si_RTS_AI), "Si_RTS_AI", "0.92.13", "DrMuck")]
+[assembly: MelonInfo(typeof(Si_RTS_AI.Si_RTS_AI), "Si_RTS_AI", "0.92.14", "DrMuck")]
 [assembly: MelonGame("Bohemia Interactive", "Silica")]
 
 namespace Si_RTS_AI
@@ -118,7 +118,7 @@ namespace Si_RTS_AI
             Planning.BlueprintConfig.Init();
             // Probes into the game's frame for the fps investigation; reads
             // rtsai.json, so the config is loaded first.
-            try { Planning.RtsaiConfig.Reload(); Perception.PerfProbes.Init(HarmonyInstance); }
+            try { Planning.RtsaiConfig.Reload(); Perception.PerfProbes.Init(HarmonyInstance); Perception.ServerPatches.Init(HarmonyInstance); }
             catch (Exception ex) { MelonLogger.Warning("[RTSA/PROBE] init failed: " + ex.Message); }
         }
 
@@ -207,6 +207,7 @@ namespace Si_RTS_AI
                           $"({100.0 * _budgetOursMs / _budgetWallMs:F1}%), worst frame {_budgetWorstMs:F0} ms, " +
                           $"fps {fps:F0}, frame {_budgetWallMs / _budgetFrames:F1} ms | " +
                           Perception.PerfProbes.TakeMinute() +
+                          $" | anchor-checks ran {Perception.ServerPatches.Evaluated} skipped {Perception.ServerPatches.Skipped}" +
                           $" | fixedDt {UnityEngine.Time.fixedDeltaTime * 1000f:F0} ms, gc0 +{gc0 - _budgetGc0} gc2 +{gc2 - _budgetGc2}, " +
                           $"heap {heapMb} MB | units {units} structures {structures} sites {sites}";
             _budgetGc0 = gc0; _budgetGc2 = gc2;
@@ -611,6 +612,7 @@ namespace Si_RTS_AI
             Mil.Intel.ResetForNewRound();
             Mil.Fields.ResetForNewRound();
             Perception.Ground.ResetForNewRound();
+            Perception.ServerPatches.ResetForNewRound();
             Mil.Objectives.ResetForNewRound();
             Mil.Forces.ResetForNewRound();
             Mil.ProductionV3.ResetForNewRound();

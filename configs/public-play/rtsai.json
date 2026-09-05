@@ -246,5 +246,6 @@
       "nestByMin": 8
     }
   },
-  "serverFpsCap": 144
+  "serverFpsCap": 144,
+  "siteAnchorCheckS": 0.5
 }
