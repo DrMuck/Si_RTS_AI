@@ -71,7 +71,7 @@ namespace Si_RTS_AI.Mil
         const float TICK_S            = 2f;
         const float ARRIVED_M         = 90f;
         const float ORDER_MOVED_M     = 90f;
-        const float ORDER_BACKSTOP_S  = 30f;
+        const float ORDER_BACKSTOP_S  = 60f;
         const float ENGAGE_RADIUS_M   = 600f;
         const float KERNEL_CHECK_S    = 4f;
         const float RESERVE_REPOSITION_S = 40f;
@@ -798,18 +798,27 @@ namespace Si_RTS_AI.Mil
             return dx * dx + dz * dz > ORDER_MOVED_M * ORDER_MOVED_M;
         }
 
+        /// <summary>Standing still well short of where it was sent, most of the
+        /// force. Units that have ARRIVED are not stalled and are not told
+        /// again — that was a fresh order to every unit standing on its
+        /// objective every thirty seconds.</summary>
         static bool Stalled(Force force, float now)
         {
             if (now - force.LastOrderAt < ORDER_BACKSTOP_S) return false;
-            int idle = 0;
+            int idle = 0, away = 0;
+            Vector3 dest = force.LastOrderDest;
             for (int i = 0; i < force.Units.Count; i++)
             {
                 var u = force.Units[i];
+                Vector3 p; try { p = u.transform.position; } catch { continue; }
+                float dx = p.x - dest.x, dz = p.z - dest.z;
+                if (dx * dx + dz * dz <= ARRIVED_M * ARRIVED_M * 4f) continue;
+                away++;
                 bool moving = true;
                 try { moving = u.IsMoving; } catch { }
                 if (!moving && !IsFighting(u)) idle++;
             }
-            return idle > force.Units.Count / 2;
+            return away > 0 && idle > away / 2;
         }
 
         static void Gather(Force force)
@@ -940,29 +949,13 @@ namespace Si_RTS_AI.Mil
             }
         }
 
-        [HarmonyPatch(typeof(AIGroup), nameof(AIGroup.OnAttackOrder))]
-        static class Patch_AIGroup_OnAttackOrder_Gate
-        {
-            static readonly List<Unit> _mine = new List<Unit>(16);
-            static void Prefix(AIGroup __instance)
-            {
-                try
-                {
-                    if (__instance == null || !MilConfig.Enabled || !MilConfig.Execute) return;
-                    if (!MilitaryConfig.BlockVanillaAttackOrders) return;
-                    var units = __instance.Units;
-                    if (units == null || units.Count == 0) return;
-                    _mine.Clear();
-                    for (int i = 0; i < units.Count; i++) if (units[i] != null && Owns(units[i])) _mine.Add(units[i]);
-                    for (int i = 0; i < _mine.Count; i++)
-                    {
-                        try { if (__instance.RemoveUnit(_mine[i])) StrippedFromVanillaAttack++; } catch { }
-                    }
-                    _mine.Clear();
-                }
-                catch { }
-            }
-        }
+        // THE AIGROUP STRIP IS GONE. It removed our units from the game's AI
+        // groups inside OnAttackOrder, and the group's network data then carried
+        // references to units it no longer held: 43,000 "AIGroup::ReadData:
+        // Failed to read unit" / "UnitGroup wrong data type" errors in one
+        // round's Game.log, each with a stack trace, on the server. The order
+        // gate above already refuses the group's per-unit orders for anything
+        // we hold, which is all the strip ever achieved.
 
         // ---- reporting -------------------------------------------------------------
 

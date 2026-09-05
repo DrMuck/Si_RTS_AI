@@ -245,5 +245,6 @@
       "heavyThreat": 2000,
       "nestByMin": 8
     }
-  }
+  },
+  "serverFpsCap": 144
 }

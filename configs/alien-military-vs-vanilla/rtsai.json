@@ -261,5 +261,6 @@
       "nestByMin": 8
     }
   },
-  "endRoundAfterMinutes": 60
+  "endRoundAfterMinutes": 60,
+  "serverFpsCap": 144
 }

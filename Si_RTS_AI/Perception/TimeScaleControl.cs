@@ -40,6 +40,17 @@ namespace Si_RTS_AI.Perception
 
         internal static void Tick()
         {
+            // A DEDICATED SERVER WITH NO CAP SPINS FRAMES. The August rounds ran at
+            // a 144 cap; after the 0.9.46 refresh the same box reads 3,000 fps at
+            // round start and 90 by minute twenty-five. `serverFpsCap` in
+            // rtsai.json (0 = leave the game's own setting) pins
+            // Application.targetFrameRate so the CPU goes to the simulation.
+            int cap = Planning.RtsaiConfig.Int("serverFpsCap", 0);
+            if (cap > 0 && Application.targetFrameRate != cap)
+            {
+                Application.targetFrameRate = cap;
+                MelonLogger.Msg($"[RTSA/TIME] serverFpsCap={cap} applied (Application.targetFrameRate)");
+            }
             float want = Mathf.Clamp(Planning.RtsaiConfig.Float("timeScale", 1f), 0.1f, 8f);
 
             if (_fixedDeltaAt1 < 0f) _fixedDeltaAt1 = Time.fixedDeltaTime;
