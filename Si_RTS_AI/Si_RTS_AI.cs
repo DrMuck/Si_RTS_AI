@@ -8,7 +8,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 
-[assembly: MelonInfo(typeof(Si_RTS_AI.Si_RTS_AI), "Si_RTS_AI", "0.92.10", "DrMuck")]
+[assembly: MelonInfo(typeof(Si_RTS_AI.Si_RTS_AI), "Si_RTS_AI", "0.92.11", "DrMuck")]
 [assembly: MelonGame("Bohemia Interactive", "Silica")]
 
 namespace Si_RTS_AI
@@ -171,6 +171,33 @@ namespace Si_RTS_AI
             Perception.CombatLog.Tick();
             tPeriodic = (System.Diagnostics.Stopwatch.GetTimestamp() - ts) * 1000L / System.Diagnostics.Stopwatch.Frequency;
             RecentModWork.AddPeriodic(tPeriodic);
+            BudgetFrame(dt, ts);
+        }
+
+        // OUR SHARE OF THE FRAME, ONCE A MINUTE, EVERY MINUTE.
+        //
+        // DrMuck, 2026-09-05: "the serverfps drops, the longer the game takes."
+        // The slow-tick line only speaks when one tick passes 50 ms, so a mod
+        // that costs 30 ms every second is silent in the log while the game
+        // itself sinks. This line is unconditional: how many milliseconds of
+        // main-thread time the whole mod took in the last minute, against how
+        // many milliseconds of wall clock went by, next to the frame rate. If
+        // ours is a few percent while fps halves, the drop is the game's.
+        static double _budgetOursMs, _budgetWallMs, _budgetWorstMs;
+        static int _budgetFrames;
+        static void BudgetFrame(float dt, long startTs)
+        {
+            double ours = (System.Diagnostics.Stopwatch.GetTimestamp() - startTs) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+            _budgetOursMs += ours; _budgetWallMs += dt * 1000.0; _budgetFrames++;
+            if (ours > _budgetWorstMs) _budgetWorstMs = ours;
+            if (_budgetWallMs < 60000.0) return;
+            float fps = _budgetFrames / (float)(_budgetWallMs / 1000.0);
+            string line = $"[RTSA/PERF] budget: ours {_budgetOursMs:F0} ms of {_budgetWallMs:F0} ms wall " +
+                          $"({100.0 * _budgetOursMs / _budgetWallMs:F1}%), worst frame {_budgetWorstMs:F0} ms, " +
+                          $"fps {fps:F0}, frame {_budgetWallMs / _budgetFrames:F1} ms";
+            MelonLogger.Msg(line);
+            try { AppendToRound(line); } catch { }
+            _budgetOursMs = 0; _budgetWallMs = 0; _budgetWorstMs = 0; _budgetFrames = 0;
         }
 
         // Frame time above this counts as a lag spike.
