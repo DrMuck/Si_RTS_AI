@@ -32,7 +32,7 @@ main strong{font-weight:600}
 .meta{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--ink2);margin-bottom:28px}
 </style>
 <div class="wrap">
-<nav class="toc"><div class="eyebrow">Si_RTS_AI · military v3</div><ul><li><a href="#0-why-the-current-layer-fails-in-one-paragraph-each">0. Why the current layer fails, in one paragraph each</a></li><li><a href="#1-what-0-9-46-gives-us-that-august-did-not">1. What 0.9.46 gives us that August did not</a></li><li><a href="#2-principles-carried-forward-stated-once">2. Principles carried forward, stated once</a></li><li><a href="#3-architecture">3. Architecture</a></li><li><a href="#4-modules">4. Modules</a></li><li><a href="#5-the-rules-numbered-so-they-can-be-counted">5. The rules, numbered, so they can be counted</a></li><li><a href="#6-build-order-and-round-protocol">6. Build order and round protocol</a></li><li><a href="#7-what-is-deliberately-not-in-v3-0">7. What is deliberately not in v3.0</a></li><li><a href="#8-cpu-and-gpu-later">8. CPU and GPU, later</a></li><li><a href="#9-risks-named">9. Risks, named</a></li><li><a href="#10-round-log">10. Round log</a></li></ul></nav>
+<nav class="toc"><div class="eyebrow">Si_RTS_AI · military v3</div><ul><li><a href="#0-why-the-current-layer-fails-in-one-paragraph-each">0. Why the current layer fails, in one paragraph each</a></li><li><a href="#1-what-0-9-46-gives-us-that-august-did-not">1. What 0.9.46 gives us that August did not</a></li><li><a href="#2-principles-carried-forward-stated-once">2. Principles carried forward, stated once</a></li><li><a href="#3-architecture">3. Architecture</a></li><li><a href="#4-modules">4. Modules</a></li><li><a href="#5-the-rules-numbered-so-they-can-be-counted">5. The rules, numbered, so they can be counted</a></li><li><a href="#6-build-order-and-round-protocol">6. Build order and round protocol</a></li><li><a href="#7-what-is-deliberately-not-in-v3-0">7. What is deliberately not in v3.0</a></li><li><a href="#8-cpu-and-gpu-later">8. CPU and GPU, later</a></li><li><a href="#9-risks-named">9. Risks, named</a></li><li><a href="#10-round-log">10. Round log</a></li><li><a href="#11-overnight-2026-09-06-performance-and-order-churn-rounds-1-8-narakacity-uncapped">11. Overnight 2026-09-06 — performance and order churn (rounds 1–8, NarakaCity, uncapped)</a></li></ul></nav>
 <main>
 <div class="meta">MIL_V3_PLAN.md · branch beta · Silica 0.9.46 · 2026-09-05</div>
 <h1>Military v3 — the rebuild plan</h1>
@@ -966,4 +966,136 @@ Sol Headquarters fell at minute 37, one round after the Centauri HQ. Cash
 piled to 80k from minute 25 for an eco reason this time, the stalled
 expansion, not a military one. Two HQs in two rounds is the capability; both
 in one round is timing, and the timing lever is pathing and a forward Nest.</p>
+<h2 id="11-overnight-2026-09-06-performance-and-order-churn-rounds-1-8-narakacity-uncapped">11. Overnight 2026-09-06 — performance and order churn (rounds 1–8, NarakaCity, uncapped)</h2>
+<p>Eight unattended 60-minute rounds, fresh server process each, <code>tools/overnight.sh</code> with
+<code>tools/overnight-plan-2026-09-06.txt</code>; read with <code>python tools/overnight_report.py</code>.</p>
+<table>
+<thead>
+<tr>
+<th>round</th>
+<th>mode</th>
+<th>variant</th>
+<th>mod</th>
+<th>frame @ ~600 units</th>
+<th>frame @ ~800 units</th>
+<th>phase changes</th>
+<th>flips</th>
+<th>our orders</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>3-way</td>
+<td>clean</td>
+<td>0.92.19</td>
+<td>13 ms</td>
+<td>49 ms @848</td>
+<td>717</td>
+<td>414</td>
+<td>6,634</td>
+</tr>
+<tr>
+<td>2</td>
+<td>2-way</td>
+<td>clean</td>
+<td>0.92.19</td>
+<td>8 ms</td>
+<td>27 ms @821</td>
+<td>1,108</td>
+<td>398</td>
+<td>6,504</td>
+</tr>
+<tr>
+<td>3</td>
+<td>3-way</td>
+<td>46 probes</td>
+<td>0.92.20</td>
+<td>12 ms</td>
+<td>52 ms @826</td>
+<td>461</td>
+<td>45</td>
+<td>5,096</td>
+</tr>
+<tr>
+<td>4</td>
+<td>2-way</td>
+<td>46 probes</td>
+<td>0.92.21</td>
+<td>11 ms</td>
+<td>17 ms @640 (plateau)</td>
+<td>571</td>
+<td>70</td>
+<td>6,361</td>
+</tr>
+<tr>
+<td>5</td>
+<td>3-way</td>
+<td>no server optimizer</td>
+<td>0.92.21</td>
+<td>22 ms</td>
+<td>35 ms @745</td>
+<td>665</td>
+<td>81</td>
+<td>9,846</td>
+</tr>
+<tr>
+<td>6</td>
+<td>3-way</td>
+<td>no King of the Hill</td>
+<td>0.92.22</td>
+<td>12 ms</td>
+<td>41 ms @783</td>
+<td>317</td>
+<td>39</td>
+<td>6,566</td>
+</tr>
+<tr>
+<td>7</td>
+<td>3-way</td>
+<td>clean</td>
+<td>0.92.22</td>
+<td>12 ms</td>
+<td>54 ms @811</td>
+<td>451</td>
+<td>75</td>
+<td>6,690</td>
+</tr>
+<tr>
+<td>8</td>
+<td>2-way</td>
+<td>clean</td>
+<td>0.92.23</td>
+<td>28 ms</td>
+<td>36 ms @825</td>
+<td>338</td>
+<td>57</td>
+<td>6,116</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Frame time.</strong> Uncapped, the frame is 1 ms at 100 units, 4 ms at 400, 12 ms at 600, 25 ms at
+750 and 50 ms at 850. A 60-minute 3-way round reaches 850–930 units. The mod's own share is
+1–2.5% of the wall clock throughout. The game's ordered update list (every unit and structure,
+every frame) is 35–54% of the wall at 600–880 units, its fixed-update list 7–9%; the
+construction-site anchor walk that dominated before v0.92.14 is throttled and gone from the
+top. Without <code>Si_ServerOptimizer</code> the server is capped at 144 by the game's own settings early
+and 40–60% slower late (round 5) — keep it. <code>Si_KingOfTheHill</code> makes no difference (round 6).
+Gap: the per-method profiler mod was left disabled, so rounds 3 and 4 carry only our own
+timers; the next probe round must load it.</p>
+<p><strong>Phase and order churn</strong> (DrMuck: "Goliaths rotate a lot"). Five rules, in order of effect:
+a phase change no longer re-issues orders (0.92.17); a force at its objective stays engaged
+and a defence force at its site holds ground with one attack-move (0.92.20); contact en route
+must last 6 s (0.92.19); every move is one plain order per unit, no cohesion group, one fixed
+gather point per force (0.92.21); a site forecast must hold 20 s before a defence objective is
+raised, and offence is pre-empted only when that buys the defence (0.92.22). Engaged/advancing
+flips fell from ~400 to 40–75 per round. Our issued orders settle at ~6,000–6,700 per 3-way
+hour: a third from raising forces, a sixth from reserve strays, the rest advances and
+15-second re-targets — 0.3–0.5 orders per military unit per minute. Three quarters of the
+alien military order events on the server are the game's own unit agents.</p>
+<p><strong>Also on this night.</strong> The public round of 2026-09-05 exposed two server-side bugs unrelated
+to this layer, both fixed: a seated player's compartment animator throwing every frame and
+ending the game's late-update list (guarded in 0.92.15), and the admin mod's one-argument
+reflection call to <code>RPC_SynchCommander</code>, which 0.9.46 gave a second parameter (fixed in the
+upstream beta worktree, deployed).</p>
 </main></div>

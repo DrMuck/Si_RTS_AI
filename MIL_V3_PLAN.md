@@ -639,3 +639,46 @@ Sol Headquarters fell at minute 37, one round after the Centauri HQ. Cash
 piled to 80k from minute 25 for an eco reason this time, the stalled
 expansion, not a military one. Two HQs in two rounds is the capability; both
 in one round is timing, and the timing lever is pathing and a forward Nest.
+
+## 11. Overnight 2026-09-06 — performance and order churn (rounds 1–8, NarakaCity, uncapped)
+
+Eight unattended 60-minute rounds, fresh server process each, `tools/overnight.sh` with
+`tools/overnight-plan-2026-09-06.txt`; read with `python tools/overnight_report.py`.
+
+| round | mode | variant | mod | frame @ ~600 units | frame @ ~800 units | phase changes | flips | our orders |
+|---|---|---|---|---|---|---|---|---|
+| 1 | 3-way | clean | 0.92.19 | 13 ms | 49 ms @848 | 717 | 414 | 6,634 |
+| 2 | 2-way | clean | 0.92.19 | 8 ms | 27 ms @821 | 1,108 | 398 | 6,504 |
+| 3 | 3-way | 46 probes | 0.92.20 | 12 ms | 52 ms @826 | 461 | 45 | 5,096 |
+| 4 | 2-way | 46 probes | 0.92.21 | 11 ms | 17 ms @640 (plateau) | 571 | 70 | 6,361 |
+| 5 | 3-way | no server optimizer | 0.92.21 | 22 ms | 35 ms @745 | 665 | 81 | 9,846 |
+| 6 | 3-way | no King of the Hill | 0.92.22 | 12 ms | 41 ms @783 | 317 | 39 | 6,566 |
+| 7 | 3-way | clean | 0.92.22 | 12 ms | 54 ms @811 | 451 | 75 | 6,690 |
+| 8 | 2-way | clean | 0.92.23 | 28 ms | 36 ms @825 | 338 | 57 | 6,116 |
+
+**Frame time.** Uncapped, the frame is 1 ms at 100 units, 4 ms at 400, 12 ms at 600, 25 ms at
+750 and 50 ms at 850. A 60-minute 3-way round reaches 850–930 units. The mod's own share is
+1–2.5% of the wall clock throughout. The game's ordered update list (every unit and structure,
+every frame) is 35–54% of the wall at 600–880 units, its fixed-update list 7–9%; the
+construction-site anchor walk that dominated before v0.92.14 is throttled and gone from the
+top. Without `Si_ServerOptimizer` the server is capped at 144 by the game's own settings early
+and 40–60% slower late (round 5) — keep it. `Si_KingOfTheHill` makes no difference (round 6).
+Gap: the per-method profiler mod was left disabled, so rounds 3 and 4 carry only our own
+timers; the next probe round must load it.
+
+**Phase and order churn** (DrMuck: "Goliaths rotate a lot"). Five rules, in order of effect:
+a phase change no longer re-issues orders (0.92.17); a force at its objective stays engaged
+and a defence force at its site holds ground with one attack-move (0.92.20); contact en route
+must last 6 s (0.92.19); every move is one plain order per unit, no cohesion group, one fixed
+gather point per force (0.92.21); a site forecast must hold 20 s before a defence objective is
+raised, and offence is pre-empted only when that buys the defence (0.92.22). Engaged/advancing
+flips fell from ~400 to 40–75 per round. Our issued orders settle at ~6,000–6,700 per 3-way
+hour: a third from raising forces, a sixth from reserve strays, the rest advances and
+15-second re-targets — 0.3–0.5 orders per military unit per minute. Three quarters of the
+alien military order events on the server are the game's own unit agents.
+
+**Also on this night.** The public round of 2026-09-05 exposed two server-side bugs unrelated
+to this layer, both fixed: a seated player's compartment animator throwing every frame and
+ending the game's late-update list (guarded in 0.92.15), and the admin mod's one-argument
+reflection call to `RPC_SynchCommander`, which 0.9.46 gave a second parameter (fixed in the
+upstream beta worktree, deployed).
