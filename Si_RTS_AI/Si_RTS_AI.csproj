@@ -7,6 +7,7 @@
     <LangVersion>9.0</LangVersion>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <DefineConstants>$(DefineConstants);GAME_MAIN</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
