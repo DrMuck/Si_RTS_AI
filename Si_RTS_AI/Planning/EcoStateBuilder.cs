@@ -49,6 +49,21 @@ namespace Si_RTS_AI.Planning
                     var p = cs.transform.position;
                     MelonLogger.Msg($"[PLAN/Build] {name} site at ({p.x:F0},{p.z:F0}) has not started in " +
                                     $"{now - first:F0}s — not counted as in flight any more");
+                    // DEAD GROUND IS AN OBSTRUCTION. A site the game accepted but
+                    // never starts is one whose anchor is in reach on the map and
+                    // not on the ground (Whispering Plains 2026-09-06: repair nodes
+                    // placed six times within 100 m of the orphan at (2100,-925),
+                    // none ever started, the branch stayed cut all round). Marking
+                    // the spot makes the next hop detour instead of landing on the
+                    // same dead ground, and the site itself is removed: it costs a
+                    // frame check forever, blocks the spot, and reconnects nothing.
+                    try { EcoPlanner.NoteObstruction(p); } catch { }
+                    try
+                    {
+                        var dm = cs.DamageManager;
+                        if (dm != null) { dm.SetHealth(0f); MelonLogger.Msg($"[PLAN/Build] {name} site at ({p.x:F0},{p.z:F0}) removed (never started)"); }
+                    }
+                    catch (System.Exception ex) { MelonLogger.Warning("[PLAN/Build] could not remove the dead site: " + ex.Message); }
                 }
                 return true;
             }

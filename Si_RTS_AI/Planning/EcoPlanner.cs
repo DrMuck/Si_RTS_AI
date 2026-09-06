@@ -883,7 +883,7 @@ namespace Si_RTS_AI.Planning
             return false;
         }
 
-        static void NoteObstruction(Vector3 p)
+        internal static void NoteObstruction(Vector3 p)
         {
             for (int i = 0; i < _obstructions.Count; i++)
             {
