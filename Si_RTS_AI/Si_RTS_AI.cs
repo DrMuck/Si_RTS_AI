@@ -721,12 +721,21 @@ namespace Si_RTS_AI
             if (_eventsHooked) return;
             try
             {
+#if GAME_MAIN
+                GameEvents.OnUnitReceivedAttackOrder -= OnUnitReceivedAttackOrderMain;
+                GameEvents.OnUnitReceivedAttackOrder += OnUnitReceivedAttackOrderMain;
+                GameEvents.OnUnitReceivedMoveOrder   -= OnUnitReceivedMoveOrderMain;
+                GameEvents.OnUnitReceivedMoveOrder   += OnUnitReceivedMoveOrderMain;
+                GameEvents.OnUnitReceivedStopOrder   -= OnUnitReceivedStopOrderMain;
+                GameEvents.OnUnitReceivedStopOrder   += OnUnitReceivedStopOrderMain;
+#else
                 GameEvents.OnObjectReceivedAttackOrder -= OnUnitReceivedAttackOrder;
                 GameEvents.OnObjectReceivedAttackOrder += OnUnitReceivedAttackOrder;
                 GameEvents.OnObjectReceivedMoveOrder   -= OnUnitReceivedMoveOrder;
                 GameEvents.OnObjectReceivedMoveOrder   += OnUnitReceivedMoveOrder;
                 GameEvents.OnObjectReceivedStopOrder   -= OnUnitReceivedStopOrder;
                 GameEvents.OnObjectReceivedStopOrder   += OnUnitReceivedStopOrder;
+#endif
 
                 GameEvents.OnPlayerSelectUnit        -= OnPlayerSelectUnit;
                 GameEvents.OnPlayerSelectUnit        += OnPlayerSelectUnit;
@@ -783,6 +792,11 @@ namespace Si_RTS_AI
             return "commander=ai";
         }
 
+#if GAME_MAIN
+        static void OnUnitReceivedAttackOrderMain(Unit u, Target target) => OnUnitReceivedAttackOrder(u, target);
+        static void OnUnitReceivedMoveOrderMain(Unit u, Vector3 destination) => OnUnitReceivedMoveOrder(u, destination);
+        static void OnUnitReceivedStopOrderMain(Unit u) => OnUnitReceivedStopOrder(u);
+#endif
         static void OnUnitReceivedAttackOrder(BaseGameObject obj, Target target)
         {
             var unit = obj as Unit;

@@ -110,6 +110,23 @@ namespace Si_RTS_AI.Faction
 
         // ---- the doors -------------------------------------------------
 
+#if GAME_MAIN
+        [HarmonyPatch(typeof(Unit), nameof(Unit.OnMoveOrder))]
+        static class Patch_Unit_OnMoveOrder_Coop
+        {
+            static bool Prefix(Unit __instance)
+            {
+                try
+                {
+                    if (__instance == null) return true;
+                    if (!ShouldBlock(__instance.Team)) return true;
+                    _blockedMove++;
+                    return false;
+                }
+                catch { return true; }
+            }
+        }
+#else
         [HarmonyPatch(typeof(AIOrderProcessor), nameof(AIOrderProcessor.IssueOrder))]
         static class Patch_Unit_OnMoveOrder_Coop
         {
@@ -128,6 +145,7 @@ namespace Si_RTS_AI.Faction
                 catch { return true; }
             }
         }
+#endif
 
         [HarmonyPatch(typeof(AIGroup), nameof(AIGroup.OnAttackOrder))]
         static class Patch_AIGroup_OnAttackOrder_Coop

@@ -855,6 +855,18 @@ namespace Si_RTS_AI.Planning
         // second prefix on the same method; the original is skipped if EITHER
         // returns false, which is the behaviour we want.
 
+#if GAME_MAIN
+        [HarmonyPatch(typeof(Unit), nameof(Unit.OnMoveOrder))]
+        static class Patch_Unit_OnMoveOrder_Scout
+        {
+            static bool Prefix(Unit __instance)
+            {
+                bool __result = false;
+                try
+                {
+                    var unit = __instance;
+                    if (unit == null || !IsScout(unit)) return true;
+#else
         [HarmonyPatch(typeof(AIOrderProcessor), nameof(AIOrderProcessor.IssueOrder))]
         static class Patch_Unit_OnMoveOrder_Scout
         {
@@ -865,6 +877,7 @@ namespace Si_RTS_AI.Planning
                     if (!OrderCompat.IsMoveOrder(definition)) return true;
                     var unit = __instance.OwnerUnit();
                     if (unit == null || !IsScout(unit)) return true;
+#endif
                     if (PlannerOverride) return true;
                     // Hand control back if a human took the commander seat.
                     try

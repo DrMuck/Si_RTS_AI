@@ -142,6 +142,18 @@ namespace Si_RTS_AI.Faction
         // is anything other than AITask_Harvest, refuse the move. This keeps the
         // harvest cycle intact (Task=Harvest → moves allowed for the biotics↔BC
         // loop) while blocking every scatter path we've seen.
+#if GAME_MAIN
+        [HarmonyPatch(typeof(Unit), nameof(Unit.OnMoveOrder))]
+        static class Patch_Unit_OnMoveOrder
+        {
+            static bool Prefix(Unit __instance)
+            {
+                bool __result = false;
+                try
+                {
+                    var unit = __instance;
+                    if (unit == null || !IsShrimp(unit)) return true;
+#else
         [HarmonyPatch(typeof(AIOrderProcessor), nameof(AIOrderProcessor.IssueOrder))]
         static class Patch_Unit_OnMoveOrder
         {
@@ -152,6 +164,7 @@ namespace Si_RTS_AI.Faction
                     if (!OrderCompat.IsMoveOrder(definition)) return true;
                     var unit = __instance.OwnerUnit();
                     if (unit == null || !IsShrimp(unit)) return true;
+#endif
                     if (PlannerOverride) return true;
                     // Human-commander opt-out. When a real player takes over the
                     // alien team the AI commander is disabled — in that case

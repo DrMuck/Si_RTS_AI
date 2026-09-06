@@ -992,16 +992,12 @@ namespace Si_RTS_AI.Mil
 
         static int MoveEach(List<BaseGameObject> units, Vector3 dest)
         {
-            var def = MoveDefinition();
             int n = 0;
             for (int i = 0; i < units.Count; i++)
             {
-                var agent = units[i].OrderAgent;
-                if (agent == null) continue;
-                if (def != null)
-                    Issue(() => agent.IssueOrder(def, new OrderTarget(dest, null), OrderIssueParams.Ai(AgentMoveSpeed.Fast)), 1);
-                else
-                    Issue(() => agent.IssueResolvedOrder(dest, null, OrderIssueParams.Ai(AgentMoveSpeed.Fast)), 1);
+                var u = units[i];
+                if (u == null) continue;
+                Issue(() => OrderCompat.Move(u, dest), 1);
                 n++;
             }
             return n;
@@ -1023,17 +1019,12 @@ namespace Si_RTS_AI.Mil
             Vector3 at;
             try { at = target.transform.position; } catch { return; }
             force.LastOrderDest = at; force.LastOrderAt = now; force.LastTarget = target;
-            var def = AttackDefinition();
             int n = 0;
             for (int i = 0; i < _scratch.Count; i++)
             {
                 var u = _scratch[i];
-                var agent = u.OrderAgent;
-                if (agent == null) continue;
-                if (def != null)
-                    Issue(() => agent.IssueOrder(def, new OrderTarget(at, target), OrderIssueParams.Ai(AgentMoveSpeed.Fast)), 1);
-                else
-                    Issue(() => agent.IssueResolvedOrder(at, target, OrderIssueParams.Ai(AgentMoveSpeed.Fast)), 1);
+                if (u == null) continue;
+                Issue(() => OrderCompat.Attack(u, at, target), 1);
                 n++;
             }
             force.OrdersIssued += n;
@@ -1044,16 +1035,12 @@ namespace Si_RTS_AI.Mil
             Gather(force);
             if (_scratch.Count == 0) return;
             force.LastOrderDest = dest; force.LastOrderAt = now; force.LastTarget = null;
-            var def = AttackDefinition();
-            if (def == null) { MoveFormation(force, dest, now); return; }
             int n = 0;
             for (int i = 0; i < _scratch.Count; i++)
             {
                 var u = _scratch[i];
-                var agent = u.OrderAgent;
-                if (agent == null) continue;
-                int idx = i;
-                Issue(() => agent.IssueOrder(def, new OrderTarget(dest), OrderIssueParams.Ai(AgentMoveSpeed.Fast)), 1);
+                if (u == null) continue;
+                Issue(() => OrderCompat.AttackMove(u, dest), 1);
                 n++;
             }
             force.OrdersIssued += n;
@@ -1061,32 +1048,16 @@ namespace Si_RTS_AI.Mil
 
         static void StopAll(Force force)
         {
-            var def = StopDefinition();
-            if (def == null) return;
             for (int i = 0; i < force.Units.Count; i++)
             {
-                var agent = force.Units[i]?.OrderAgent;
-                if (agent == null) continue;
-                Issue(() => agent.IssueOrder(def, OrderTarget.None, OrderIssueParams.Ai(AgentMoveSpeed.Fast)), 0);
+                var u = force.Units[i];
+                if (u == null) continue;
+                Issue(() => OrderCompat.Stop(u), 0);
             }
         }
 
         static void Stop(Force force) { if (MilConfig.Execute) StopAll(force); }
 
-        static OrderDefinition AttackDefinition()
-        {
-            try { return OrderDefinitionRegistry.Attack; } catch { return null; }
-        }
-
-        static OrderDefinition MoveDefinition()
-        {
-            try { return OrderDefinitionRegistry.Move; } catch { return null; }
-        }
-
-        static OrderDefinition StopDefinition()
-        {
-            try { return OrderDefinitionRegistry.Stop; } catch { return null; }
-        }
 
         static void Issue(Action a, int count)
         {
@@ -1115,6 +1086,34 @@ namespace Si_RTS_AI.Mil
         /// AIOrderProcessor.IssueOrder; ours carry PlannerOverride. Anything
         /// else aimed at a unit we hold is refused. Inert while execute is off.
         /// </summary>
+        /// <summary>True when a vanilla order for this unit must be refused:
+        /// the unit is held by a force and the layer is in charge of its team.</summary>
+        static bool GateBlocks(Unit unit)
+        {
+            if (PlannerOverride) return false;
+            if (unit == null || !Owns(unit)) return false;
+            try
+            {
+                var t = unit.Team;
+                if (t != null && !AIManager.IsCommanderEnabled(t)) return false;
+                if (t != null && !Faction.FactionControl.IsEnabled(t)) return false;   // switched off: vanilla commands
+            }
+            catch { }
+            return true;
+        }
+
+#if GAME_MAIN
+        [HarmonyPatch(typeof(Unit), nameof(Unit.OnMoveOrder))]
+        static class Patch_Unit_OnMoveOrder_Gate
+        {
+            static bool Prefix(Unit __instance) { try { return !GateBlocks(__instance); } catch { return true; } }
+        }
+        [HarmonyPatch(typeof(Unit), nameof(Unit.OnAttackOrder))]
+        static class Patch_Unit_OnAttackOrder_Gate
+        {
+            static bool Prefix(Unit __instance) { try { return !GateBlocks(__instance); } catch { return true; } }
+        }
+#else
         [HarmonyPatch(typeof(AIOrderProcessor), nameof(AIOrderProcessor.IssueOrder))]
         static class Patch_IssueOrder_Gate
         {
@@ -1122,22 +1121,14 @@ namespace Si_RTS_AI.Mil
             {
                 try
                 {
-                    if (PlannerOverride) return true;
-                    var unit = __instance.OwnerUnit();
-                    if (unit == null || !Owns(unit)) return true;
-                    try
-                    {
-                        var t = unit.Team;
-                        if (t != null && !AIManager.IsCommanderEnabled(t)) return true;
-                        if (t != null && !Faction.FactionControl.IsEnabled(t)) return true;   // switched off: vanilla commands
-                    }
-                    catch { }
+                    if (!GateBlocks(__instance.OwnerUnit())) return true;
                     __result = false;
                     return false;
                 }
                 catch { return true; }
             }
         }
+#endif
 
         // THE AIGROUP STRIP IS GONE. It removed our units from the game's AI
         // groups inside OnAttackOrder, and the group's network data then carried
