@@ -642,6 +642,11 @@ in one round is timing, and the timing lever is pathing and a forward Nest.
 
 ## 11. Overnight 2026-09-06 — performance and order churn (rounds 1–8, NarakaCity, uncapped)
 
+**Correction (12:00):** the rounds labelled 2-way below actually ran three teams. The harness
+reads `VersusAutoSelectMode` from a preference entry that only `Si_AutoTeamsSelect` creates,
+and that mod was parked, so it fell back to the 3-way default. Fixed in v0.92.24 (the harness
+reads the file). Their unit plateau around 650–800 was chance, not the team count.
+
 Eight unattended 60-minute rounds, fresh server process each, `tools/overnight.sh` with
 `tools/overnight-plan-2026-09-06.txt`; read with `python tools/overnight_report.py`.
 

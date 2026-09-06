@@ -967,6 +967,10 @@ piled to 80k from minute 25 for an eco reason this time, the stalled
 expansion, not a military one. Two HQs in two rounds is the capability; both
 in one round is timing, and the timing lever is pathing and a forward Nest.</p>
 <h2 id="11-overnight-2026-09-06-performance-and-order-churn-rounds-1-8-narakacity-uncapped">11. Overnight 2026-09-06 — performance and order churn (rounds 1–8, NarakaCity, uncapped)</h2>
+<p><strong>Correction (12:00):</strong> the rounds labelled 2-way below actually ran three teams. The harness
+reads <code>VersusAutoSelectMode</code> from a preference entry that only <code>Si_AutoTeamsSelect</code> creates,
+and that mod was parked, so it fell back to the 3-way default. Fixed in v0.92.24 (the harness
+reads the file). Their unit plateau around 650–800 was chance, not the team count.</p>
 <p>Eight unattended 60-minute rounds, fresh server process each, <code>tools/overnight.sh</code> with
 <code>tools/overnight-plan-2026-09-06.txt</code>; read with <code>python tools/overnight_report.py</code>.</p>
 <table>
