@@ -51,7 +51,7 @@ namespace Si_RTS_AI.Mil
             public State Phase = State.Forming;
             public readonly List<Unit> Units = new List<Unit>();
             public float Eff, Cash;
-            public Vector3 Rally, Dest;
+            public Vector3 Rally, Dest, Gather;
             public float StateSince, LastOrderAt, LastTargetCheckAt, ContactSince;
             public Vector3 LastOrderDest;
             public Target LastTarget;
@@ -777,10 +777,18 @@ namespace Si_RTS_AI.Mil
                     case State.Forming:
                         // Gather toward the rally of the objective so the group
                         // is not scattered when it fills — a move, not an attack.
-                        if (force.Units.Count >= 2 && (now - force.LastOrderAt > 20f))
+                        // ONE GATHER POINT. It used to be recomputed from the moving
+                        // centroid every twenty seconds, so it slid sideways as the
+                        // units walked toward it and every force re-ordered its
+                        // members all through Forming — overnight round 3, 1,161 move
+                        // orders and no attack orders in the first fifteen minutes.
+                        // The point is fixed when the force first has two members and
+                        // moves only if the objective itself moved a long way.
+                        if (force.Units.Count >= 2)
                         {
-                            var gather = Fields.RallyFor(Centroid(force), o.Where, MilConfig.StandoffM * 1.5f, force.Flying);
-                            if (Moved(force, gather)) MoveFormation(force, gather, now);
+                            if (force.Gather == Vector3.zero || BigJump(force, Fields.RallyFor(force.Gather, o.Where, MilConfig.StandoffM * 1.5f, force.Flying)))
+                                force.Gather = Fields.RallyFor(Centroid(force), o.Where, MilConfig.StandoffM * 1.5f, force.Flying);
+                            if (Moved(force, force.Gather) || Stalled(force, now)) MoveFormation(force, force.Gather, now);
                         }
                         break;
                     case State.Staging:
@@ -850,10 +858,9 @@ namespace Si_RTS_AI.Mil
                 stray.Add(u);
             }
             if (stray.Count == 0) return;
-            if (now - _reserve.LastOrderAt < 10f) return;
+            if (now - _reserve.LastOrderAt < 30f) return;
             _reserve.LastOrderAt = now;
-            Issue(() => StrategyMode.PerformMoveAttack(stray, _reservePoint, null, AgentMoveSpeed.Fast, false), stray.Count);
-            _reserve.OrdersIssued += stray.Count;
+            _reserve.OrdersIssued += MoveEach(stray, _reservePoint);
         }
 
         static bool TargetDead(Target t)
@@ -927,14 +934,37 @@ namespace Si_RTS_AI.Mil
             }
         }
 
+        /// <summary>
+        /// ONE MOVE ORDER PER UNIT, NO COHESION GROUP — the same reason as for
+        /// attacks (v0.92.9): the formation move's UnitCohesionGroup re-issues
+        /// slot moves to every member while they walk, which is both an order
+        /// per member per re-slot and a visible shuffle in the group. Staging
+        /// still waits for stragglers through Spread(), so nothing is lost by
+        /// letting each unit walk at its own pace.
+        /// </summary>
         static void MoveFormation(Force force, Vector3 dest, float now)
         {
             Gather(force);
             if (_scratch.Count == 0) return;
             force.LastOrderDest = dest; force.LastOrderAt = now; force.LastTarget = null;
-            var list = new List<BaseGameObject>(_scratch);
-            Issue(() => StrategyMode.PerformMoveAttack(list, dest, null, AgentMoveSpeed.Fast, false), list.Count);
-            force.OrdersIssued += list.Count;
+            force.OrdersIssued += MoveEach(_scratch, dest);
+        }
+
+        static int MoveEach(List<BaseGameObject> units, Vector3 dest)
+        {
+            var def = MoveDefinition();
+            int n = 0;
+            for (int i = 0; i < units.Count; i++)
+            {
+                var agent = units[i].OrderAgent;
+                if (agent == null) continue;
+                if (def != null)
+                    Issue(() => agent.IssueOrder(def, new OrderTarget(dest, null), OrderIssueParams.Ai(AgentMoveSpeed.Fast)), 1);
+                else
+                    Issue(() => agent.IssueResolvedOrder(dest, null, OrderIssueParams.Ai(AgentMoveSpeed.Fast)), 1);
+                n++;
+            }
+            return n;
         }
 
         /// <summary>
@@ -1006,6 +1036,11 @@ namespace Si_RTS_AI.Mil
         static OrderDefinition AttackDefinition()
         {
             try { return OrderDefinitionRegistry.Attack; } catch { return null; }
+        }
+
+        static OrderDefinition MoveDefinition()
+        {
+            try { return OrderDefinitionRegistry.Move; } catch { return null; }
         }
 
         static OrderDefinition StopDefinition()
