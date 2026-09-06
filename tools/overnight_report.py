@@ -33,6 +33,11 @@ def round_block(name, logname):
     lines = read(path)
     text = "\n".join(lines)
     ver = re.search(r"Si_RTS_AI v(0\.\d+\.\d+)", text)
+    if not ver:
+        melon0 = path.replace(".log", ".melon.log")
+        if os.path.exists(melon0):
+            ver = re.search(r"Si_RTS_AI v(0\.\d+\.\d+)", "
+".join(read(melon0)[:40]))
     print(f"\n== {name}  {logname}  mod {ver.group(1) if ver else '?'}")
 
     # frame time vs units, every 5 minutes
