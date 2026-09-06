@@ -1173,7 +1173,7 @@ namespace Si_RTS_AI.Mil
                   .Append(c.x.ToString("F0")).Append(',').Append(c.z.ToString("F0")).Append(") -> (")
                   .Append(force.Obj?.Where.x.ToString("F0")).Append(',').Append(force.Obj?.Where.z.ToString("F0")).Append(')');
             }
-            sb.Append(" | orders=").Append(OrdersIssued).Append(" withdrawals=").Append(Withdrawals);
+            sb.Append(" | orders=").Append(OrdersIssued).Append(" reserveOrders=").Append(_reserve?.OrdersIssued ?? 0).Append(" withdrawals=").Append(Withdrawals);
             if (StrippedFromVanillaAttack > 0) sb.Append(" vanillaAttacksBlocked=").Append(StrippedFromVanillaAttack);
             if (!MilConfig.Execute) sb.Append(" [shadow — no orders]");
             MilLog.Msg(sb.ToString());
