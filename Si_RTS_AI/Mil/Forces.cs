@@ -321,7 +321,21 @@ namespace Si_RTS_AI.Mil
                     // that cannot be recovered from. Engaged forces are left
                     // alone: pulling units out of a fight is how a push dies.
                     bool imminent = float.IsInfinity(o.DeadlineAt) ? o.DefenceEff > 0f : o.DeadlineAt - now <= MilConfig.PreemptWithinS;
+                    // PRE-EMPT ONLY WHEN IT BUYS THE DEFENCE. Overnight round 4: 89
+                    // BreakArmy pre-emptions in an hour, most of them "needs 96726
+                    // eff and only 38488 is free" — the recalled force did not close
+                    // the gap either, so the defence was not raised and the raid was
+                    // merely cancelled, to be raised again two minutes later.
+                    float preemptable = 0f;
                     if (avail < o.RequiredEff && o.Rank <= 1 && !o.Offensive && imminent)
+                        for (int pf = 0; pf < Active.Count; pf++)
+                        {
+                            var other = Active[pf];
+                            if (other.Obj == null || !other.Obj.Offensive) continue;
+                            if (other.Phase == State.Engaged || other.Phase == State.Withdrawing) continue;
+                            preemptable += other.Eff;
+                        }
+                    if (avail < o.RequiredEff && o.Rank <= 1 && !o.Offensive && imminent && avail + preemptable >= o.RequiredEff)
                     {
                         for (int pf = Active.Count - 1; pf >= 0 && avail < o.RequiredEff; pf--)
                         {

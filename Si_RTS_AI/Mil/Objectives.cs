@@ -329,15 +329,25 @@ namespace Si_RTS_AI.Mil
             {
                 var site = sites[i];
                 Intel.ForecastFor(site.pos, 350f, MilConfig.ForecastHorizonS, _arr);
-                if (_arr.Count == 0) continue;
-                float eff = SumArrivals(_arr, out float eta);
-                if (eff <= 0f) continue;
-                float price = Kernel.PriceToBeat(eff);
                 bool prod = site.what == "producers";
+                string key = (prod ? "defprod@" : "defeco@") + Cell(site.pos);
+                if (_arr.Count == 0) { _forecastSince.Remove(key); continue; }
+                float eff = SumArrivals(_arr, out float eta);
+                if (eff <= 0f) { _forecastSince.Remove(key); continue; }
+                // A FORECAST HAS TO HOLD. Overnight round 4: 83 DefendEco objectives
+                // raised, 75 finished with "nothing arrived, or it left" after one
+                // to three minutes — a track that turned away a refresh later had
+                // already cost a force its rally walk. A site is defended only
+                // once its forecast has held for FORECAST_CONFIRM_S across
+                // refreshes; a threat that is real is still there twenty seconds
+                // later, and the horizon is three minutes.
+                if (!_forecastSince.TryGetValue(key, out float since)) { _forecastSince[key] = now; continue; }
+                if (now - since < FORECAST_CONFIRM_S) continue;
+                float price = Kernel.PriceToBeat(eff);
                 var o = new Objective
                 {
                     Kind = prod ? Kind.DefendProduction : Kind.DefendEco,
-                    Key = (prod ? "defprod@" : "defeco@") + Cell(site.pos),
+                    Key = key,
                     Where = site.pos, Radius = 350f,
                     RequiredEff = price, CeilingEff = eff * Doctrine.WastefulAbove, DefenceEff = eff,
                     DeadlineAt = now + eta, Rank = 1, Score = prod ? 1e6f : site.recent,
@@ -351,6 +361,9 @@ namespace Si_RTS_AI.Mil
                 into.Add(o);
             }
         }
+
+        const float FORECAST_CONFIRM_S = 20f;
+        static readonly Dictionary<string, float> _forecastSince = new Dictionary<string, float>();
 
         static float SumArrivals(List<Intel.Arrival> arr, out float firstEta)
         {
