@@ -139,6 +139,7 @@ namespace Si_RTS_AI.Mil
 
         internal static void ResetForNewRound()
         {
+            _forecastSince.Clear();
             Portfolio.Clear(); _byKey.Clear(); _holdUntil.Clear(); _baseAnswer.Clear();
             _lastRefreshAt = _lastCheckAt = _lastLogAt = 0f;
             _nextId = 0; _team = null; _nest = Vector3.zero;
