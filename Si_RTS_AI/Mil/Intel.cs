@@ -545,7 +545,12 @@ namespace Si_RTS_AI.Mil
             // army decays with a five-minute half-life and floors the estimate.
             if (_teamPeak.TryGetValue(team, out var pk))
                 e = Mathf.Max(e, pk.eff * Mathf.Pow(0.5f, (Time.time - pk.at) / TEAM_PEAK_HALF_S));
-            return e;
+            // AN ENEMY IS NEVER WEAKER THAN ITS STARTING ARMY. At thirty seconds
+            // into a Whispering Plains round (2026-09-06 15:59) the only Sol unit
+            // seen was one scout, the HQ was priced at 928 and called affordable,
+            // and the starter army marched off to die while four raiders took the
+            // bare Nest. What has not been seen is not absent.
+            return Mathf.Max(e, MilConfig.EnemyStartEff);
         }
 
         const float TEAM_PEAK_HALF_S = 300f;

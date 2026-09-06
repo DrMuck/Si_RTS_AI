@@ -271,6 +271,10 @@ namespace Si_RTS_AI.Mil
                     continue;
                 }
                 if (IsRaid(o) && force == null && raidHeld >= raidBudget) continue;
+                // NOTHING LEAVES HOME IN THE FIRST FIVE MINUTES. There is nothing
+                // to know about the enemy yet and the starter army is the only
+                // guard the Nest has.
+                if (o.Offensive && force == null && RoundSeconds() < MilConfig.NoOffenceBeforeS) continue;
 
                 // A committed force does not absorb reinforcements. THE NEXT WAVE
                 // IS A NEW FORCE FOR THE SAME OBJECTIVE, raised while the first
@@ -353,6 +357,11 @@ namespace Si_RTS_AI.Mil
                             Active.RemoveAt(pf);
                         }
                     }
+                    // THE HOME GUARD IS NOT FOR SALE. An offensive force is raised
+                    // only from strength beyond what stays at the Nest: half the
+                    // army, capped by the Nest floor. Defence objectives may draw
+                    // on everything.
+                    if (o.Offensive) avail -= Mathf.Min(MilConfig.HomeFloorCash, Objectives.ArmyEff * 0.5f);
                     if (!wave && avail < o.RequiredEff) continue;
                 }
 
@@ -875,6 +884,11 @@ namespace Si_RTS_AI.Mil
             if (now - _reserve.LastOrderAt < 30f) return;
             _reserve.LastOrderAt = now;
             _reserve.OrdersIssued += MoveEach(stray, _reservePoint);
+        }
+
+        static float RoundSeconds()
+        {
+            try { return Perception.MapLayers.LayerReplay.CurrentRoundTime; } catch { return float.MaxValue; }
         }
 
         static bool TargetDead(Target t)

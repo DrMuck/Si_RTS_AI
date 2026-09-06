@@ -193,7 +193,13 @@ namespace Si_RTS_AI.Mil
 
                 int cost = 1000;
                 try { cost = cd.ObjectInfo?.Cost ?? 1000; } catch { }
-                if (spendable < _cashFloor + cost) return;   // poorer sites will not do better
+                // A BARE NEST IS THE FIRST SPIRE, FLOOR OR NO FLOOR. The cash
+                // floor kept every spire off the board for the first fifteen
+                // minutes of a Whispering Plains round while the economy spent
+                // to the last credit; four raiders then took a Nest with nothing
+                // beside it. One Thorn at the Nest by minute three is cheap.
+                int floor = site.Bare ? 0 : _cashFloor;
+                if (spendable < floor + cost) { if (site.Bare) continue; return; }   // poorer sites will not do better
 
                 float yardstick = Doctrine.TargetAt(name, minutes);
                 _placedThisRound++;
@@ -216,7 +222,7 @@ namespace Si_RTS_AI.Mil
             }
         }
 
-        struct Site { public Vector3 Pos; public float Threat; public long Income; public string Why; }
+        struct Site { public bool Bare; public Vector3 Pos; public float Threat; public long Income; public string Why; }
 
         static readonly List<(Vector3 pos, float eff, float etaS, string why)> _threatened =
             new List<(Vector3, float, float, string)>();
@@ -227,6 +233,10 @@ namespace Si_RTS_AI.Mil
         /// condition and at minute three there is no forecast to rank yet.</summary>
         static IEnumerable<Site> Sites(Team team, float minutes)
         {
+            var nest0 = FindNest(team);
+            if (nest0 != Vector3.zero && minutes >= 3f && SpiresNear(team, nest0) == 0)
+                yield return new Site { Pos = nest0, Threat = 1f, Income = 0, Bare = true,
+                                        Why = "the Nest is bare" };
             Objectives.ThreatenedSites(_threatened);
             _threatened.Sort((a, b) => a.etaS.CompareTo(b.etaS));
             for (int i = 0; i < _threatened.Count; i++)
