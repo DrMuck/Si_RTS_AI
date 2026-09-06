@@ -1464,6 +1464,30 @@ namespace Si_RTS_AI.TestHarnessNs
             {
                 MelonLogger.Warning($"[RTSA/HT] AutoStart: reading [Silica]/VersusAutoSelectMode threw (using default): {ex.Message}");
             }
+            // THE ENTRY BELONGS TO ANOTHER MOD. [Silica]/VersusAutoSelectMode is
+            // created by Si_AutoTeamsSelect; with that mod parked the category has
+            // no such entry, the lookup above finds nothing, and every "2-way"
+            // round of 2026-09-06 silently ran three teams. The value is still in
+            // the file, so read the file.
+            try
+            {
+                string cfg = System.IO.Path.Combine("UserData", "MelonPreferences.cfg");
+                if (System.IO.File.Exists(cfg))
+                {
+                    var m = System.Text.RegularExpressions.Regex.Match(System.IO.File.ReadAllText(cfg),
+                        @"(?m)^\s*VersusAutoSelectMode\s*=\s*""([A-Za-z0-9_]+)""");
+                    if (m.Success && Enum.TryParse<GameModeExt.ETeamsVersus>(m.Groups[1].Value, ignoreCase: true, out var fromFile))
+                    {
+                        MelonLogger.Msg($"[RTSA/HT] AutoStart: VersusAutoSelectMode={fromFile} read from MelonPreferences.cfg (no mod owns the entry)");
+                        return fromFile;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Warning($"[RTSA/HT] AutoStart: reading MelonPreferences.cfg threw (using default): {ex.Message}");
+            }
+            MelonLogger.Warning("[RTSA/HT] AutoStart: VersusAutoSelectMode unset everywhere; defaulting to HUMANS_VS_HUMANS_VS_ALIENS");
             return GameModeExt.ETeamsVersus.HUMANS_VS_HUMANS_VS_ALIENS;
         }
 
