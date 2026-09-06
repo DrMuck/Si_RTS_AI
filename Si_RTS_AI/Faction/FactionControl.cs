@@ -43,8 +43,18 @@ namespace Si_RTS_AI.Faction
             factionKey = factionKey.ToLowerInvariant();
             if (factionKey == "alien" || factionKey == "aliens")
             {
+                bool was = AlienEnabled;
                 AlienEnabled = enabled;
                 canonicalName = "Alien";
+                // HANDING BACK TO THE VANILLA COMMANDER. Every gate that keeps
+                // vanilla orders off our units consults IsEnabled, so once the
+                // flag is down the game commands the aliens again; what is left
+                // is to let go of the units the layer still holds, or the order
+                // gate would keep protecting a force nobody commands.
+                if (was && !enabled)
+                {
+                    try { Mil.Forces.ReleaseAll("switched off by chat command"); } catch { }
+                }
                 return true;
             }
             if (factionKey == "sol")

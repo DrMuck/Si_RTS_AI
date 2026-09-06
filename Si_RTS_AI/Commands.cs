@@ -66,8 +66,28 @@ namespace Si_RTS_AI
                     DumpMilitary(caller);
                     return;
 
+                case "on":
+                case "off":
+                    // The plain switch for a public server: "/rtsai off" hands the
+                    // aliens back to the vanilla commander mid-game, "/rtsai on"
+                    // takes them back. Admin only.
+                    if (!IsAdmin(caller))
+                    {
+                        Reply(caller, "[RTSA] on/off requires admin (Power.Generic).");
+                        return;
+                    }
+                    {
+                        bool on = sub == "on";
+                        global::Si_RTS_AI.Faction.FactionControl.TrySetByKey("alien", on, out _);
+                        string msg = on ? "[RTSA] RTS alien AI is ON - the layer commands the aliens when no player holds the seat"
+                                        : "[RTSA] RTS alien AI is OFF - the vanilla commander is in charge of the aliens";
+                        Reply(caller, msg);
+                        MelonLogger.Msg(msg + (caller != null ? $" (by {caller.PlayerName})" : ""));
+                    }
+                    return;
+
                 default:
-                    Reply(caller, "[RTSA] usage: /rtsai [status | mil | override [team] on|off | enable <alien|sol|centauri> on|off]");
+                    Reply(caller, "[RTSA] usage: /rtsai [on | off | status | mil | override [team] on|off | enable <alien|sol|centauri> on|off]");
                     return;
             }
         }

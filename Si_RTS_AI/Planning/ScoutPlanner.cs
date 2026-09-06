@@ -871,6 +871,7 @@ namespace Si_RTS_AI.Planning
                     {
                         var t = unit.Team;
                         if (t != null && !AIManager.IsCommanderEnabled(t)) return true;
+                        if (t != null && !Faction.FactionControl.IsEnabled(t)) return true;   // switched off: vanilla commands
                     }
                     catch { }
                     __result = false;

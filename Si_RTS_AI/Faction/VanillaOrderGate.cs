@@ -76,7 +76,7 @@ namespace Si_RTS_AI.Faction
             return n.IndexOf("Alien", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
-        static bool ShouldBlock(Team t) => Enabled && _inAiTick && Protected(t);
+        static bool ShouldBlock(Team t) => Enabled && _inAiTick && Protected(t) && FactionControl.IsEnabled(t);
 
         internal static void Report()
         {

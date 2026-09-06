@@ -8,7 +8,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 
-[assembly: MelonInfo(typeof(Si_RTS_AI.Si_RTS_AI), "Si_RTS_AI", "0.92.26", "DrMuck")]
+[assembly: MelonInfo(typeof(Si_RTS_AI.Si_RTS_AI), "Si_RTS_AI", "0.92.27", "DrMuck")]
 [assembly: MelonGame("Bohemia Interactive", "Silica")]
 
 namespace Si_RTS_AI
@@ -355,7 +355,7 @@ namespace Si_RTS_AI
                         // alive, and those are exactly the rounds the military
                         // gate is off for. It builds nothing unless
                         // mil.spires.execute is set.
-                        try { Mil.SpirePlanner.Tick(team); }
+                        if (Faction.FactionControl.IsEnabled(team)) try { Mil.SpirePlanner.Tick(team); }
                         catch (Exception ex) { MelonLogger.Warning("[MIL/SPIRE] threw: " + ex.Message); }
                     }
                     Perception.BuildTimeline.Tick(team);

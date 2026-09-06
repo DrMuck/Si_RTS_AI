@@ -161,6 +161,7 @@ namespace Si_RTS_AI.Faction
                     {
                         var t = unit.Team;
                         if (t != null && !Silica.AI.AIManager.IsCommanderEnabled(t)) return true;
+                        if (t != null && !FactionControl.IsEnabled(t)) return true;   // switched off: vanilla commands
                     }
                     catch { }
                     var task = unit.CurrentTask;

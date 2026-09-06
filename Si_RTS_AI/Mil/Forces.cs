@@ -87,6 +87,18 @@ namespace Si_RTS_AI.Mil
         internal static int StrippedFromVanillaAttack;
         internal static int Withdrawals;
 
+        /// <summary>Drop every force and the reserve without touching the units:
+        /// they keep whatever order they have and answer to the game from the
+        /// next tick.</summary>
+        internal static void ReleaseAll(string why)
+        {
+            int n = 0;
+            for (int f = 0; f < Active.Count; f++) n += Active[f].Units.Count;
+            if (_reserve != null) n += _reserve.Units.Count;
+            Active.Clear(); _reserve = null;
+            MilLog.Msg($"[FORCE] released all forces and the reserve ({n} units) — {why}");
+        }
+
         internal static void ResetForNewRound()
         {
             Active.Clear(); _reserve = null;
@@ -1117,6 +1129,7 @@ namespace Si_RTS_AI.Mil
                     {
                         var t = unit.Team;
                         if (t != null && !AIManager.IsCommanderEnabled(t)) return true;
+                        if (t != null && !Faction.FactionControl.IsEnabled(t)) return true;   // switched off: vanilla commands
                     }
                     catch { }
                     __result = false;
