@@ -328,6 +328,28 @@ namespace Si_RTS_AI.Faction
             catch { }
             return best;
         }
+        static float _lastHqFireAt = -999f;
+        const float HQ_FIRE_INTERVAL_S = 60f;
+        const float HQ_MAX_DRIFT_M     = 300f;
+        static int CountOwned(Team team, string name)
+        {
+            int n = 0;
+            try
+            {
+                var structs = team.Structures;
+                if (structs != null)
+                    for (int i = 0; i < structs.Count; i++)
+                    {
+                        var s = structs[i];
+                        if (s?.ObjectInfo == null || s.IsDestroyed) continue;
+                        if (!string.Equals(s.ObjectInfo.DisplayName, name, StringComparison.OrdinalIgnoreCase)) continue;
+                        bool functional = false; try { functional = s.IsFunctional; } catch { }
+                        if (functional) n++;
+                    }
+            }
+            catch { }
+            return n;
+        }
         static Vector3 FindOwnHqPosition(Team team)
         {
             try
@@ -824,9 +846,13 @@ namespace Si_RTS_AI.Faction
             if (hqCount >= ABSOLUTE_MAX_HQS) return;
 
             var expansion = Perception.MapLayers.HumanEcoLayers.GetEcoHqExpansionValue(team);
-
+            // ONE HEADQUARTERS AT A TIME. Four went up in fifty seconds on Naraka 22:04,
+            // three of them within 300 m of each other: no wait for the one in progress
+            // and no spacing at the landing. One in flight, a minute between fires.
+            if (CountOwnedIncludingSites(team, hqName) > CountOwned(team, hqName)) return;   // a site is in progress
+            if (Time.time - _lastHqFireAt < HQ_FIRE_INTERVAL_S) return;
             int fired = 0;
-            while (fired < MAX_HQ_PER_TICK && hqCount < ABSOLUTE_MAX_HQS)
+            while (fired < 1 && hqCount < ABSOLUTE_MAX_HQS)
             {
                 var (cx, cz, val) = expansion.ArgMax();
                 if (cx < 0 || val < HQ_MIN_VALUE) break;
@@ -868,7 +894,7 @@ namespace Si_RTS_AI.Faction
                     HqFailures++; _pendingHq.Remove(firedFor);
                     Si_RTS_AI.AppendToRound($"[H2] team={team.name} reject=HQ-too-close targetCell=({target.x:F0},{target.z:F0})");
                 }
-                else if (HumanBuild.TryBuild(team, hqCd, target, null)) HqSuccesses++;
+                else if (HumanBuild.TryBuild(team, hqCd, target, null, HQ_MAX_DRIFT_M, HQ_MIN_DIST_FROM_OTHER_HQ)) { HqSuccesses++; _lastHqFireAt = Time.time; }
                 else { HqFailures++; _pendingHq.Remove(firedFor); }
 
                 hqCount++;

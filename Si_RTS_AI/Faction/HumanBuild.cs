@@ -36,7 +36,7 @@ namespace Si_RTS_AI.Faction
 
         internal static void ResetForNewRound()
         {
-            _pending.Clear(); _refusals.Clear(); _geomLogged.Clear(); Fired = Landed = Failed = 0;
+            _pending.Clear(); _refusals.Clear(); _geomLogged.Clear(); _landed.Clear(); Fired = Landed = Failed = 0;
         }
 
         static bool PendingNear(string name, Vector3 at)
@@ -84,7 +84,46 @@ namespace Si_RTS_AI.Faction
         }
 
         /// <summary>Ask the game to place <paramref name="cd"/> near <paramref name="pos"/>; true when a search was queued.</summary>
-        internal static bool TryBuild(Team team, ConstructionData cd, Vector3 pos, Quaternion? rot)
+        struct Landed { public string Name; public Vector3 At; }
+        static readonly List<Landed> _landed = new List<Landed>();
+        static bool LandedNear(string name, Vector3 p, float r)
+        {
+            for (int i = 0; i < _landed.Count; i++)
+            {
+                if (_landed[i].Name != name) continue;
+                float dx = _landed[i].At.x - p.x, dz = _landed[i].At.z - p.z;
+                if (dx * dx + dz * dz <= r * r) return true;
+            }
+            return false;
+        }
+        static bool StandingNear(Team team, string name, Vector3 p, float r)
+        {
+            try
+            {
+                var structs = team.Structures;
+                if (structs == null) return false;
+                for (int i = 0; i < structs.Count; i++)
+                {
+                    var s = structs[i];
+                    if (s?.ObjectInfo == null || s.IsDestroyed) continue;
+                    if ((s.ObjectInfo.DisplayName ?? "") != name) continue;
+                    float dx = s.transform.position.x - p.x, dz = s.transform.position.z - p.z;
+                    if (dx * dx + dz * dz <= r * r) return true;
+                }
+            }
+            catch { }
+            return false;
+        }
+
+        /// <summary>
+        /// Ask the game to place <paramref name="cd"/> near <paramref name="pos"/>; true when a search was queued.
+        /// <paramref name="maxDriftM"/> rejects a landing farther than that from the asked point;
+        /// <paramref name="sameTypeSpacingM"/> rejects a landing that close to another structure of the same
+        /// name, standing or landed this round. Four Headquarters went up within 300 m of each other on
+        /// Naraka 22:04 (DrMuck) because neither test existed and the search drifted 560 m from its cell.
+        /// </summary>
+        internal static bool TryBuild(Team team, ConstructionData cd, Vector3 pos, Quaternion? rot,
+                                      float maxDriftM = -1f, float sameTypeSpacingM = -1f)
         {
             if (team == null || cd == null) return false;
             string name = cd.ObjectInfo?.DisplayName ?? "?";
@@ -131,13 +170,26 @@ namespace Si_RTS_AI.Faction
                     (cData, cbTeam, cbStruct, gotPos, gotRot) =>
                     {
                         string res = "void";
+                        float drift = Vector2.Distance(new Vector2(gotPos.x, gotPos.z), new Vector2(asked.x, asked.z));
+                        if (maxDriftM > 0f && drift > maxDriftM)
+                        {
+                            Failed++;
+                            Refuse(name, $"landing drifted {drift:F0}m from the asked point (limit {maxDriftM:F0}m)");
+                            return;
+                        }
+                        if (sameTypeSpacingM > 0f && (StandingNear(cbTeam, name, gotPos, sameTypeSpacingM) || LandedNear(name, gotPos, sameTypeSpacingM)))
+                        {
+                            Failed++;
+                            Refuse(name, $"another {name} within {sameTypeSpacingM:F0}m of the landing");
+                            return;
+                        }
                         try
                         {
                             if (cbStruct != null && !cbStruct.IsDestroyed)
                                 res = cbStruct.Construct(cData, gotPos, gotRot).ToString();
                         }
                         catch (Exception ex) { res = "threw " + ex.Message; }
-                        if (res == "Success") Landed++; else Failed++;
+                        if (res == "Success") { Landed++; _landed.Add(new Landed { Name = name, At = gotPos }); } else Failed++;
                         MelonLogger.Msg($"[HUMAN/BUILD] {cbTeam?.name} {name} at ({gotPos.x:F0},{gotPos.z:F0}) asked ({asked.x:F0},{asked.z:F0}) " +
                                         $"anchor {cbStruct?.ObjectInfo?.DisplayName} rot {(rot.HasValue ? "given" : "search")} result {res} cash {cbTeam?.TotalResources}");
                     },
