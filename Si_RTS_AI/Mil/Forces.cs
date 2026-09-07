@@ -556,11 +556,18 @@ namespace Si_RTS_AI.Mil
                 // two scouts finds their army came home; the refresh re-reads the
                 // defence every fifteen seconds, and a force that has not yet
                 // fought turns back when the kernel would now refuse the fight.
+                // THE WHOLE COMMITMENT IS WEIGHED, NOT THE LAST WAVE. Crimson Peak,
+                // 2026-09-07 13:02: three waves of 90k, 62k and 48k stood against
+                // a 48k defence; the third wave alone read as a coin flip, the
+                // objective ended and all 145 units went home. A 250k army then
+                // sat at the Nest for twenty minutes and the round timed out.
+                float committedEff = AssignedTo(o);
                 if ((force.Phase == State.Staging || force.Phase == State.Advancing) && o.Offensive &&
-                    o.DefenceEff > 0f && Kernel.Ratio(force.Eff, o.DefenceEff) < Doctrine.RefuseBelow)
+                    o.DefenceEff > 0f && Kernel.Ratio(committedEff, o.DefenceEff) < Doctrine.RefuseBelow)
                 {
                     Withdrawals++;
-                    string why = $"the price rose: {Kernel.Describe(force.Eff, o.DefenceEff)}";
+                    string why = $"the price rose: {Kernel.Describe(committedEff, o.DefenceEff)}" +
+                                 (committedEff > force.Eff ? $" (all waves; this one {force.Eff:F0})" : "");
                     force.Rally = Fields.RallyFor(Centroid(force), o.Where, MilConfig.StandoffM * 2f, force.Flying);
                     SetPhase(force, State.Withdrawing, now, why);
                     Objectives.NoteWithdrawn(o, why, now);
