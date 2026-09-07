@@ -561,6 +561,17 @@ namespace Si_RTS_AI.Faction
                     // maxTime shrunk 40s → 8s: if the game's placement search can't
                     // find a valid spot in 8s, it won't in 40 either. Faster failure
                     // = faster retry on next Alien tick when units may have moved.
+                    // THE SEARCH IS TOLD THE FACING. With the ramp yaw handed to the
+                    // search, every position it returns is valid for that yaw, so the
+                    // rotation sweep that used to accept a refinery facing away from
+                    // its field (Naraka 21:17: yaw 0 with the patch due south) is only
+                    // a last resort. Ramp faces the yaw direction; measured from
+                    // DrMuck's own placements as commander (2026-09-07 21:33).
+                    Vector3 toPatch0 = new Vector3(balteriumPos.x - searchFrom.x, 0f, balteriumPos.z - searchFrom.z);
+                    float wantYaw = toPatch0.sqrMagnitude > 0.01f
+                        ? Mathf.Round(Quaternion.LookRotation(toPatch0, Vector3.up).eulerAngles.y / 90f) * 90f + REFINERY_RAMP_QUARTER_TURNS * 90f
+                        : 0f;
+                    Quaternion wantRot = Quaternion.Euler(0f, wantYaw, 0f);
                     ConstructionPlacement.QueueFirstValidPlacementAroundPoint(
                         cd.ObjectPreviewSetup, team, closer, searchFrom,
                         cd.GridSnapXZ, cd.GridSnapY,
@@ -602,7 +613,7 @@ namespace Si_RTS_AI.Faction
                             float baseYaw = toBalt.sqrMagnitude > 0.01f
                                 ? Mathf.Round(Quaternion.LookRotation(toBalt, Vector3.up).eulerAngles.y / 90f) * 90f
                                   + REFINERY_RAMP_QUARTER_TURNS * 90f
-                                : Mathf.Round(gotRot.eulerAngles.y / 90f) * 90f;
+                                : wantYaw;
 
                             // Try 4 rotations at the returned position, then re-search
                             // NEW positions around it if all obstructed (a unit standing
@@ -646,7 +657,8 @@ namespace Si_RTS_AI.Faction
                                 $"[H1] team={team.name} constructed=Refinery atBalterium=({firedFor.x:F0},{firedFor.z:F0}) " +
                                 $"landedAt=({winningPos.x:F0},{winningPos.z:F0}) yaw={winningYaw:F0} result={res}");
                         },
-                        (cData, ct, cs) => { RefFailures++; _pendingRef.Remove(firedFor); });
+                        (cData, ct, cs) => { RefFailures++; _pendingRef.Remove(firedFor); },
+                        false, true, wantRot);
                 }
                 catch (Exception ex) { MelonLogger.Warning("[RTSA/Human] refinery placement threw: " + ex.Message); }
 
