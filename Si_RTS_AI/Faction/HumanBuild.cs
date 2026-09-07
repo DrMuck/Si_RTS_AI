@@ -91,9 +91,17 @@ namespace Si_RTS_AI.Faction
             if (PendingNear(name, pos)) { Refuse(name, "pending nearby"); return false; }
             var anchor = FindAnchor(team, cd, pos);
             if (anchor == null) { Refuse(name, "no structure can build it"); return false; }
+            // TIER AND OBJECTS, CHECKED THE WAY THE GAME CHECKS A CLIENT. The
+            // server-side Construct skips its own prerequisite test when the
+            // caller counts as game master, which a dedicated server does; a
+            // Heavy Factory (tier 4) went up at tier 0 in the 20:12 Sol round.
             bool prereq = true;
-            try { prereq = anchor.HasPrerequisitesForConstruction(cd); } catch { }
-            if (!prereq) { Refuse(name, "prerequisite"); return false; }
+            try { prereq = team.GetHasPrerequisitesForConstruction(cd, true, EConstructionCheckTechTier.Full); } catch { }
+            int minTier = -1, teamTier = 0;
+            try { minTier = cd.MinimumTeamTier; } catch { }
+            try { teamTier = team.TechnologyTier; } catch { }
+            if (minTier > -1 && teamTier < minTier) prereq = false;
+            if (!prereq) { Refuse(name, $"prerequisite (needs tier {minTier}, team tier {teamTier})"); return false; }
             int cost = 0; try { cost = cd.ResourceCost; } catch { }
             if (cost > 0 && team.TotalResources < cost) { Refuse(name, $"cash {team.TotalResources} < {cost}"); return false; }
             var preview = cd.ObjectPreviewSetup;
@@ -110,7 +118,7 @@ namespace Si_RTS_AI.Faction
             {
                 _geomLogged.Add(name);
                 bool placeable = false; try { placeable = cd.Placeable; } catch { }
-                MelonLogger.Msg($"[HUMAN/BUILD] {name}: reach {reach:F0}m snap {cd.GridSnapXZ}/{cd.GridSnapY} placeable {placeable} cost {cost} anchor {anchor.ObjectInfo?.DisplayName} range {range:F0}m time {maxTime:F0}s");
+                MelonLogger.Msg($"[HUMAN/BUILD] {name}: reach {reach:F0}m snap {cd.GridSnapXZ}/{cd.GridSnapY} placeable {placeable} cost {cost} anchor {anchor.ObjectInfo?.DisplayName} range {range:F0}m time {maxTime:F0}s minTier {minTier} teamTier {teamTier}");
             }
             _pending.Add(new Pending { Name = name, At = pos, When = Time.time });
             Fired++;
