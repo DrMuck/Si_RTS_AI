@@ -120,7 +120,7 @@ namespace Si_RTS_AI.Planning
         // ---- Filling the gaps: build scouts we weren't given ----
         //
         // MaxScouts is a CEILING, not a target to sprint for. The roster grows
-        // slowly all game: BUILD_TARGET_AT_START scouts to begin with, plus one
+        // slowly all game: BuildTargetAtStart scouts to begin with, plus one
         // more per BUILD_TARGET_RAMP_S, until it reaches MaxScouts. On the
         // defaults that is 2 at spawn, 7 by five minutes, and the full 20 only
         // in a long round — vision keeps improving without ever competing with
@@ -129,9 +129,9 @@ namespace Si_RTS_AI.Planning
         // Units the spawn already gave us are exempt: those are free, so we
         // conscript every one of them up to MaxScouts immediately.
         static string SCOUT_BUILD_UNIT      = "Crab";
-        const int    BUILD_TARGET_AT_START  = 2;
+        static int   BuildTargetAtStart     = 2;
         const float  BUILD_TARGET_RAMP_S    = 60f;   // +1 allowed scout per minute
-        const float  SCOUT_BUILD_INTERVAL_S = 30f;   // at most one queued per interval
+        static float ScoutBuildIntervalS    = 30f;   // at most one queued per interval
         const int    SCOUT_BUILD_CASH_FLOOR = 1500;  // only spend genuine surplus
         // Units alive inside this window are treated as spawn-issued and are
         // conscripted regardless of the ceiling.
@@ -288,6 +288,11 @@ namespace Si_RTS_AI.Planning
             // One planner, one team at a time: the chassis follow the faction.
             SCOUT_UNIT_NAMES = human ? HUMAN_SCOUTS : ALIEN_SCOUTS;
             SCOUT_BUILD_UNIT = human ? "Scout" : "Crab";
+            // A Barracks can spam Scouts at 30 cash: humans start the star with six
+            // and top it up every ten seconds (DrMuck: "scouting for humans looks
+            // too weak, hindering exploration for expansion HQs").
+            BuildTargetAtStart = human ? 6 : 2;
+            ScoutBuildIntervalS = human ? 10f : 30f;
             if (!global::Si_RTS_AI.TestHarnessNs.TestHarness.IsRoundActive) return;
 
             float now = Time.time;
@@ -310,7 +315,11 @@ namespace Si_RTS_AI.Planning
                 {
                     var s = structs[i];
                     if (s == null || s.ObjectInfo == null || s.IsDestroyed) continue;
-                    if (s.ObjectInfo.DisplayName == "Nest") { nest = s.transform.position; haveNest = true; break; }
+                    // The home structure: the Nest, or the Headquarters for Sol and
+                    // Centauri. Looking for "Nest" only, the planner never ran for a
+                    // human team (2026-09-07 21:52: no scout line in a Sol round).
+                    string dn = s.ObjectInfo.DisplayName ?? "";
+                    if (dn == "Nest" || dn == "Headquarters") { nest = s.transform.position; haveNest = true; break; }
                 }
             }
             catch { return; }
@@ -578,7 +587,7 @@ namespace Si_RTS_AI.Planning
         {
             float roundT = 0f;
             try { roundT = Perception.MapLayers.LayerReplay.CurrentRoundTime; } catch { }
-            int ramped = BUILD_TARGET_AT_START + Mathf.FloorToInt(roundT / BUILD_TARGET_RAMP_S);
+            int ramped = BuildTargetAtStart + Mathf.FloorToInt(roundT / BUILD_TARGET_RAMP_S);
             return Mathf.Min(ramped, MaxScouts);
         }
 
@@ -591,7 +600,7 @@ namespace Si_RTS_AI.Planning
         static void MaybeBuildScout(Team team, float now)
         {
             if (_scouts.Count >= BuildTargetNow()) return;
-            if (now - _lastBuildAt < SCOUT_BUILD_INTERVAL_S) return;
+            if (now - _lastBuildAt < ScoutBuildIntervalS) return;
             try
             {
                 if (team.TotalResources < SCOUT_BUILD_CASH_FLOOR) return;
