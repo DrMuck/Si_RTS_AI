@@ -195,6 +195,7 @@ namespace Si_RTS_AI.Mil
                 _fogNull = vis == null;
 
                 _harvesters.Clear();
+                _enemyAlive.Clear();
                 var teams = Team.Teams;
                 if (teams != null)
                     for (int t = 0; t < teams.Count; t++)
@@ -204,6 +205,7 @@ namespace Si_RTS_AI.Mil
                         bool enemy = true;
                         try { enemy = Team.GetTeamsAreEnemy(self, other); } catch { }
                         if (!enemy) continue;
+                        try { if (other.Structures != null && other.Structures.Count > 0) _enemyAlive.Add(other.name ?? "?"); } catch { }
                         ObserveUnits(other, vis, now, dt);
                         ObserveStructures(other, vis, now);
                     }
@@ -415,8 +417,23 @@ namespace Si_RTS_AI.Mil
                     kv.Value >= pk.eff * Mathf.Pow(0.5f, (now - pk.at) / TEAM_PEAK_HALF_S))
                     _teamPeak[kv.Key] = (kv.Value, now);
             }
+            // THE AGGREGATE IS FLOORED LIKE THE PER-TEAM ESTIMATE. The Maw,
+            // 2026-09-07 06:48: EnemyEffectiveOf() said 4,000 for Sol from the
+            // first second, but this sum said 2,696, so the siege flag that
+            // hangs on it came at 116 s — after the starter reserve had already
+            // chased raiders and died. Every enemy team still holding a
+            // structure counts for at least its starting army.
             float floor = 0f;
-            foreach (var kv in _teamPeak) floor += kv.Value.eff * Mathf.Pow(0.5f, (now - kv.Value.at) / TEAM_PEAK_HALF_S);
+            for (int i = 0; i < _enemyAlive.Count; i++)
+            {
+                float f = MilConfig.EnemyStartEff;
+                if (_teamPeak.TryGetValue(_enemyAlive[i], out var pk))
+                    f = Mathf.Max(f, pk.eff * Mathf.Pow(0.5f, (now - pk.at) / TEAM_PEAK_HALF_S));
+                floor += f;
+            }
+            foreach (var kv in _teamPeak)
+                if (!_enemyAlive.Contains(kv.Key))
+                    floor += kv.Value.eff * Mathf.Pow(0.5f, (now - kv.Value.at) / TEAM_PEAK_HALF_S);
             EnemyEffective = Mathf.Max(eff, floor); EnemyCash = cash; EnemyPiloted = pil;
         }
 
@@ -554,6 +571,7 @@ namespace Si_RTS_AI.Mil
         }
 
         const float TEAM_PEAK_HALF_S = 300f;
+        static readonly List<string> _enemyAlive = new List<string>();
         static readonly Dictionary<string, (float eff, float at)> _teamPeak = new Dictionary<string, (float, float)>();
 
         internal static Track NearestTrack(Vector3 p, float maxM)

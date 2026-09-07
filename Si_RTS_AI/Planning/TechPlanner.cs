@@ -270,6 +270,13 @@ namespace Si_RTS_AI.Planning
             var existingCortex = FindResearchStructure(ctx.Team);
             if (existingCortex != null)
             {
+                // UNDER SIEGE RESEARCH WAITS. The Maw, 2026-09-07 06:48: Gamma III,
+                // Delta IV and Theta V (2,000 each) fired while raiders stood at the
+                // Nest and no producer existed. A tier bought after the Nest falls
+                // is worth nothing.
+                bool siege = false;
+                try { siege = Mil.Objectives.UnderSiege; } catch { }
+                if (siege) return proposals;
                 var researchProp = ProposeResearchUpgrade(ctx, s, existingCortex);
                 if (researchProp.HasValue) proposals.Add(researchProp.Value);
                 return proposals;

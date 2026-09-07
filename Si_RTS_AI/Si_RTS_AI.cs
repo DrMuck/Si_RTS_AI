@@ -8,7 +8,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 
-[assembly: MelonInfo(typeof(Si_RTS_AI.Si_RTS_AI), "Si_RTS_AI", "0.92.29", "DrMuck")]
+[assembly: MelonInfo(typeof(Si_RTS_AI.Si_RTS_AI), "Si_RTS_AI", "0.92.30", "DrMuck")]
 [assembly: MelonGame("Bohemia Interactive", "Silica")]
 
 namespace Si_RTS_AI
@@ -359,7 +359,12 @@ namespace Si_RTS_AI
                         catch (Exception ex) { MelonLogger.Warning("[MIL/SPIRE] threw: " + ex.Message); }
                     }
                     Perception.BuildTimeline.Tick(team);
-                    if ((team.name ?? "").Contains("Alien")) Perception.QueenStatus.Evaluate(team);
+                    if ((team.name ?? "").Contains("Alien"))
+                    {
+                        Perception.QueenStatus.Evaluate(team);
+                        if (Faction.FactionControl.IsEnabled(team)) try { Mil.QueenKeeper.Tick(team); }
+                        catch (Exception ex) { MelonLogger.Warning("[QUEEN] keeper threw: " + ex.Message); }
+                    }
                     long tThreat = TimedMs(() => { Perception.ThreatMap.Observe(team);
                                                     Perception.ThreatMap.Tick(team); });
                     // OURS MEANS THE ALIEN'S. Rebuild used to run for every team in
@@ -578,6 +583,7 @@ namespace Si_RTS_AI
             Planning.SupplyForecast.ResetForNewRound();
             Planning.WorkerPlan.ResetForNewRound();
             Perception.QueenStatus.ResetForNewRound();
+            Mil.QueenKeeper.ResetForNewRound();
             Planning.NodeManager.ResetForNewRound();
             Perception.ThreatMap.ResetForNewRound();
             Perception.ControlMap.ResetForNewRound();
