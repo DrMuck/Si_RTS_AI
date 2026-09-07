@@ -8,7 +8,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 
-[assembly: MelonInfo(typeof(Si_RTS_AI.Si_RTS_AI), "Si_RTS_AI", "0.92.33", "DrMuck")]
+[assembly: MelonInfo(typeof(Si_RTS_AI.Si_RTS_AI), "Si_RTS_AI", "0.92.34", "DrMuck")]
 [assembly: MelonGame("Bohemia Interactive", "Silica")]
 
 namespace Si_RTS_AI
@@ -584,6 +584,7 @@ namespace Si_RTS_AI
             Planning.WorkerPlan.ResetForNewRound();
             Perception.QueenStatus.ResetForNewRound();
             Mil.QueenKeeper.ResetForNewRound();
+            Perception.Reach.ResetForNewRound();
             Planning.NodeManager.ResetForNewRound();
             Perception.ThreatMap.ResetForNewRound();
             Perception.ControlMap.ResetForNewRound();

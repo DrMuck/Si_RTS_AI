@@ -629,9 +629,15 @@ namespace Si_RTS_AI.Mil
             Vector3 best = Vector3.zero; float bestScore = float.MaxValue; string bestWhy = "";
             Vector3 fob = Vector3.zero; float fobScore = float.MaxValue; string fobWhy = "";
             Fields.Field toMain = mainOffence != null ? Fields.Cached(mainOffence.Centre, false) : null;
+            int unreachable = 0; string unreachWhy = "";
             for (int c = 0; c < cands.Count; c++)
             {
                 var p = cands[c];
+                // A CYST WHOSE UNITS CANNOT WALK TO THE ENEMY IS A CYST WASTED.
+                // Crimson Peak 13:02: six cysts on the Nest plateau, 67 Behemoths
+                // that never crossed the ridge. The game's graph decides.
+                if (mainOffence != null && !Reach.AllGroundCanReach(team, p, mainOffence.Centre, out string rw))
+                { unreachable++; unreachWhy = rw; continue; }
                 float walk = 0f;
                 for (int f = 0; f < _fights.Count; f++)
                 {
@@ -654,6 +660,8 @@ namespace Si_RTS_AI.Mil
                     if (fs < fobScore) { fobScore = fs; fob = p; fobWhy = $"{toThem:F0}s from {Intel.Short(mainOffence.Team)} base, danger {danger:F0}{(covered ? ", covered" : "")}"; }
                 }
             }
+            if (unreachable > 0)
+                MilLog.Every("site:unreachable", 120f, $"[MIL/SITE] {unreachable} of {cands.Count} candidate sites cannot reach the enemy base for {unreachWhy}; best ({best.x:F0},{best.z:F0})");
             _bestSite = best; _bestSiteWhy = bestWhy;
             if (fob != Vector3.zero && (fob - ForwardBase).sqrMagnitude > 200f * 200f)
                 MilLog.Msg($"[MIL/SITE] forward base at ({fob.x:F0},{fob.z:F0}) — {fobWhy}; general site ({best.x:F0},{best.z:F0}) — {bestWhy}");

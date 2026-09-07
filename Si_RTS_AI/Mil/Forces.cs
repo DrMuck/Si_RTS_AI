@@ -392,6 +392,21 @@ namespace Si_RTS_AI.Mil
                         if (idx < 0) break;
                         var u = free[idx];
                         string n = ""; try { n = u.ObjectInfo?.DisplayName ?? ""; } catch { }
+                        // A UNIT THAT CANNOT WALK THERE IS NOT SENT. Crimson Peak
+                        // 13:02: 31 Behemoths priced at 83k stood in a KillHQ force
+                        // for a thousand seconds without moving; the graph had no
+                        // way from their plateau to the HQ. They stay in the reserve.
+                        if (!Reach.CanReach(u, o.Where))
+                        {
+                            free.RemoveAt(idx);
+                            Reach.Refusals++;
+                            if (Reach.Refusals <= 30 || Reach.Refusals % 100 == 0)
+                            {
+                                Vector3 up = Vector3.zero; try { up = u.transform.position; } catch { }
+                                MilLog.Msg($"[FORCE] no path: {n} at ({up.x:F0},{up.z:F0}) cannot reach {o.Kind}#{o.Id} at ({o.Where.x:F0},{o.Where.z:F0}) — left in the reserve (#{Reach.Refusals})");
+                            }
+                            continue;
+                        }
                         float e = Kernel.EffectiveOf(n);
                         if (IsRaid(o) && raidHeld + e > raidBudget && have > 0f) break;
                         if (force == null)
