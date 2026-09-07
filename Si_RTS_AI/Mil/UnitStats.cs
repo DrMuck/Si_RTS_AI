@@ -139,6 +139,10 @@ namespace Si_RTS_AI.Mil
             return 9f;
         }
 
+        /// <summary>Weapon range in metres from the balance dump; 0 when unknown.</summary>
+        internal static float RangeOf(string name) =>
+            _byName.TryGetValue(name ?? "", out var s) ? s.Range : 0f;
+
         internal static bool IsFlyer(string name) =>
             _byName.TryGetValue(name ?? "", out var s) && s.Flyer;
 

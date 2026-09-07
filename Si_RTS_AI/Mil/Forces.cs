@@ -1095,11 +1095,33 @@ namespace Si_RTS_AI.Mil
             {
                 var u = _scratch[i];
                 if (u == null) continue;
-                Issue(() => OrderCompat.Attack(u, at, target), 1);
+                // RANGED UNITS ATTACK FROM RANGE. The attack order carries an
+                // attack-from position (the agent's ChasingPosition); every unit
+                // used to get the target itself, so a Barrage Truck drove up to
+                // the Nest it could have shelled from 300 m (DrMuck, 2026-09-07
+                // 20:50). A unit with a real weapon range stops at 80% of it on
+                // its own line of approach.
+                Vector3 atU = at;
+                try
+                {
+                    string n2 = u.ObjectInfo?.DisplayName ?? "";
+                    float r = UnitStats.RangeOf(n2);
+                    if (r >= STANDOFF_MIN_RANGE_M)
+                    {
+                        Vector3 from = u.transform.position;
+                        Vector3 d = from - at; d.y = 0f;
+                        float len = d.magnitude;
+                        if (len > 1f) atU = at + d / len * (r * STANDOFF_SHARE);
+                    }
+                }
+                catch { }
+                Issue(() => OrderCompat.Attack(u, atU, target), 1);
                 n++;
             }
             force.OrdersIssued += n;
         }
+        const float STANDOFF_MIN_RANGE_M = 80f;
+        const float STANDOFF_SHARE       = 0.8f;
 
         static void AttackMove(Force force, Vector3 dest, float now)
         {
