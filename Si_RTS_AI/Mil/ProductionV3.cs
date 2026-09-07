@@ -327,7 +327,12 @@ namespace Si_RTS_AI.Mil
                 int queued = 0;
                 try { queued = s.ProductionQueue?.Count ?? 0; } catch { }
                 _total++;
-                if (queued >= depth) { _busy++; continue; }
+                // QUEUE DEPTH. Two per producer, three only when cash has idled six
+                // minutes, and never more than one at an Ultra Heavy Factory or a
+                // Colossal Spawning Cyst (DrMuck, 2026-09-08: "same rule as aliens").
+                int depthHere = typeName.IndexOf("Ultra", StringComparison.OrdinalIgnoreCase) >= 0
+                             || typeName.IndexOf("Colossal", StringComparison.OrdinalIgnoreCase) >= 0 ? 1 : depth;
+                if (queued >= depthHere) { _busy++; continue; }
 
                 // Pick.
                 ConstructionData best = null; float bestScore = 0f; string bestWhy = "";
