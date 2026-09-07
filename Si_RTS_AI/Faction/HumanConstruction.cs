@@ -160,9 +160,13 @@ namespace Si_RTS_AI.Faction
 
             MaybeLogDiagnostics(team);
 
-            FireRefinery(team);
+            // ORDER OF SPENDING. Refineries first until two stand, then the Barracks and
+            // the Research Facility get first call on cash, then refineries again.
+            // 16,500 sat idle at minute four (2026-09-07 21:45) while every credit
+            // went to refinery searches.
+            if (CountOwnedIncludingSites(team, "Refinery") >= 2) { FireTech(team); FireRefinery(team); }
+            else { FireRefinery(team); FireTech(team); }
             FireHqExpansion(team);
-            FireTech(team);
 
             // Ride-along: queue Mark I → V research at every Research Facility.
             HumanTechResearcher.Tick(team);
@@ -256,42 +260,15 @@ namespace Si_RTS_AI.Faction
             Action onSuccessCount, Action onFailCount, Action onAttemptCount,
             bool freeConstruct = false)
         {
-            var anchor = FindStructureThatCanBuild(team, cd);
-            if (anchor == null) return;
-
+            // THROUGH THE EXECUTOR: reach-aware search, prerequisite and cash checked,
+            // result logged. The 120 m / 8 s search here took nine minutes to land a
+            // Research Facility (2026-09-07 20:12) and never landed a Barracks.
             pendingDict[nearHq] = _tickCounter;
             onAttemptCount();
-            Vector3 firedFor = nearHq;
-            try
-            {
-                ConstructionPlacement.QueueFirstValidPlacementAroundPoint(
-                    cd.ObjectPreviewSetup, team, anchor, firedFor,
-                    cd.GridSnapXZ, cd.GridSnapY,
-                    TECH_SEARCH_RADIUS, 8f, 300,
-                    (cData, ct, cs, gotPos, gotRot) =>
-                    {
-                        onSuccessCount();
-                        string res = "no-call";
-                        try
-                        {
-                            if (freeConstruct)
-                                res = ConstructFree(cs, cData, gotPos, gotRot, team).ToString();
-                            else if (cs != null)
-                                res = cs.Construct(cData, gotPos, gotRot).ToString();
-                        }
-                        catch (Exception cx) { res = "throw:" + cx.Message; }
-                        Si_RTS_AI.AppendToRound(
-                            $"[H3] team={team.name} constructed={displayName} " +
-                            $"landedAt=({gotPos.x:F0},{gotPos.z:F0}) free={freeConstruct} result={res}");
-                    },
-                    (cData, ct, cs) => { onFailCount(); pendingDict.Remove(firedFor); });
-            }
-            catch (Exception ex) { MelonLogger.Warning($"[RTSA/Human] {displayName} placement threw: " + ex.Message); }
-
-            Si_RTS_AI.AppendToRound(
-                $"[H3] team={team.name} fire={displayName} nearHq=({nearHq.x:F0},{nearHq.z:F0}) free={freeConstruct}");
+            bool queued = HumanBuild.TryBuild(team, cd, nearHq, null);
+            if (queued) onSuccessCount(); else { onFailCount(); pendingDict.Remove(nearHq); }
+            Si_RTS_AI.AppendToRound($"[H3] team={team.name} fire={displayName} nearHq=({nearHq.x:F0},{nearHq.z:F0}) queued={queued}");
         }
-
         // Grant + restore team.TotalResources around Construct so the structure spawns
         // without deducting cost from the team's bank. Used for Silo (and Alien BC) —
         // storage buildings the user wants as "free buffers" for eco overflow.
@@ -509,6 +486,8 @@ namespace Si_RTS_AI.Faction
                 if (patch == null) continue;
                 if (fired >= MAX_REFINERY_PER_TICK) break;
                 if (refCount >= ABSOLUTE_MAX_REFINERIES) break;
+                int refCost = 3000; try { refCost = refineryCd.ResourceCost; } catch { }
+                if (team.TotalResources < refCost * (fired + 1)) break;   // what we cannot pay for, we do not ask for
 
                 Vector3 balteriumPos = patch.SignalCenter;
 
