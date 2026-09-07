@@ -508,11 +508,15 @@ namespace Si_RTS_AI.Mil
         /// balance dump's production tree via UnitStats: a Greater Cyst offers
         /// Behemoths. Falls back to the name containing "Spawning" when the dump
         /// is absent.</summary>
+        static readonly string[] HUMAN_PRODUCERS = { "Barracks", "Light Factory", "Heavy Factory", "Ultra Heavy Factory", "Air Factory" };
         static bool ProducesCombat(ConstructionData cd)
         {
             string n = cd.ObjectInfo?.DisplayName ?? "";
             if (n.IndexOf("Spawning Cyst", StringComparison.OrdinalIgnoreCase) >= 0 ||
                 n.IndexOf("Spawner", StringComparison.OrdinalIgnoreCase) >= 0) return true;
+            // Sol and Centauri: the balance dump's production tree lists these.
+            for (int i = 0; i < HUMAN_PRODUCERS.Length; i++)
+                if (string.Equals(n, HUMAN_PRODUCERS[i], StringComparison.OrdinalIgnoreCase)) return true;
             return false;
         }
 
@@ -767,7 +771,7 @@ namespace Si_RTS_AI.Mil
                 Vector3 dir = (Intel.Bases.Count > 0 ? Intel.Bases[0].Centre : site) - site; dir.y = 0f;
                 Vector3 at2 = dir.sqrMagnitude > 1f ? site + dir.normalized * 60f : site;
                 bool fired = false;
-                try { fired = Faction.AlienConstruction.TryBuildStructureByCd(team, cd, at2); }
+                try { fired = Faction.Construction.TryBuild(team, cd, at2); }
                 catch (Exception ex) { MelonLogger.Warning("[MIL/PROD] place threw: " + ex.Message); }
                 _lastPlaceAt = now;
                 if (fired)

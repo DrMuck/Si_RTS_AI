@@ -805,7 +805,8 @@ namespace Si_RTS_AI.Mil
                     {
                         var s = structs[i];
                         if (s?.ObjectInfo == null || s.IsDestroyed) continue;
-                        if (s.ObjectInfo.DisplayName == "Nest") return s.transform.position;
+                        string dn = s.ObjectInfo.DisplayName ?? "";
+                        if (dn == "Nest" || dn == "Headquarters") return s.transform.position;
                     }
             }
             catch { }

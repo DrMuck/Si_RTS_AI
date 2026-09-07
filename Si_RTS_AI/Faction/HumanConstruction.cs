@@ -128,7 +128,6 @@ namespace Si_RTS_AI.Faction
             if (!FactionControl.IsEnabled(team)) return true;
 
             // Opt-in via the same /rtsai override flag Alien uses.
-            if (!Suppression.Phase31_Production.OverrideByTeam.TryGetValue(team, out bool ov) || !ov) return true;
 
             // Alien-eco-only soak mode: return FALSE here so Harmony skips
             // Silica's stock AIConstructionHandler.Think too. Returning true
@@ -230,7 +229,7 @@ namespace Si_RTS_AI.Faction
                         string n = siloCd.ObjectInfo.name;
                         if (!string.IsNullOrEmpty(n)) classname = n;
                     }
-                    var go = HelperMethods.SpawnAtLocation(classname, spawnPos, Quaternion.identity, team.Index);
+                    UnityEngine.GameObject go = null;   // spawning structures for free is a test cheat and is off
                     if (go != null)
                     {
                         SiloSuccesses++;
@@ -325,13 +324,9 @@ namespace Si_RTS_AI.Faction
             var fi = ResolveTotalResourcesField();
             if (fi == null) { return cs.Construct(cd, pos, rot); } // fallback — no free
 
-            int saved = 0;
-            try { saved = (int)fi.GetValue(team); } catch { }
-            try { fi.SetValue(team, 999999); } catch { }
-            object result;
-            try { result = cs.Construct(cd, pos, rot); }
-            finally { try { fi.SetValue(team, saved); } catch { } }
-            return result;
+            // NO FREE CONSTRUCTION. This used to grant 999,999 cash around the
+            // call for test buffers; a commander pays for what it builds.
+            return cs.Construct(cd, pos, rot);
         }
 
         static Vector3 FindOwnHqPosition(Team team)

@@ -8,7 +8,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 
-[assembly: MelonInfo(typeof(Si_RTS_AI.Si_RTS_AI), "Si_RTS_AI", "0.92.45", "DrMuck")]
+[assembly: MelonInfo(typeof(Si_RTS_AI.Si_RTS_AI), "Si_RTS_AI", "0.92.46", "DrMuck")]
 [assembly: MelonGame("Bohemia Interactive", "Silica")]
 
 namespace Si_RTS_AI
@@ -439,6 +439,20 @@ namespace Si_RTS_AI
                             // Cyst steps react within ~1s of their BC finishing.
                             Planning.OpenerPlanner.TickFast(team);
                         }
+                        else if (Faction.Construction.IsHuman(team))
+                        {
+                            // SOL AND CENTAURI UNDER OUR COMMAND share the military
+                            // layer; their economy is HumanConstruction for now.
+                            tMil += TimedMs(() => { try { Mil.Objectives.Tick(team); }
+                                                    catch (Exception ex) { MelonLogger.Warning("[OBJ] threw: " + ex.Message); } });
+                            tMil += TimedMs(() => { try { Mil.Forces.Tick(team); }
+                                                    catch (Exception ex) { MelonLogger.Warning("[FORCE] threw: " + ex.Message); } });
+                            tMil += TimedMs(() => { try { Mil.ProductionV3.Tick(team); }
+                                                    catch (Exception ex) { MelonLogger.Warning("[MIL/PROD] threw: " + ex.Message); } });
+                            try { Mil.SpirePlanner.Tick(team); }
+                            catch (Exception ex) { MelonLogger.Warning("[MIL/SPIRE] threw: " + ex.Message); }
+                            Perception.Utilisation.Tick(team);
+                        }
                     }
                     RecentModWork.AddPlanKick(tPlan);
 
@@ -591,6 +605,7 @@ namespace Si_RTS_AI
             Perception.BuildTimeline.ReportHookState();
             Faction.SuppressCombat.ResetForNewRound();
             Faction.HumanConstruction.ResetForNewRound();
+            Faction.HumanBuild.ResetForNewRound();
             Faction.HumanTechResearcher.ResetForNewRound();
             Faction.HumanHarvesterController.ResetForNewRound();
             Perception.EcoRateSampler.ResetForNewRound();

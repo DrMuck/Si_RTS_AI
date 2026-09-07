@@ -97,6 +97,12 @@ namespace Si_RTS_AI.Mil
         // site and Thorn leads only at the forward base.
         static readonly string[] SPIRES     = { "Hive Spire", "Thorn Spire" };
         static readonly string[] FOB_SPIRES = { "Thorn Spire", "Hive Spire" };
+        // Sol and Centauri: the cheap Turret first, the Heavy Turret at the forward base.
+        static readonly string[] HUMAN_DEFENCE     = { "Turret", "Heavy Turret", "Anti-Air Rocket Turret" };
+        static readonly string[] HUMAN_FOB_DEFENCE = { "Heavy Turret", "Turret", "Anti-Air Rocket Turret" };
+        static Team _team;
+        static string[] ListFor(bool fob) =>
+            Faction.Construction.IsHuman(_team) ? (fob ? HUMAN_FOB_DEFENCE : HUMAN_DEFENCE) : (fob ? FOB_SPIRES : SPIRES);
         static readonly Dictionary<string, ConstructionData> _cds =
             new Dictionary<string, ConstructionData>(StringComparer.OrdinalIgnoreCase);
 
@@ -122,6 +128,7 @@ namespace Si_RTS_AI.Mil
 
         internal static void Tick(Team team)
         {
+            _team = team;
             if (!Enabled || team == null) return;
             // A PLAYER IN THE ALIEN COMMANDER SEAT COMMANDS. The game disables its
             // own AI commander then, and so does this layer, exactly as vanilla
@@ -218,7 +225,7 @@ namespace Si_RTS_AI.Mil
                 if (!Execute) return;
                 try
                 {
-                    if (!Faction.AlienConstruction.TryBuildStructureByCd(team, cd, site.Pos))
+                    if (!Faction.Construction.TryBuild(team, cd, site.Pos))
                         MelonLogger.Msg($"[MIL/SPIRE] placement refused at " +
                                         $"({site.Pos.x:F0},{site.Pos.z:F0}) — construction said no");
                 }
@@ -331,7 +338,7 @@ namespace Si_RTS_AI.Mil
         /// before it gets depth.</summary>
         static string PickType(Team team, Vector3 pos, bool fob = false)
         {
-            var order = fob ? FOB_SPIRES : SPIRES;
+            var order = ListFor(fob);
             for (int i = 0; i < order.Length; i++)
             {
                 if (!_cds.ContainsKey(order[i])) continue;
