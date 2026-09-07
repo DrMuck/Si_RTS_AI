@@ -61,6 +61,28 @@
 | Defiler | 2.0% | 0.0% |
 | Firebug | 0.1% | 0.0% |
 
+## Unit efficiency from replays (cash killed / cash lost)
+
+| unit | built (wins) | exchange (wins) | built (non-wins) | exchange (non-wins) |
+|---|---|---|---|---|
+| Behemoth | 2863 | 2.62 | 67 | 0.50 |
+| Dragonfly | 2387 | 0.07 | 141 | 0.08 |
+| Crab | 1410 | 0.22 | 313 | 0.05 |
+| Horned Crab | 1012 | 0.05 | 110 | 0.95 |
+| Shocker | 601 | 0.34 | 253 | 0.82 |
+| Goliath | 775 | 1.39 | 19 | 3.92 |
+| Hunter | 549 | 0.13 | 198 | 0.18 |
+| Squid | 500 | 0.29 | 51 | 0.20 |
+| Defiler | 204 | 2.55 | 0 | - |
+| Wasp | 18 | 0.00 | 47 | 0.09 |
+| Firebug | 9 | 0.12 | 0 | - |
+| Queen | 0 | - | 0 | - |
+| Shrimp | 0 | - | 0 | - |
+
+- army exchange: wins 1.21 (n=33), non-wins 0.95 (n=7)
+- clumping share: wins 0.09 (n=33), non-wins 0.15 (n=7)
+- idle share away from home: wins 0.28 (n=33), non-wins 0.23 (n=7)
+
 ## Timing (wins)
 
 - first KillHQ staging: median 16.9 min (n=30)

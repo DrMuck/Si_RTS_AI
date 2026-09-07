@@ -103,6 +103,28 @@ def main():
     for u in units[:16]:
         out.append(f"| {u} | {cw.get(u,0)*100:.1f}% | {co.get(u,0)*100:.1f}% |")
 
+    # unit efficiency from replays (cash killed per cash lost), wins vs non-wins
+    def eff(rs):
+        k = collections.Counter(); l = collections.Counter(); b = collections.Counter()
+        for r in rs:
+            for u, p in (r.get("replay") or {}).get("units", {}).items():
+                k[u] += p["cash_killed"]; l[u] += p["cash_lost"]; b[u] += p["built"]
+        return k, l, b
+    kw, lw, bw = eff(wins); ko, lo, bo = eff(others)
+    if bw or bo:
+        out.append("\n## Unit efficiency from replays (cash killed / cash lost)\n\n"
+                   "| unit | built (wins) | exchange (wins) | built (non-wins) | exchange (non-wins) |\n"
+                   "|---|---|---|---|---|")
+        for u in sorted(set(bw) | set(bo), key=lambda u: -(bw[u] + bo[u]))[:16]:
+            ew = f"{kw[u]/lw[u]:.2f}" if lw[u] else "-"; eo = f"{ko[u]/lo[u]:.2f}" if lo[u] else "-"
+            out.append(f"| {u} | {bw[u]} | {ew} | {bo[u]} | {eo} |")
+        def army(rs, key):
+            v = [r["replay"]["army"][key] for r in rs if r.get("replay") and r["replay"]["army"].get(key) is not None]
+            return f"{statistics.mean(v):.2f} (n={len(v)})" if v else "-"
+        out.append(f"\n- army exchange: wins {army(wins,'exchange')}, non-wins {army(others,'exchange')}")
+        out.append(f"- clumping share: wins {army(wins,'clumping')}, non-wins {army(others,'clumping')}")
+        out.append(f"- idle share away from home: wins {army(wins,'idle_share')}, non-wins {army(others,'idle_share')}")
+
     # timing
     fk = [r["forces"]["first_killhq_s"] for r in wins if r["forces"].get("first_killhq_s")]
     hg = [r["forces"]["hq_gone_s"] for r in wins if r["forces"].get("hq_gone_s")]
