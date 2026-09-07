@@ -25,6 +25,7 @@ namespace Si_RTS_AI.Mil
         /// says. About three Behemoths. PLACEHOLDER.</summary>
         internal static int   HomeFloorCash        = 12000;
         internal static int   EnemyStartEff        = 4000;    // an enemy team is never assumed weaker than its starting army
+        internal static bool  ReachEnforce { get; private set; } = false;
         internal static float NoOffenceBeforeS     = 300f;    // no offensive force leaves home before this
         /// <summary>How far ahead an arrival is believed, seconds.</summary>
         internal static float ForecastHorizonS     = 180f;

@@ -637,7 +637,7 @@ namespace Si_RTS_AI.Mil
                 // Crimson Peak 13:02: six cysts on the Nest plateau, 67 Behemoths
                 // that never crossed the ridge. The game's graph decides.
                 if (mainOffence != null && !Reach.AllGroundCanReach(team, p, mainOffence.Centre, out string rw))
-                { unreachable++; unreachWhy = rw; continue; }
+                { unreachable++; unreachWhy = rw; if (Reach.Enforce) continue; }
                 float walk = 0f;
                 for (int f = 0; f < _fights.Count; f++)
                 {

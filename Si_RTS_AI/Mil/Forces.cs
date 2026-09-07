@@ -398,14 +398,13 @@ namespace Si_RTS_AI.Mil
                         // way from their plateau to the HQ. They stay in the reserve.
                         if (!Reach.CanReach(u, o.Where))
                         {
-                            free.RemoveAt(idx);
                             Reach.Refusals++;
                             if (Reach.Refusals <= 20 || Reach.Refusals % 1000 == 0)
                             {
                                 Vector3 up = Vector3.zero; try { up = u.transform.position; } catch { }
-                                MilLog.Msg($"[FORCE] no path: {n} at ({up.x:F0},{up.z:F0}) cannot reach {o.Kind}#{o.Id} at ({o.Where.x:F0},{o.Where.z:F0}) — left in the reserve (#{Reach.Refusals})");
+                                MilLog.Msg($"[FORCE] no path: {n} at ({up.x:F0},{up.z:F0}) cannot reach {o.Kind}#{o.Id} at ({o.Where.x:F0},{o.Where.z:F0}) — {(Reach.Enforce ? "left in the reserve" : "advisory, sent anyway")} (#{Reach.Refusals})");
                             }
-                            continue;
+                            if (Reach.Enforce) { free.RemoveAt(idx); continue; }
                         }
                         float e = Kernel.EffectiveOf(n);
                         if (IsRaid(o) && raidHeld + e > raidBudget && have > 0f) break;

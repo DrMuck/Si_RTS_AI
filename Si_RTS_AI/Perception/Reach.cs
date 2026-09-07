@@ -32,10 +32,21 @@ namespace Si_RTS_AI.Perception
         static float _masksAt = -999f;
         static int _warned;
         internal static int Refusals;
+        /// <summary>
+        /// ADVISORY UNTIL PROVEN. Naraka 16:18 on v0.92.36: 9 of 9 sites and every
+        /// force unit still read as unreachable on open ground, the army stood at
+        /// home and the round ended at 29 min. Until the verdicts match what the
+        /// units actually do, they are logged and nothing acts on them.
+        /// </summary>
+        internal static bool Enforce = false;
+        static int _diag;
+        const int DIAG_CAP = 12;
+        static bool _graphsLogged;
 
         internal static void ResetForNewRound()
         {
             _cache.Clear(); _masks.Clear(); _maskNames.Clear(); _masksAt = -999f; _warned = 0; Refusals = 0;
+            _diag = 0; _graphsLogged = false;
         }
 
         static bool TryMask(Unit u, out GraphMask mask)
@@ -81,14 +92,29 @@ namespace Si_RTS_AI.Perception
                 // graph is reachable; no node on any graph is unknown, not no.
                 var graphs = AstarPath.active.data?.graphs;
                 bool anyNode = false, ok = false;
+                if (!_graphsLogged && graphs != null)
+                {
+                    _graphsLogged = true;
+                    var sb = new System.Text.StringBuilder("[REACH] graphs:");
+                    for (int g = 0; g < graphs.Length; g++)
+                    {
+                        var graph = graphs[g];
+                        if (graph == null) { sb.Append(" [null]"); continue; }
+                        sb.Append(" [").Append(graph.graphIndex).Append(' ').Append(graph.name ?? "?").Append(' ').Append(graph.GetType().Name).Append(']');
+                    }
+                    MelonLogger.Msg(sb.ToString());
+                }
+                bool diag = _diag < DIAG_CAP;
+                System.Text.StringBuilder d = diag ? new System.Text.StringBuilder() : null;
                 if (graphs != null)
                 {
-                    for (int g = 0; g < graphs.Length && !ok; g++)
+                    for (int g = 0; g < graphs.Length && (!ok || diag); g++)
                     {
                         var graph = graphs[g];
                         if (graph == null) continue;
                         int gi = (int)graph.graphIndex;
-                        if (gi < 0 || gi > 30 || ((mask.value >> gi) & 1) == 0) continue;
+                        bool inMask = false; try { inMask = mask.Contains(graph.graphIndex); } catch { }
+                        if (!inMask && !diag) continue;
                         // WALKABLE NODES ONLY. The game's own nearest-node helper
                         // does not constrain walkability, so a structure position
                         // (every candidate site) or a unit standing among nodes
@@ -96,14 +122,27 @@ namespace Si_RTS_AI.Perception
                         // area is nobody's: Naraka 15:26 still refused 9 of 9 sites.
                         var gm = GraphMask.FromGraphIndex(graph.graphIndex);
                         var a = NearestWalkable(from, gm);
-                        if (a == null) continue;
-                        var b = NearestWalkable(to, gm);
-                        if (b == null) continue;
+                        var b = a == null ? null : NearestWalkable(to, gm);
+                        if (diag)
+                        {
+                            d.Append(" g").Append(gi).Append(inMask ? "" : "(out)").Append(':');
+                            if (a == null) d.Append("A-none");
+                            else d.Append("A").Append(a.Area).Append('@').Append(Dist(a, from).ToString("F0")).Append('m');
+                            d.Append('/');
+                            if (b == null) d.Append("B-none");
+                            else d.Append("B").Append(b.Area).Append('@').Append(Dist(b, to).ToString("F0")).Append('m');
+                        }
+                        if (a == null || b == null || !inMask) continue;
                         anyNode = true;
                         if (a.Area == b.Area) ok = true;
                     }
                 }
                 if (!anyNode) ok = true;
+                if (diag)
+                {
+                    _diag++;
+                    MelonLogger.Msg($"[REACH] mask {mask.value} ({from.x:F0},{from.z:F0})->({to.x:F0},{to.z:F0}) verdict {(ok ? "reachable" : "NO PATH")}{(anyNode ? "" : " (no nodes: unknown)")}:{d}");
+                }
                 if (_cache.Count > 4000) _cache.Clear();
                 _cache[key] = (ok, now);
                 return ok;
@@ -151,6 +190,11 @@ namespace Si_RTS_AI.Perception
             for (int k = 0; k < masks.Count; k++)
                 if (!CanReach(masks[k], from, to)) { why = k < _maskNames.Count ? _maskNames[k] : "?"; return false; }
             return true;
+        }
+
+        static float Dist(GraphNode n, Vector3 p)
+        {
+            try { Vector3 q = (Vector3)n.position; q.y = p.y; return Vector3.Distance(q, p); } catch { return -1f; }
         }
 
         static GraphNode NearestWalkable(Vector3 pos, GraphMask gm)
