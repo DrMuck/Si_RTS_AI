@@ -689,11 +689,20 @@ namespace Si_RTS_AI.Mil
             why = null;
             if (now - force.LastTargetCheckAt < KERNEL_CHECK_S) return false;
             force.LastTargetCheckAt = now;
-            float ours = force.Eff + OwnDefenceNear(Centroid(force));
+            // THE WHOLE COMMITMENT FIGHTS, AND A FORCE IN THE FIGHT HOLDS TO
+            // PARITY. Naraka 2026-09-07 18:18, minute 23: KillHQ wave one (38k)
+            // judged itself alone against 32k at the HQ, called it a coin flip
+            // and pulled both waves (97k) home; the second wave was 200 m behind.
+            // DrMuck: "army pull back around 24 min, unnecessary". Every force on
+            // the objective counts, and once engaged the line is 1:1, not the
+            // pre-fight 1.25 that decides whether to start a fight at all.
+            float ours = (o.Offensive ? Mathf.Max(force.Eff, AssignedTo(o)) : force.Eff) + OwnDefenceNear(Centroid(force));
             float theirs = Intel.EffectiveNear(Centroid(force), ENGAGE_RADIUS_M) + DefenceStructsNear(o, Centroid(force));
             float ratio = Kernel.Ratio(ours, theirs);
             var band = Doctrine.Classify(ratio);
-            float refuseAt = o.Offensive ? Doctrine.RefuseBelow : MilConfig.DefendRefuseBelow;
+            float refuseAt = o.Offensive
+                ? (force.Phase == State.Engaged ? 1.0f : Doctrine.RefuseBelow)
+                : MilConfig.DefendRefuseBelow;
             if (theirs > 0f && ratio < refuseAt)
             {
                 why = $"{Kernel.Describe(ours, theirs)} — {(o.Offensive ? Doctrine.Advice(band) : "clearly losing our own ground")}";
@@ -905,6 +914,28 @@ namespace Si_RTS_AI.Mil
             ExecuteReserve(now);
         }
 
+        const float POST_RADIUS_M = 250f;
+        static bool NearOwnStructure(Vector3 p, float r)
+        {
+            try
+            {
+                var structs = _team?.Structures;
+                if (structs == null) return false;
+                float r2 = r * r;
+                for (int i = 0; i < structs.Count; i++)
+                {
+                    var s = structs[i];
+                    if (s?.ObjectInfo == null || s.IsDestroyed) continue;
+                    string n = s.ObjectInfo.DisplayName ?? "";
+                    if (n == "Node") continue;               // a node line is not a post
+                    var q = s.transform.position;
+                    float dx = q.x - p.x, dz = q.z - p.z;
+                    if (dx * dx + dz * dz <= r2) return true;
+                }
+            }
+            catch { }
+            return false;
+        }
         static void ExecuteReserve(float now)
         {
             if (_reserve == null || _reserve.Units.Count == 0 || _reservePoint == Vector3.zero) return;
@@ -923,6 +954,13 @@ namespace Si_RTS_AI.Mil
                 float leash = Objectives.UnderSiege ? 150f : RESERVE_LEASH_M;
                 if (dx * dx + dz * dz <= leash * leash) continue;
                 if (IsFighting(u)) continue;
+                // POSTED, NOT STRAY. DrMuck on Naraka 18:18: "army tries to gather
+                // in sector G5, but why, there is no threat". Released forces
+                // marched a hundred units to one standing point. A unit already
+                // standing at one of our structures is a picket where it is;
+                // only units in the open are collected. Under siege everything
+                // comes home.
+                if (!Objectives.UnderSiege && NearOwnStructure(p, POST_RADIUS_M)) continue;
                 stray.Add(u);
             }
             if (stray.Count == 0) return;
