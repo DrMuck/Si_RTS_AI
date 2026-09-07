@@ -252,6 +252,38 @@ namespace Si_RTS_AI.Mil
                 };
 
             var nest = FindNest(team);
+            // EXPOSED EXPANSIONS GET A SPIRE BEFORE THEY ARE HIT. DrMuck's replays
+            // (Badlands C2/D2, Crimson Peak C4, Monument Valley E4): expansions
+            // built toward the enemy with nothing beside them, lost with their
+            // node line. A Bio Cache nearer an enemy base than the Nest, or within
+            // a kilometre of one, is a site in its own right.
+            if (nest != Vector3.zero)
+            {
+                try
+                {
+                    var structs = team.Structures;
+                    if (structs != null)
+                        for (int i = 0; i < structs.Count; i++)
+                        {
+                            var s = structs[i];
+                            if (s?.ObjectInfo == null || s.IsDestroyed) continue;
+                            if ((s.ObjectInfo.DisplayName ?? "") != "Bio Cache") continue;
+                            bool functional = false; try { functional = s.IsFunctional; } catch { }
+                            if (!functional) continue;
+                            Vector3 p = s.transform.position;
+                            float dEnemy = Intel.NearestEnemyBaseDist(p);
+                            if (dEnemy == float.MaxValue) continue;
+                            float dNest = Vector3.Distance(p, nest);
+                            if (dEnemy > 1000f && dEnemy > dNest) continue;
+                            yield return new Site
+                            {
+                                Pos = p, Threat = Mathf.Max(1f, Intel.EffectiveNear(p, 900f)), Income = 0,
+                                Why = $"an exposed expansion {dEnemy:F0}m from an enemy base",
+                            };
+                        }
+                }
+                finally { }
+            }
             var bearing = Intel.CorridorBearing();
             if (nest != Vector3.zero && bearing != Vector3.zero)
                 yield return new Site

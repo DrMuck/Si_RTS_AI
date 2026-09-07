@@ -536,6 +536,23 @@ namespace Si_RTS_AI.Mil
         }
 
         /// <summary>Effective enemy force within a radius, confidence-weighted.</summary>
+        /// <summary>Distance to the nearest known enemy base centre; float.MaxValue when none is known.</summary>
+        internal static float NearestEnemyBaseDist(Vector3 p)
+        {
+            float best = float.MaxValue;
+            try
+            {
+                for (int i = 0; i < Bases.Count; i++)
+                {
+                    var b = Bases[i];
+                    float dx = b.Centre.x - p.x, dz = b.Centre.z - p.z;
+                    float d = Mathf.Sqrt(dx * dx + dz * dz);
+                    if (d < best) best = d;
+                }
+            }
+            catch { }
+            return best;
+        }
         internal static float EffectiveNear(Vector3 p, float radiusM)
         {
             float e = 0f; float r2 = radiusM * radiusM;

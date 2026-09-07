@@ -498,6 +498,10 @@ namespace Si_RTS_AI.Mil
                     float w = 0.3f + recent / 4000f;
                     int sector = Intel.SectorOf(pos - nest);
                     w += Intel.SectorWeight(sector) * 0.5f;
+                    // An expansion nearer the enemy than the Nest pulls the reserve
+                    // toward it: the standing point is a picket, not a huddle.
+                    float dEnemy = Intel.NearestEnemyBaseDist(pos);
+                    if (dEnemy < 1000f || dEnemy < (pos - nest).magnitude) w += 0.8f;
                     _assets.Add((pos, Mathf.Min(w, 3f)));
                 });
             }

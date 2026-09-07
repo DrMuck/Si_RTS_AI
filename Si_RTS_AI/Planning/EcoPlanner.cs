@@ -312,6 +312,22 @@ namespace Si_RTS_AI.Planning
                     w = UNEXPLORED_VALUE_DISCOUNT;
                 value += s.patches[p].remaining * w;
             }
+            // A CLOSE ENEMY DISCOUNTS GROUND NEAR HIM EARLY. DrMuck on Great Erg
+            // (2026-09-07 02:18): close spawns get the alien economy harassed from
+            // the start; expand away from the enemy in the early game. For the
+            // first ten minutes a target within 900 m of a known enemy base is
+            // worth a quarter, within 1,400 m six tenths; after that the ground
+            // is priced on what it earns.
+            try
+            {
+                if (Mil.Forces.RoundSeconds() < 600f)
+                {
+                    float dEnemy = Mil.Intel.NearestEnemyBaseDist(target);
+                    if (dEnemy < 900f) value *= 0.25f;
+                    else if (dEnemy < 1400f) value *= 0.6f;
+                }
+            }
+            catch { }
             r.RawValue = value;
 
             // Nodes build in sequence as cash allows; then the BC; then the
