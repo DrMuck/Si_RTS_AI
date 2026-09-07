@@ -551,10 +551,16 @@ namespace Si_RTS_AI.Faction
                         ? Mathf.Round(Quaternion.LookRotation(toPatch0, Vector3.up).eulerAngles.y / 90f) * 90f + REFINERY_RAMP_QUARTER_TURNS * 90f
                         : 0f;
                     Quaternion wantRot = Quaternion.Euler(0f, wantYaw, 0f);
+                    // THE SEARCH RADIUS IS THE BUILDING'S OWN BUILD RADIUS, read from the
+                    // game: it is modded on DrMuck's servers, so no constant may stand in
+                    // for it. The distance to the patch that a landing must respect is a
+                    // separate, economic rule (REFINERY_PLACEMENT_QUALITY_RADIUS).
+                    float refSearch = REFINERY_SEARCH_RADIUS;
+                    try { if (refineryCd.MaximumBaseStructureDistance > 0f) refSearch = refineryCd.MaximumBaseStructureDistance; } catch { }
                     ConstructionPlacement.QueueFirstValidPlacementAroundPoint(
                         cd.ObjectPreviewSetup, team, closer, searchFrom,
                         cd.GridSnapXZ, cd.GridSnapY,
-                        REFINERY_SEARCH_RADIUS, 8f, 300,
+                        refSearch, Mathf.Clamp(refSearch / 20f, 6f, 40f), 300,
                         (cData, ct, cs, gotPos, gotRot) =>
                         {
                             // Quality gate: reject placements that landed too far from
