@@ -277,8 +277,16 @@ namespace Si_RTS_AI.Mil
                     try
                     {
                         var names = new System.Text.StringBuilder();
-                        foreach (var o2 in opts) { bool iu = false; try { iu = o2.IsUnit; } catch { } if (iu && o2?.ObjectInfo != null) names.Append(o2.ObjectInfo.DisplayName).Append(' '); }
-                        MilLog.Msg($"[MIL/PROD] {tn0} offers: {names}");
+                        var other = new System.Text.StringBuilder();
+                        foreach (var o2 in opts)
+                        {
+                            if (o2?.ObjectInfo == null) continue;
+                            bool iu = false; try { iu = o2.IsUnit; } catch { }
+                            bool it = false; try { it = o2.IsTechTier; } catch { }
+                            if (iu) names.Append(o2.ObjectInfo.DisplayName).Append(' ');
+                            else other.Append(o2.ObjectInfo.DisplayName).Append(it ? "(tier) " : " ");
+                        }
+                        MilLog.Msg($"[MIL/PROD] {tn0} offers: {names}| other: {other}");
                     }
                     catch { }
                 }

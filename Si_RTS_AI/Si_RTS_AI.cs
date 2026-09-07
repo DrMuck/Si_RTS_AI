@@ -8,7 +8,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 
-[assembly: MelonInfo(typeof(Si_RTS_AI.Si_RTS_AI), "Si_RTS_AI", "0.92.48", "DrMuck")]
+[assembly: MelonInfo(typeof(Si_RTS_AI.Si_RTS_AI), "Si_RTS_AI", "0.92.49", "DrMuck")]
 [assembly: MelonGame("Bohemia Interactive", "Silica")]
 
 namespace Si_RTS_AI
@@ -618,6 +618,7 @@ namespace Si_RTS_AI
             Faction.SuppressCombat.ResetForNewRound();
             Faction.HumanConstruction.ResetForNewRound();
             Faction.HumanBuild.ResetForNewRound();
+            Perception.CommanderLog.ResetForNewRound();
             Faction.HumanTechResearcher.ResetForNewRound();
             Faction.HumanHarvesterController.ResetForNewRound();
             Perception.EcoRateSampler.ResetForNewRound();
@@ -811,6 +812,10 @@ namespace Si_RTS_AI
         // Note: we can't easily tell WHICH human commander issued a given order
         // (there's no "issuer" field on the event), only that it came from the
         // player-commander of that team.
+        static string OrderTime()
+        {
+            try { return Perception.MapLayers.LayerReplay.CurrentRoundTime.ToString("F0"); } catch { return "-"; }
+        }
         static string AttributeSource(Unit unit)
         {
             try
@@ -820,7 +825,10 @@ namespace Si_RTS_AI
 
                 var team = unit?.Team;
                 if (team != null && !AIManager.IsCommanderEnabled(team))
-                    return "commander=player";
+                {
+                    string tag = Perception.CommanderLog.CommanderTag(team);
+                    return tag.Length > 0 ? "commander=player " + tag : "commander=player";
+                }
             }
             catch { }
             return "commander=ai";
@@ -840,13 +848,13 @@ namespace Si_RTS_AI
             string src = AttributeSource(unit);
             var p2 = Phase2.Get(team);
             if      (src.StartsWith("piloted"))    p2.OrdersPiloted_Attack++;
-            else if (src == "commander=player")    p2.OrdersCommanderPlayer_Attack++;
+            else if (src.StartsWith("commander=player")) p2.OrdersCommanderPlayer_Attack++;
             else                                    p2.OrdersCommanderAi_Attack++;
 
             string tgtDesc = "?";
             try { tgtDesc = target?.ToString() ?? "?"; } catch { }
             AppendToRound(
-                $"[ORDER] {src} team={ResolveTeamName(team)} " +
+                $"[ORDER] t={OrderTime()} {src} team={ResolveTeamName(team)} " +
                 $"unit={UnitDisplay(unit)} kind=attack tgt={tgtDesc}");
         }
 
@@ -859,11 +867,11 @@ namespace Si_RTS_AI
             string src = AttributeSource(unit);
             var p2 = Phase2.Get(team);
             if      (src.StartsWith("piloted"))    p2.OrdersPiloted_Move++;
-            else if (src == "commander=player")    p2.OrdersCommanderPlayer_Move++;
+            else if (src.StartsWith("commander=player")) p2.OrdersCommanderPlayer_Move++;
             else                                    p2.OrdersCommanderAi_Move++;
 
             AppendToRound(
-                $"[ORDER] {src} team={ResolveTeamName(team)} " +
+                $"[ORDER] t={OrderTime()} {src} team={ResolveTeamName(team)} " +
                 $"unit={UnitDisplay(unit)} kind=move " +
                 $"dst=({destination.x:F0},{destination.y:F0},{destination.z:F0})");
         }
