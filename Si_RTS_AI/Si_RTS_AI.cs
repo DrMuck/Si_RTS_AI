@@ -8,7 +8,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 
-[assembly: MelonInfo(typeof(Si_RTS_AI.Si_RTS_AI), "Si_RTS_AI", "0.92.46", "DrMuck")]
+[assembly: MelonInfo(typeof(Si_RTS_AI.Si_RTS_AI), "Si_RTS_AI", "0.92.47", "DrMuck")]
 [assembly: MelonGame("Bohemia Interactive", "Silica")]
 
 namespace Si_RTS_AI
@@ -337,10 +337,22 @@ namespace Si_RTS_AI
                     // exactly the rounds where the military layer is off, which
                     // is every eco soak we run. It issues no orders, so there is
                     // nothing for the gate to protect.
-                    if ((team.name ?? "").Contains("Alien"))
+                    // THE PERCEIVER IS THE TEAM THAT HOLDS THE MILITARY LAYER. Intel,
+                    // fields and the threat map are single-team state; they used to
+                    // run for the alien no matter what, so in the first Sol test
+                    // (2026-09-07 19:46) Sol's objectives read the alien's intel,
+                    // tracked Sol's own units as the enemy and proposed KillHQ on
+                    // Sol's own Headquarters. With the alien switch off and a human
+                    // team on, that human team perceives.
+                    bool alienOn = Faction.FactionControl.AlienEnabled;
+                    bool humanOn = Faction.FactionControl.SolEnabled || Faction.FactionControl.CentauriEnabled;
+                    bool perceiver = tn.Contains("Alien") ? (alienOn || !humanOn)
+                                                          : (!alienOn && Faction.Construction.IsHuman(team) && Faction.FactionControl.IsEnabled(team));
+                    if (perceiver)
                     {
-                        try { Mil.Shadow.Tick(team); }
+                        if (tn.Contains("Alien")) try { Mil.Shadow.Tick(team); }
                         catch (Exception ex) { MelonLogger.Warning("[MIL/SHADOW] threw: " + ex.Message); }
+                        if (!tn.Contains("Alien")) try { Perception.BcIncome.Sample(team, "Refinery"); } catch { }
                         // Perception for the military layer runs whatever the
                         // switches say: tracks and walkability are data, and the
                         // rounds that need them most are the ones with the
@@ -365,8 +377,8 @@ namespace Si_RTS_AI
                         if (Faction.FactionControl.IsEnabled(team)) try { Mil.QueenKeeper.Tick(team); }
                         catch (Exception ex) { MelonLogger.Warning("[QUEEN] keeper threw: " + ex.Message); }
                     }
-                    long tThreat = TimedMs(() => { Perception.ThreatMap.Observe(team);
-                                                    Perception.ThreatMap.Tick(team); });
+                    long tThreat = perceiver ? TimedMs(() => { Perception.ThreatMap.Observe(team);
+                                                                Perception.ThreatMap.Tick(team); }) : 0;
                     // OURS MEANS THE ALIEN'S. Rebuild used to run for every team in
                     // turn under a 2s throttle, so whichever team ticked first
                     // defined "our" ground — Sol, on this rig. Every ControlGain

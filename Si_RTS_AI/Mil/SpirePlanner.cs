@@ -274,7 +274,8 @@ namespace Si_RTS_AI.Mil
                         {
                             var s = structs[i];
                             if (s?.ObjectInfo == null || s.IsDestroyed) continue;
-                            if ((s.ObjectInfo.DisplayName ?? "") != "Bio Cache") continue;
+                            string ecoName = Faction.Construction.IsHuman(team) ? "Refinery" : "Bio Cache";
+                            if ((s.ObjectInfo.DisplayName ?? "") != ecoName) continue;
                             bool functional = false; try { functional = s.IsFunctional; } catch { }
                             if (!functional) continue;
                             Vector3 p = s.transform.position;
