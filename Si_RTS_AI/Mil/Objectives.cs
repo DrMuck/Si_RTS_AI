@@ -439,8 +439,11 @@ namespace Si_RTS_AI.Mil
                 // KillHQ — the win condition.
                 if (b.HasHq)
                 {
-                    float def = Mathf.Max(local, Intel.EnemyEffectiveOf(b.Team));
-                    float beat = Kernel.PriceToBeat(def);
+                    // Local defence plus reinforcements within reach, floored at a
+                    // share of the enemy army (they will come home), and committed
+                    // at the HQ ratio rather than the general 2:1.
+                    float def = Mathf.Max(local, Intel.EnemyEffectiveOf(b.Team) * Doctrine.HqArmyShare);
+                    float beat = Mathf.Max(def * Doctrine.HqCommitAt, 80f);
                     float razeNeed = b.TotalHp / (RAZE_BUDGET_S * Mathf.Max(0.01f, DpsPerEff));
                     float price = Mathf.Max(beat, razeNeed);
                     bool affordable = ArmyEff >= price;

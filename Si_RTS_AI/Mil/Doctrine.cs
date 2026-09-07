@@ -74,6 +74,18 @@ namespace Si_RTS_AI.Mil
         internal static float RefuseBelow   { get; private set; } = 1.25f;
         internal static float CommitAt      { get; private set; } = 2.0f;
         internal static float WastefulAbove { get; private set; } = 4.0f;
+        /// <summary>
+        /// THE HQ IS PRICED ON WHAT DEFENDS IT. DrMuck's replays (2026-09-07):
+        /// "army clumping from mid game, a huge army that could pressure the
+        /// enemy; attrition only makes sense at parity, push once our army
+        /// outweighs theirs." The planner priced the HQ at twice the WHOLE enemy
+        /// army estimate, so it waited at home for a 2:1 edge over everything Sol
+        /// owned. Now the defence is the local strength plus what can reinforce,
+        /// floored at a share of the enemy army, and the commit ratio for the win
+        /// condition is its own knob.
+        /// </summary>
+        internal static float HqCommitAt    { get; private set; } = 1.5f;
+        internal static float HqArmyShare   { get; private set; } = 0.5f;
         /// <summary>Slope of the win curve, P(A wins) = sigmoid(K * ln(effA/effB)). From the AI-vs-AI fit.</summary>
         internal static float K { get; private set; } = 1.437f;
         /// <summary>Exchange exponent: loss ratio scales as forceRatio^-Beta. 0.60 AI-vs-AI (MIL_V2 s4).</summary>
@@ -112,6 +124,8 @@ namespace Si_RTS_AI.Mil
                     RefuseBelow   = (float)(cm["refuseBelow"]   ?? RefuseBelow);
                     CommitAt      = (float)(cm["commitAt"]      ?? CommitAt);
                     WastefulAbove = (float)(cm["wastefulAbove"] ?? WastefulAbove);
+                    HqCommitAt    = (float)(cm["hqCommitAt"]    ?? HqCommitAt);
+                    HqArmyShare   = (float)(cm["hqArmyShare"]   ?? HqArmyShare);
                 }
 
                 var tr = root["trajectory"] as JObject;

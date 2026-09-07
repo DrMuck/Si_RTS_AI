@@ -185,12 +185,35 @@ namespace Si_RTS_AI.Mil
             float reserveGap = target - Forces.ReserveEff;
             if (reserveGap > 0f)
             {
-                _demand[(int)Forces.Pool.Line] += reserveGap * 0.75f;
-                _demand[(int)Forces.Pool.Fast] += reserveGap * 0.25f;
+                // HEAVIES GET A SHARE FROM MINUTE EIGHT. Nothing ever asked for the
+                // heavy pool, so Scorpions and Colossi were only ever built by
+                // accident of the any-pool. DrMuck: "no Scorps and Colossus were
+                // built at all, despite they can be very valuable."
+                float heavy = 0f;
+                try { heavy = Forces.RoundSeconds() >= 480f ? 0.25f : 0f; } catch { }
+                _demand[(int)Forces.Pool.Line]  += reserveGap * (0.75f - heavy);
+                _demand[(int)Forces.Pool.Fast]  += reserveGap * 0.25f;
+                _demand[(int)Forces.Pool.Heavy] += reserveGap * heavy;
             }
         }
 
         static float GapFor(Forces.Pool p) => _demand[(int)p] + _demandAny;
+        static float _airCheckedAt = -999f; static bool _airSeen;
+        static bool EnemyAirSeen()
+        {
+            float now = Time.time;
+            if (now - _airCheckedAt < 10f) return _airSeen;
+            _airCheckedAt = now; _airSeen = false;
+            try
+            {
+                var mix = ThreatMap.EnemyMix;
+                if (mix != null)
+                    foreach (var kv in mix)
+                        if (kv.Value > 0f && UnitStats.IsFlyer(kv.Key)) { _airSeen = true; break; }
+            }
+            catch { }
+            return _airSeen;
+        }
 
         static Forces.Pool PoolOfName(string n)
         {
@@ -283,6 +306,9 @@ namespace Si_RTS_AI.Mil
                     if (!isUnit) continue;
                     string n = opt.ObjectInfo.DisplayName ?? "";
                     if (WorkerNames.Contains(n)) continue;
+                    // SQUIDS ONLY AGAINST AIR. DrMuck: "a lot of squids are built, too
+                    // many; only usable against air or single soldiers."
+                    if (n == "Squid" && !EnemyAirSeen()) continue;
                     int cost = 0; try { cost = opt.ResourceCost; } catch { }
                     if (cost <= 0 || cost > budget) continue;
                     if (!CapRoom(team, opt.ObjectInfo)) continue;
@@ -655,8 +681,15 @@ namespace Si_RTS_AI.Mil
                     float toThem = toMain.SecondsAt(p, 9f);
                     if (float.IsInfinity(toThem)) continue;
                     // Not inside their reach, and held: something of ours stands here.
+                    // A FORWARD BASE STANDS WHERE THE ARMY STANDS. The Maw replay
+                    // (2026-09-06 22:43): FOBs placed close to the enemy with no army
+                    // to cover the build-up, several producers lost. Cover is the
+                    // reserve within 500 m or a spire within 250 m, and the enemy
+                    // strength within 700 m must not exceed the reserve.
                     bool covered = (Forces.ReservePoint - p).sqrMagnitude < 500f * 500f || SpireNear(team, p, 250f);
-                    float fs = toThem + danger / 20f + (covered ? 0f : 120f);
+                    if (!covered) continue;
+                    if (Intel.EffectiveNear(p, 700f) > Forces.ReserveEff) continue;
+                    float fs = toThem + danger / 20f;
                     if (fs < fobScore) { fobScore = fs; fob = p; fobWhy = $"{toThem:F0}s from {Intel.Short(mainOffence.Team)} base, danger {danger:F0}{(covered ? ", covered" : "")}"; }
                 }
             }

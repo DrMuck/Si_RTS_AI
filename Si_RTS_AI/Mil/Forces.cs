@@ -927,7 +927,7 @@ namespace Si_RTS_AI.Mil
             _reserve.OrdersIssued += MoveEach(stray, _reservePoint);
         }
 
-        static float RoundSeconds()
+        internal static float RoundSeconds()
         {
             try { return Perception.MapLayers.LayerReplay.CurrentRoundTime; } catch { return float.MaxValue; }
         }

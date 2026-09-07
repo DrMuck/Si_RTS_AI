@@ -91,7 +91,12 @@ namespace Si_RTS_AI.Mil
         static float _nextAt;
         static int _placedThisRound;
 
-        static readonly string[] SPIRES = { "Thorn Spire", "Hive Spire" };
+        // HIVE BEFORE THORN. DrMuck: "Hive spires are much better than thorn
+        // spires; thorn spires are very inaccurate and only help against a tank
+        // push on a FOB, built in numbers in a tight spot." So Hive leads at every
+        // site and Thorn leads only at the forward base.
+        static readonly string[] SPIRES     = { "Hive Spire", "Thorn Spire" };
+        static readonly string[] FOB_SPIRES = { "Thorn Spire", "Hive Spire" };
         static readonly Dictionary<string, ConstructionData> _cds =
             new Dictionary<string, ConstructionData>(StringComparer.OrdinalIgnoreCase);
 
@@ -188,7 +193,7 @@ namespace Si_RTS_AI.Mil
 
                 // Cheaper first: a Thorn is 1,000 against a Hive's 1,400, and
                 // the first spire on a site is the one that matters most.
-                string name = PickType(team, site.Pos);
+                string name = PickType(team, site.Pos, site.Why == "the forward base");
                 if (name == null || !_cds.TryGetValue(name, out var cd)) continue;
 
                 int cost = 1000;
@@ -288,13 +293,14 @@ namespace Si_RTS_AI.Mil
 
         /// <summary>Thorn first for cost, then Hive, so a site gets breadth
         /// before it gets depth.</summary>
-        static string PickType(Team team, Vector3 pos)
+        static string PickType(Team team, Vector3 pos, bool fob = false)
         {
-            for (int i = 0; i < SPIRES.Length; i++)
+            var order = fob ? FOB_SPIRES : SPIRES;
+            for (int i = 0; i < order.Length; i++)
             {
-                if (!_cds.ContainsKey(SPIRES[i])) continue;
-                if (CountNear(team, SPIRES[i], pos) == 0
-                    && !OrderedNear(SPIRES[i], pos)) return SPIRES[i];
+                if (!_cds.ContainsKey(order[i])) continue;
+                if (CountNear(team, order[i], pos) == 0
+                    && !OrderedNear(order[i], pos)) return order[i];
             }
             return null;
         }
