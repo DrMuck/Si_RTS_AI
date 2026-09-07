@@ -35,6 +35,7 @@ namespace Si_RTS_AI.Perception.MapLayers
         static string _roundDir = "";
         static int    _frameIndex;
         static float  _lastSnapshotTime = -1f;
+        static float  _lastHumanSnapshotTime = -1f;
         // 0 = round hasn't started yet. Set when MissionState flips to STARTED,
         // NOT at scene load — the pre-round lobby/countdown can sit at INIT for
         // minutes and used to be billed to t, so every timeline (build order,
@@ -234,7 +235,12 @@ namespace Si_RTS_AI.Perception.MapLayers
             // Fix: gate on "did Alien snap this SAME tick?" — _lastSnapshotTime
             // is only bumped inside MaybeSnapshot when the interval elapsed, so
             // requiring now == _lastSnapshotTime aligns Human snapshots with Alien.
-            if (now - _lastSnapshotTime > 0.001f) return;   // Alien didn't snap this tick — skip
+            // The alien snaps first only when it ticks first. With Sol under the mod
+            // (2026-09-07 21:17) the human team ticked before the alien every time
+            // and no human frame was ever written. Own interval, aligned when the
+            // alien did snap this tick.
+            if (now - _lastSnapshotTime > 0.001f && now - _lastHumanSnapshotTime < SNAPSHOT_INTERVAL_SEC) return;
+            _lastHumanSnapshotTime = now;
             float roundTime = CurrentRoundTime;
             string teamName = SafeTeamName(team);
 

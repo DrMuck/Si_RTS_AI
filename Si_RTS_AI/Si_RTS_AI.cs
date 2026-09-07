@@ -8,7 +8,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 
-[assembly: MelonInfo(typeof(Si_RTS_AI.Si_RTS_AI), "Si_RTS_AI", "0.92.55", "DrMuck")]
+[assembly: MelonInfo(typeof(Si_RTS_AI.Si_RTS_AI), "Si_RTS_AI", "0.92.56", "DrMuck")]
 [assembly: MelonGame("Bohemia Interactive", "Silica")]
 
 namespace Si_RTS_AI
@@ -455,6 +455,7 @@ namespace Si_RTS_AI
                         {
                             // SOL AND CENTAURI UNDER OUR COMMAND share the military
                             // layer; their economy is HumanConstruction for now.
+                            Planning.ScoutPlanner.Tick(team);
                             tMil += TimedMs(() => { try { Mil.Objectives.Tick(team); }
                                                     catch (Exception ex) { MelonLogger.Warning("[OBJ] threw: " + ex.Message); } });
                             tMil += TimedMs(() => { try { Mil.Forces.Tick(team); }

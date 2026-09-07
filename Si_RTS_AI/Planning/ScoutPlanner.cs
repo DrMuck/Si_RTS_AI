@@ -60,8 +60,13 @@ namespace Si_RTS_AI.Planning
         // Units we are willing to conscript — the tier-0 chassis the round
         // starts with. Both are cheap and fast, and neither is worth much in a
         // fight this early.
-        static readonly HashSet<string> SCOUT_UNIT_NAMES =
+        static readonly HashSet<string> ALIEN_SCOUTS =
             new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Crab", "Squid" };
+        // Sol and Centauri: the Scout is the chassis the round starts with and the
+        // Barracks makes it; the Light Quad is the fast one.
+        static readonly HashSet<string> HUMAN_SCOUTS =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Scout", "Light Quad" };
+        static HashSet<string> SCOUT_UNIT_NAMES = ALIEN_SCOUTS;
 
         // Scouts work alone, never as a pack — one unit per arm of the star.
         // Wired to the ScoutMaxUnits preference. We now BUILD up to this many,
@@ -123,7 +128,7 @@ namespace Si_RTS_AI.Planning
         //
         // Units the spawn already gave us are exempt: those are free, so we
         // conscript every one of them up to MaxScouts immediately.
-        const string SCOUT_BUILD_UNIT       = "Crab";
+        static string SCOUT_BUILD_UNIT      = "Crab";
         const int    BUILD_TARGET_AT_START  = 2;
         const float  BUILD_TARGET_RAMP_S    = 60f;   // +1 allowed scout per minute
         const float  SCOUT_BUILD_INTERVAL_S = 30f;   // at most one queued per interval
@@ -278,7 +283,11 @@ namespace Si_RTS_AI.Planning
             // would: it must never spend a player's cash or move a player's units.
             try { if (!Silica.AI.AIManager.IsCommanderEnabled(team)) return; } catch { }
             if (!Enabled || team == null) return;
-            if (!(team.name ?? "").Contains("Alien")) return;
+            bool human = Faction.Construction.IsHuman(team) && Faction.FactionControl.IsEnabled(team);
+            if (!(team.name ?? "").Contains("Alien") && !human) return;
+            // One planner, one team at a time: the chassis follow the faction.
+            SCOUT_UNIT_NAMES = human ? HUMAN_SCOUTS : ALIEN_SCOUTS;
+            SCOUT_BUILD_UNIT = human ? "Scout" : "Crab";
             if (!global::Si_RTS_AI.TestHarnessNs.TestHarness.IsRoundActive) return;
 
             float now = Time.time;

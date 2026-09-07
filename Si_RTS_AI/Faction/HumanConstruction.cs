@@ -830,38 +830,20 @@ namespace Si_RTS_AI.Faction
 
                 _pendingHq[target] = _tickCounter;
                 HqAttempts++;
-                var closer = FindClosestStructureThatCanBuild(team, hqCd, target) ?? anchor;
                 Vector3 firedFor = target;
-                var cd = hqCd;
-                try
+                // THROUGH THE EXECUTOR. The old call searched 150 m around a cell that
+                // could lie beyond the HQ-to-HQ reach of every anchor and failed in
+                // silence: sixteen fires and no Headquarters on Naraka 21:17 with
+                // 46,000 cash and tier 5 (DrMuck: "Sol could have placed one or two
+                // expansion HQs by now"). HumanBuild clamps to the reach, searches
+                // the way the vanilla commander does and logs the answer.
+                if (MinDistToOwnHq(team, target) < HQ_MIN_DIST_FROM_OTHER_HQ)
                 {
-                    ConstructionPlacement.QueueFirstValidPlacementAroundPoint(
-                        cd.ObjectPreviewSetup, team, closer, firedFor,
-                        cd.GridSnapXZ, cd.GridSnapY,
-                        HQ_SEARCH_RADIUS, 8f, 400,
-                        (cData, ct, cs, gotPos, gotRot) =>
-                        {
-                            // Hard reject if the game's placement search slid this HQ
-                            // back near an existing one (common: fog / no-vision at
-                            // our far argmax cell → game returns nearest team-coverage
-                            // spot near starter HQ). Without this we get 3 HQs stacked.
-                            float minDist = MinDistToOwnHq(team, gotPos);
-                            if (minDist < HQ_MIN_DIST_FROM_OTHER_HQ)
-                            {
-                                HqFailures++;
-                                _pendingHq.Remove(firedFor);
-                                Si_RTS_AI.AppendToRound(
-                                    $"[H2] team={team.name} reject=HQ-too-close " +
-                                    $"targetCell=({firedFor.x:F0},{firedFor.z:F0}) " +
-                                    $"landedAt=({gotPos.x:F0},{gotPos.z:F0}) distToExistingHq={minDist:F0}m");
-                                return;   // don't Construct
-                            }
-                            HqSuccesses++;
-                            try { cs?.Construct(cData, gotPos, gotRot); } catch { }
-                        },
-                        (cData, ct, cs) => { HqFailures++; _pendingHq.Remove(firedFor); });
+                    HqFailures++; _pendingHq.Remove(firedFor);
+                    Si_RTS_AI.AppendToRound($"[H2] team={team.name} reject=HQ-too-close targetCell=({target.x:F0},{target.z:F0})");
                 }
-                catch (Exception ex) { MelonLogger.Warning("[RTSA/Human] HQ placement threw: " + ex.Message); }
+                else if (HumanBuild.TryBuild(team, hqCd, target, null)) HqSuccesses++;
+                else { HqFailures++; _pendingHq.Remove(firedFor); }
 
                 hqCount++;
                 fired++;
