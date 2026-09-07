@@ -198,7 +198,7 @@ namespace Si_RTS_AI.Mil
                 // minutes of a Whispering Plains round while the economy spent
                 // to the last credit; four raiders then took a Nest with nothing
                 // beside it. One Thorn at the Nest by minute three is cheap.
-                int floor = site.Bare ? 0 : _cashFloor;
+                int floor = (site.Bare || (Objectives.UnderSiege && site.Why.StartsWith("the Nest"))) ? 0 : _cashFloor;
                 if (spendable < floor + cost) { if (site.Bare) continue; return; }   // poorer sites will not do better
 
                 float yardstick = Doctrine.TargetAt(name, minutes);

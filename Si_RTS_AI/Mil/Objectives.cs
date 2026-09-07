@@ -129,6 +129,19 @@ namespace Si_RTS_AI.Mil
         static Team _team;
         static Vector3 _nest;
         internal static float ArmyEff { get; private set; }
+
+        /// <summary>
+        /// OUTNUMBERED. The enemy's estimated strength exceeds the whole army.
+        /// Great Erg and Monument Valley, 2026-09-07: Sol rushed at minute four
+        /// to twelve with 5,000 to 9,000 strength, the starter army bled out
+        /// defending outlying biotic centres one force at a time, the economy
+        /// spent to the last credit so military production had no budget, and
+        /// the Nest fell. Under siege the rules change: the army has right of
+        /// way over expansion, no defence force leaves the Nest for an eco
+        /// site, and the Nest may take a second spire below the cash floor.
+        /// </summary>
+        internal static bool UnderSiege { get; private set; }
+        const float SIEGE_MARGIN = 1.0f;
         internal static int   ArmyCash { get; private set; }
         internal static float DpsPerEff { get; private set; } = 0.05f;
 
@@ -194,6 +207,11 @@ namespace Si_RTS_AI.Mil
             catch { }
             ArmyEff = f.Effective();
             ArmyCash = f.Cash();
+            bool siege = Intel.EnemyEffective > ArmyEff * SIEGE_MARGIN;
+            if (siege != UnderSiege)
+                MilLog.Msg(siege ? $"[OBJ] UNDER SIEGE: enemy ~{Intel.EnemyEffective:F0} eff against our {ArmyEff:F0} — army has right of way, home guard stays home"
+                                 : $"[OBJ] siege lifted: enemy ~{Intel.EnemyEffective:F0} eff against our {ArmyEff:F0}");
+            UnderSiege = siege;
             float dps = f.Dps();
             if (ArmyEff > 0f && dps > 0f) DpsPerEff = dps / ArmyEff;
             _nest = Intel.Nest;

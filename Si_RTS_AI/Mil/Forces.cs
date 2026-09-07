@@ -282,6 +282,10 @@ namespace Si_RTS_AI.Mil
                     if (force != null) { Active.Remove(force); }
                     continue;
                 }
+                // UNDER SIEGE THE HOME GUARD STAYS HOME. A force sent to a biotic
+                // centre against a stronger enemy is a force lost; the Nest is
+                // the loss condition and everything stands there with the spires.
+                if (Objectives.UnderSiege && force == null && !o.Offensive && o.Kind != Objectives.Kind.DefendQueen) continue;
                 if (IsRaid(o) && force == null && raidHeld >= raidBudget) continue;
                 // NOTHING LEAVES HOME IN THE FIRST FIVE MINUTES. There is nothing
                 // to know about the enemy yet and the starter army is the only

@@ -123,7 +123,9 @@ namespace Si_RTS_AI.Mil
         internal static int SpendableCash(Team team)
         {
             try { if (OpenerPlanner.QueueActive) return 0; } catch { }
-            try { if (EcoPlanner.EcoStarvedOfCash) return 0; } catch { }
+            // Under siege the economy waits: an expansion is worth nothing if
+            // the Nest falls before it earns.
+            try { if (EcoPlanner.EcoStarvedOfCash && !Objectives.UnderSiege) return 0; } catch { }
             int cash = 0;
             try { cash = team.TotalResources; } catch { }
             // THE ECONOMY KEEPS ITS NEXT PLACEMENT. The first v3 round spent
@@ -135,6 +137,7 @@ namespace Si_RTS_AI.Mil
             // the economy is still converting cash into workers that earn.
             int reserve = WorkerPlan.CanStillConvertCash ? MilitaryConfig.EcoReserve : MilConfig.EcoFloorCash;
             try { reserve += MoneyBroker.GetReservedCash(team); } catch { }
+            if (Objectives.UnderSiege) reserve = Mathf.Min(reserve, 1500);
             return Mathf.Max(0, cash - reserve);
         }
 
