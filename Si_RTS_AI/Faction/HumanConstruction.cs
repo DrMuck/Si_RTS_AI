@@ -330,6 +330,8 @@ namespace Si_RTS_AI.Faction
         }
         static float _lastHqFireAt = -999f;
         const float HQ_FIRE_INTERVAL_S = 60f;
+        const float HQ_COVER_RESERVE_EFF = 4000f;
+        static float _lastHqCoverLogAt = -999f;
         const float HQ_MAX_DRIFT_M     = 300f;
         static int CountOwned(Team team, string name)
         {
@@ -851,6 +853,13 @@ namespace Si_RTS_AI.Faction
             // and no spacing at the landing. One in flight, a minute between fires.
             if (CountOwnedIncludingSites(team, hqName) > CountOwned(team, hqName)) return;   // a site is in progress
             if (Time.time - _lastHqFireAt < HQ_FIRE_INTERVAL_S) return;
+            // AN EXPANSION NEEDS AN ARMY TO STAND BESIDE IT. No reserve to spare, no HQ.
+            float reserve = 0f; try { reserve = Mil.Forces.ReserveEff; } catch { }
+            if (reserve < HQ_COVER_RESERVE_EFF)
+            {
+                if (Time.time - _lastHqCoverLogAt > 60f) { _lastHqCoverLogAt = Time.time; Si_RTS_AI.AppendToRound($"[H2] team={team.name} hold=Headquarters reserve {reserve:F0} eff cannot cover a site (needs {HQ_COVER_RESERVE_EFF:F0})"); }
+                return;
+            }
             int fired = 0;
             while (fired < 1 && hqCount < ABSOLUTE_MAX_HQS)
             {

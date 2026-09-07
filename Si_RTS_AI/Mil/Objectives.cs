@@ -84,6 +84,7 @@ namespace Si_RTS_AI.Mil
             public Intel.Track          TrackRef;
             public Intel.KnownStructure StructRef;
             public Structure            OwnStructRef;    // the thing we defend
+            public ConstructionSite     SiteRef;         // a site going up that we cover
             // what the force reported
             public float AssignedEff, PeakAssignedEff;
             public int   AssignedUnits;
@@ -121,6 +122,7 @@ namespace Si_RTS_AI.Mil
         const float CHECK_S       = 2f;
         const float HOLD_AFTER_FAIL_S = 120f;
         const float DEFEND_GRACE_S = 60f;
+        const float SITE_COVER_EFF = 4000f;   // the least that stands beside an expansion HQ while it goes up
         const float RAZE_BUDGET_S  = 240f;    // a raid should finish inside this
         const float BASE_REACH_M   = 1200f;   // enemy reinforcements counted from here
 
@@ -344,6 +346,38 @@ namespace Si_RTS_AI.Mil
             }
             catch { }
 
+            // AN EXPANSION HEADQUARTERS GOING UP IS COVERED, THREAT OR NO THREAT.
+            // Naraka 2026-09-07 22:04: the site at (2285,-608) stood alone and the
+            // cash that would have bought its cover went into two more HQs (DrMuck).
+            // A standing DefendProduction objective for every HQ construction site
+            // of ours, priced at the local threat or the cover floor, done when the
+            // site is up or gone.
+            try
+            {
+                var csites = ConstructionSite.ConstructionSites;
+                if (csites != null)
+                    for (int i = 0; i < csites.Count; i++)
+                    {
+                        var cs = csites[i];
+                        if (cs == null || cs.IsDestroyed || cs.Team != team || cs.ObjectInfo == null) continue;
+                        if ((cs.ObjectInfo.DisplayName ?? "") != "Headquarters") continue;
+                        Vector3 p = cs.transform.position;
+                        float threat = Intel.EffectiveNear(p, 700f);
+                        float price = Mathf.Max(Kernel.PriceToBeat(threat), SITE_COVER_EFF);
+                        into.Add(new Objective
+                        {
+                            Kind = Kind.DefendProduction, Key = "defsite@" + Cell(p),
+                            Where = p, Radius = 350f,
+                            RequiredEff = price, CeilingEff = Mathf.Max(price, threat * Doctrine.WastefulAbove), DefenceEff = threat,
+                            DeadlineAt = float.PositiveInfinity, Rank = 1, Score = 2e6f,
+                            PoolPref = Pool.Any, Attack = true, Offensive = false, SiteRef = cs,
+                            Gain = 9800f, ExpectedLoss = Kernel.ExpectedLossOfWinner(price, threat), PWin = Kernel.PWin(price, threat),
+                            Note = $"expansion HQ going up at ({p.x:F0},{p.z:F0}), threat {threat:F0} within 700m",
+                            Expectation = "the site completes",
+                        });
+                    }
+            }
+            catch { }
             for (int i = 0; i < sites.Count; i++)
             {
                 var site = sites[i];
@@ -639,6 +673,13 @@ namespace Si_RTS_AI.Mil
                     case Kind.DefendEco:
                     case Kind.DefendProduction:
                     {
+                        if (o.SiteRef != null)
+                        {
+                            bool alive = false;
+                            try { alive = !o.SiteRef.IsDestroyed && ConstructionSite.ConstructionSites != null && ConstructionSite.ConstructionSites.Contains(o.SiteRef); } catch { }
+                            if (!alive) { done = "the site is up, or gone"; break; }
+                            break;   // a site is covered for as long as it stands
+                        }
                         if (o.OwnStructRef != null && o.OwnStructRef.IsDestroyed) { failed = "the asset was destroyed"; break; }
                         float near = Intel.EffectiveNear(o.Where, o.Radius + 100f);
                         if (near <= 0f && now > o.DeadlineAt + DEFEND_GRACE_S) done = "nothing arrived, or it left";
