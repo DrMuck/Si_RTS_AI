@@ -274,7 +274,11 @@ namespace Si_RTS_AI.Mil
                             float dEnemy = Intel.NearestEnemyBaseDist(p);
                             if (dEnemy == float.MaxValue) continue;
                             float dNest = Vector3.Distance(p, nest);
-                            if (dEnemy > 1000f && dEnemy > dNest) continue;
+                            // Exposed means the enemy is close, or nearer than home
+                            // and still within two kilometres: Naraka 18:18 called a
+                            // Bio Cache 3,022 m from Sol exposed because the Nest was
+                            // farther still, and spent 33 spires on the far side.
+                            if (dEnemy > 1200f && (dEnemy > dNest || dEnemy > 2000f)) continue;
                             yield return new Site
                             {
                                 Pos = p, Threat = Mathf.Max(1f, Intel.EffectiveNear(p, 900f)), Income = 0,
