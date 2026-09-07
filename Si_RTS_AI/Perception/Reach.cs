@@ -23,8 +23,6 @@ namespace Si_RTS_AI.Perception
     internal static class Reach
     {
         const float SEARCH_M = 150f;
-        const float TOL_XZ_M = 60f;    // GetNearestNode squares this and compares in the plane
-        const float TOL_H_M  = 80f;
         const float CACHE_S  = 30f;
         const float MASKS_S  = 10f;
 
@@ -91,13 +89,18 @@ namespace Si_RTS_AI.Perception
                         if (graph == null) continue;
                         int gi = (int)graph.graphIndex;
                         if (gi < 0 || gi > 30 || ((mask.value >> gi) & 1) == 0) continue;
+                        // WALKABLE NODES ONLY. The game's own nearest-node helper
+                        // does not constrain walkability, so a structure position
+                        // (every candidate site) or a unit standing among nodes
+                        // resolved to the unwalkable node under the building, whose
+                        // area is nobody's: Naraka 15:26 still refused 9 of 9 sites.
                         var gm = GraphMask.FromGraphIndex(graph.graphIndex);
-                        var a = GameAI.GetNearestNode(from, gm, out _, TOL_H_M, TOL_XZ_M, SEARCH_M);
-                        if (a.node == null) continue;
-                        var b = GameAI.GetNearestNode(to,   gm, out _, TOL_H_M, TOL_XZ_M, SEARCH_M);
-                        if (b.node == null) continue;
+                        var a = NearestWalkable(from, gm);
+                        if (a == null) continue;
+                        var b = NearestWalkable(to, gm);
+                        if (b == null) continue;
                         anyNode = true;
-                        if (a.node.Area == b.node.Area) ok = true;
+                        if (a.Area == b.Area) ok = true;
                     }
                 }
                 if (!anyNode) ok = true;
@@ -148,6 +151,22 @@ namespace Si_RTS_AI.Perception
             for (int k = 0; k < masks.Count; k++)
                 if (!CanReach(masks[k], from, to)) { why = k < _maskNames.Count ? _maskNames[k] : "?"; return false; }
             return true;
+        }
+
+        static GraphNode NearestWalkable(Vector3 pos, GraphMask gm)
+        {
+            var constraint = new NearestNodeConstraint
+            {
+                graphMask = gm,
+                area = -1,
+                tags = -1,
+                maxDistance = SEARCH_M,
+                walkable = NearestNodeConstraint.WalkabilityConstraint.Walkable,
+            };
+            var nn = AstarPath.active.GetNearest(pos, constraint);
+            var node = nn.node;
+            if (node == null || !node.Walkable) return null;
+            return node;
         }
 
         static long Key(GraphMask mask, Vector3 from, Vector3 to)
