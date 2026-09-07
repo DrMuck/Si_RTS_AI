@@ -122,10 +122,18 @@ namespace Si_RTS_AI.Mil
         /// and one measured one, unchanged from v2 because they were right.</summary>
         internal static int SpendableCash(Team team)
         {
-            try { if (OpenerPlanner.QueueActive) return 0; } catch { }
-            // Under siege the economy waits: an expansion is worth nothing if
-            // the Nest falls before it earns.
-            try { if (EcoPlanner.EcoStarvedOfCash && !Objectives.UnderSiege) return 0; } catch { }
+            // UNDER SIEGE THE OPENER YIELDS TOO. The Maw, 2026-09-07 05:10: siege
+            // declared at nineteen seconds, but the opener's queue held the
+            // military at zero budget until minute five, the first producer
+            // came at minute seven, and the Nest fell at fourteen. An opening
+            // is worth nothing if the Nest falls before it earns.
+            bool siege = false;
+            try { siege = Objectives.UnderSiege; } catch { }
+            if (!siege)
+            {
+                try { if (OpenerPlanner.QueueActive) return 0; } catch { }
+                try { if (EcoPlanner.EcoStarvedOfCash) return 0; } catch { }
+            }
             int cash = 0;
             try { cash = team.TotalResources; } catch { }
             // THE ECONOMY KEEPS ITS NEXT PLACEMENT. The first v3 round spent

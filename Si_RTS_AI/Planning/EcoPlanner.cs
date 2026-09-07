@@ -1968,6 +1968,11 @@ namespace Si_RTS_AI.Planning
                         // have kept three producers running is the same trade
                         // in a larger denomination.
                         floor = Mathf.Max(floor, shrimpReserve);
+                        // UNDER SIEGE THE ECONOMY LEAVES THE ARMY ITS MONEY. Three
+                        // thousand stays for a producer or a spire; the expansion
+                        // that spent to 280 cash on The Maw earned nothing, because
+                        // the Nest fell first.
+                        try { if (Mil.Objectives.UnderSiege) floor = Mathf.Max(floor, 3000); } catch { }
                         // NOT starvation. This is the planner deliberately
                         // HOLDING money for a Cyst or the shrimp queue — it has
                         // the cash and is choosing not to spend it here. Counting

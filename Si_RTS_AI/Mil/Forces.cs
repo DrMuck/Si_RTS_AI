@@ -524,7 +524,7 @@ namespace Si_RTS_AI.Mil
                     MilLog.Every("reserve:fallback", 30f, $"[FORCE] reserve gives ground: {Kernel.Describe(ours, theirs)} — standing nearer the Nest for 90s");
                 }
             }
-            if (now < _reserveFallBackUntil)
+            if (now < _reserveFallBackUntil || Objectives.UnderSiege)   // under siege the reserve stands at the Nest
             {
                 _assets.Clear(); _assets.Add((nest, 1f));
             }
@@ -892,12 +892,16 @@ namespace Si_RTS_AI.Mil
                 Vector3 p;
                 try { p = u.transform.position; } catch { continue; }
                 float dx = p.x - _reservePoint.x, dz = p.z - _reservePoint.z;
-                if (dx * dx + dz * dz <= RESERVE_LEASH_M * RESERVE_LEASH_M) continue;
+                // Under siege the leash is short and the recall quick: the starter
+                // crabs on The Maw chased kiting raiders 450 m from the Nest and
+                // died there, six at a time.
+                float leash = Objectives.UnderSiege ? 150f : RESERVE_LEASH_M;
+                if (dx * dx + dz * dz <= leash * leash) continue;
                 if (IsFighting(u)) continue;
                 stray.Add(u);
             }
             if (stray.Count == 0) return;
-            if (now - _reserve.LastOrderAt < 30f) return;
+            if (now - _reserve.LastOrderAt < (Objectives.UnderSiege ? 10f : 30f)) return;
             _reserve.LastOrderAt = now;
             _reserve.OrdersIssued += MoveEach(stray, _reservePoint);
         }
