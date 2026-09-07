@@ -8,7 +8,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 
-[assembly: MelonInfo(typeof(Si_RTS_AI.Si_RTS_AI), "Si_RTS_AI", "0.92.52", "DrMuck")]
+[assembly: MelonInfo(typeof(Si_RTS_AI.Si_RTS_AI), "Si_RTS_AI", "0.92.53", "DrMuck")]
 [assembly: MelonGame("Bohemia Interactive", "Silica")]
 
 namespace Si_RTS_AI
@@ -463,6 +463,8 @@ namespace Si_RTS_AI
                                                     catch (Exception ex) { MelonLogger.Warning("[MIL/PROD] threw: " + ex.Message); } });
                             try { Mil.SpirePlanner.Tick(team); }
                             catch (Exception ex) { MelonLogger.Warning("[MIL/SPIRE] threw: " + ex.Message); }
+                            try { Human.HarvesterManager.Tick(team); }
+                            catch (Exception ex) { MelonLogger.Warning("[HARV] threw: " + ex.Message); }
                             Perception.Utilisation.Tick(team);
                         }
                     }
@@ -552,6 +554,10 @@ namespace Si_RTS_AI
                 if (!string.IsNullOrEmpty(sna))
                     AppendToRound(sna);
 
+                string hvm = Human.HarvesterManager.Summary();
+                if (!string.IsNullOrEmpty(hvm))
+                    AppendToRound(hvm);
+
                 string sc = Faction.SuppressCombat.BuildRoundSummaryFragment();
                 if (!string.IsNullOrEmpty(sc))
                     AppendToRound(sc);
@@ -618,6 +624,7 @@ namespace Si_RTS_AI
             Faction.SuppressCombat.ResetForNewRound();
             Faction.HumanConstruction.ResetForNewRound();
             Faction.HumanBuild.ResetForNewRound();
+            Human.HarvesterManager.ResetForNewRound();
             Perception.CommanderLog.ResetForNewRound();
             Faction.HumanTechResearcher.ResetForNewRound();
             Faction.HumanHarvesterController.ResetForNewRound();

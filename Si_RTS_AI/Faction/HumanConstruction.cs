@@ -329,6 +329,28 @@ namespace Si_RTS_AI.Faction
             return cs.Construct(cd, pos, rot);
         }
 
+        static float DistanceToNearestHq(Team team, Vector3 p)
+        {
+            float best = float.MaxValue;
+            try
+            {
+                var structs = team.Structures;
+                if (structs == null) return best;
+                for (int i = 0; i < structs.Count; i++)
+                {
+                    var s = structs[i];
+                    if (s?.ObjectInfo == null || s.IsDestroyed) continue;
+                    if ((s.ObjectInfo.DisplayName ?? "") != "Headquarters") continue;
+                    bool functional = false; try { functional = s.IsFunctional; } catch { }
+                    if (!functional) continue;
+                    float dx = s.transform.position.x - p.x, dz = s.transform.position.z - p.z;
+                    float d = Mathf.Sqrt(dx * dx + dz * dz);
+                    if (d < best) best = d;
+                }
+            }
+            catch { }
+            return best;
+        }
         static Vector3 FindOwnHqPosition(Team team)
         {
             try
@@ -482,9 +504,22 @@ namespace Si_RTS_AI.Faction
                 if (HasStructureTypeNear(team, "Refinery", balteriumPos, REFINERY_ASSIGNED_RADIUS)) continue;
                 if (_pendingRef.ContainsKey(balteriumPos)) continue;
 
-                int cx = Perception.MapLayers.GridWorld.CellX(balteriumPos.x);
-                int cz = Perception.MapLayers.GridWorld.CellZ(balteriumPos.z);
-                if (!hqMask.IsSet(cx, cz)) continue;
+                // ONLY SPOTS INSIDE THE REFINERY'S OWN REACH OF A HEADQUARTERS.
+                // The HQ mask is the HQ-to-HQ range, so refineries chained out
+                // 700-900 m on Naraka (2026-09-07 20:12). DrMuck: spots outside
+                // the radius are long-distance harvesting targets, no refinery.
+                float refReach = 600f;
+                try { if (refineryCd.MaximumBaseStructureDistance > 0f) refReach = refineryCd.MaximumBaseStructureDistance; } catch { }
+                if (DistanceToNearestHq(team, balteriumPos) > refReach) continue;
+                // A FIELD THE GAME REPORTS AS TWO AREAS GETS ONE REFINERY: skip a
+                // spot with another refinery request pending within 120 m.
+                bool pendingNear = false;
+                foreach (var pk in _pendingRef.Keys)
+                {
+                    float pdx = pk.x - balteriumPos.x, pdz = pk.z - balteriumPos.z;
+                    if (pdx * pdx + pdz * pdz <= 120f * 120f) { pendingNear = true; break; }
+                }
+                if (pendingNear) continue;
 
                 _pendingRef[balteriumPos] = _tickCounter;
                 RefAttempts++;
