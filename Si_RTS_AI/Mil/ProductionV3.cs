@@ -250,6 +250,7 @@ namespace Si_RTS_AI.Mil
         {
             var structs = team.Structures;
             if (structs == null) return;
+            CompositionTarget.UseTeam(team);
             _busy = _total = 0;
             foreach (var k in new List<string>(_typeBusy.Keys)) _typeBusy[k] = true;
 

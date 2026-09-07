@@ -34,7 +34,14 @@ namespace Si_RTS_AI.Mil
         const int    HEAVY_COST = 3000;
         const int    MIN_SAMPLE = 8;     // our own picks before shares mean anything
 
-        static readonly Dictionary<string, float> _targetShare = new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
+        // PER FACTION. The first Sol round under the mod (2026-09-07 20:12) queued
+        // Barrage Trucks and Commandos by the hundred: only the alien rows were
+        // read, so Sol ran on the fitted values alone (Commando 6.2, Barrage Truck
+        // above every tank). Tables are keyed by the faction column of the CSV.
+        static readonly Dictionary<string, Dictionary<string, float>> _targetByFaction =
+            new Dictionary<string, Dictionary<string, float>>(StringComparer.OrdinalIgnoreCase);
+        static string _faction = "Alien";
+        static Dictionary<string, float> _targetShare = new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
         static readonly Dictionary<string, int>   _cost        = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         static readonly Dictionary<string, int>   _ours        = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         static int _oursTotal;
@@ -48,33 +55,52 @@ namespace Si_RTS_AI.Mil
             if (!_tried) Load();
         }
 
+        /// <summary>Select the table for the team being produced for ("Alien", "Sol", "Centauri" from the team name).</summary>
+        internal static void UseTeam(Team team)
+        {
+            string n = team?.name ?? "";
+            string f = n.IndexOf("Sol", StringComparison.OrdinalIgnoreCase) >= 0 ? "Sol"
+                     : n.IndexOf("Cent", StringComparison.OrdinalIgnoreCase) >= 0 ? "Centauri" : "Alien";
+            if (f == _faction) return;
+            _faction = f; _ours.Clear(); _oursTotal = 0;
+            _targetShare = _targetByFaction.TryGetValue(f, out var t) ? t : new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
+        }
+
         static void Load()
         {
             _tried = true;
             try
             {
                 if (!File.Exists(PATH)) { MelonLogger.Msg("[MIL/COMP] no " + PATH + " — composition target off"); return; }
-                float total = 0f;
-                var raw = new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
+                var rawByFaction = new Dictionary<string, Dictionary<string, float>>(StringComparer.OrdinalIgnoreCase);
                 foreach (var line in File.ReadAllLines(PATH))
                 {
                     var f = line.Split(',');
-                    if (f.Length < 4 || !string.Equals(f[0], "Alien", StringComparison.OrdinalIgnoreCase)) continue;
-                    string unit = f[1].Trim();
-                    if (unit == "Shrimp" || unit == "Queen") continue;
+                    if (f.Length < 4 || f[0] == "faction") continue;
+                    string faction = f[0].Trim(); string unit = f[1].Trim();
+                    if (unit == "Shrimp" || unit == "Queen" || unit.IndexOf("Harvester", StringComparison.OrdinalIgnoreCase) >= 0) continue;
                     if (!float.TryParse(f[3], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float perRound)) continue;
                     if (int.TryParse(f[2], out int cost)) _cost[unit] = cost;
-                    raw[unit] = perRound; total += perRound;
+                    if (!rawByFaction.TryGetValue(faction, out var raw)) rawByFaction[faction] = raw = new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
+                    raw[unit] = perRound;
                 }
-                if (total <= 0f) return;
-                var sb = new System.Text.StringBuilder("[MIL/COMP] target mix from top-quartile commanders:");
-                foreach (var kv in raw)
+                foreach (var fk in rawByFaction)
                 {
-                    _targetShare[kv.Key] = kv.Value / total;
-                    sb.Append(' ').Append(kv.Key).Append(' ').Append((kv.Value / total * 100f).ToString("F0")).Append('%');
+                    float total = 0f; foreach (var kv in fk.Value) total += kv.Value;
+                    if (total <= 0f) continue;
+                    var shares = new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
+                    var sb = new System.Text.StringBuilder($"[MIL/COMP] {fk.Key} target mix from top-quartile commanders:");
+                    foreach (var kv in fk.Value)
+                    {
+                        shares[kv.Key] = kv.Value / total;
+                        sb.Append(' ').Append(kv.Key).Append(' ').Append((kv.Value / total * 100f).ToString("F0")).Append('%');
+                    }
+                    _targetByFaction[fk.Key] = shares;
+                    MelonLogger.Msg(sb.ToString());
                 }
+                if (_targetByFaction.Count == 0) return;
+                _targetShare = _targetByFaction.TryGetValue(_faction, out var cur) ? cur : _targetShare;
                 _loaded = true;
-                MelonLogger.Msg(sb.ToString());
             }
             catch (Exception ex) { MelonLogger.Warning("[MIL/COMP] load threw: " + ex.Message); }
         }
