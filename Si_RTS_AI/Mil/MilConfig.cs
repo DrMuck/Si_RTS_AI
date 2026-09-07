@@ -62,6 +62,7 @@ namespace Si_RTS_AI.Mil
         {
             EnemyStartEff          = RtsaiConfig.Int  ("mil.enemyStartEff", 4000);
             NoOffenceBeforeS       = RtsaiConfig.Float("mil.noOffenceBeforeS", 300f);
+            ReachEnforce           = RtsaiConfig.Bool("mil.reachEnforce", false);   // graph reachability acts on forces and sites (advisory otherwise)
             HomeFloorCash          = RtsaiConfig.Int  ("mil.homeFloorCash",        RtsaiConfig.Int("military.homeFloorCash", 12000));
             ForecastHorizonS       = RtsaiConfig.Float("mil.forecastHorizonS",     180f);
             RaidShare              = RtsaiConfig.Float("mil.raidShare",            0.25f);

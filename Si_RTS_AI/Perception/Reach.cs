@@ -47,6 +47,7 @@ namespace Si_RTS_AI.Perception
         {
             _cache.Clear(); _masks.Clear(); _maskNames.Clear(); _masksAt = -999f; _warned = 0; Refusals = 0;
             _diag = 0; _graphsLogged = false;
+            try { Enforce = Mil.MilConfig.ReachEnforce; } catch { Enforce = false; }
         }
 
         static bool TryMask(Unit u, out GraphMask mask)
