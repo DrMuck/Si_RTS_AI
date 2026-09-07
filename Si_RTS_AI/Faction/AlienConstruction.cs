@@ -1096,6 +1096,15 @@ namespace Si_RTS_AI.Faction
             var anchor = FindClosestStructureThatCanBuild(team, cd, targetPos);
             if (anchor == null)
             { NoteRefusal(cdName, targetPos, "noAnchorInReach"); return false; }
+            // THE GAME REFUSES WHAT THE TEAM HAS NOT UNLOCKED. The Colossal Spawning
+            // Cyst was placed 1,391 times across the 2026-09-07 runs and built 161
+            // times: every request before its tier went through the whole search
+            // and died silently in Construct() as UnmetPrerequisite, while the
+            // planner counted it as spent. Ask first.
+            bool prereq = true;
+            try { prereq = anchor.HasPrerequisitesForConstruction(cd); } catch { }
+            if (!prereq)
+            { NoteRefusal(cdName, targetPos, "prerequisite"); return false; }
             _inFlight.Add(new InFlight { Name = cdName, Want = targetPos, At = Time.time });
             FirePlacement(cd, team, anchor, targetPos,
                 onSuccess: (thisCd, cbTeam, cbStruct, gotPos, gotRot) =>
