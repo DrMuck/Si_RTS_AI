@@ -84,8 +84,8 @@ namespace Si_RTS_AI.Faction
         }
 
         /// <summary>Ask the game to place <paramref name="cd"/> near <paramref name="pos"/>; true when a search was queued.</summary>
-        struct Landed { public string Name; public Vector3 At; }
-        static readonly List<Landed> _landed = new List<Landed>();
+        struct LandedSite { public string Name; public Vector3 At; }
+        static readonly List<LandedSite> _landed = new List<LandedSite>();
         static bool LandedNear(string name, Vector3 p, float r)
         {
             for (int i = 0; i < _landed.Count; i++)
@@ -189,7 +189,7 @@ namespace Si_RTS_AI.Faction
                                 res = cbStruct.Construct(cData, gotPos, gotRot).ToString();
                         }
                         catch (Exception ex) { res = "threw " + ex.Message; }
-                        if (res == "Success") { Landed++; _landed.Add(new Landed { Name = name, At = gotPos }); } else Failed++;
+                        if (res == "Success") { Landed++; _landed.Add(new LandedSite { Name = name, At = gotPos }); } else Failed++;
                         MelonLogger.Msg($"[HUMAN/BUILD] {cbTeam?.name} {name} at ({gotPos.x:F0},{gotPos.z:F0}) asked ({asked.x:F0},{asked.z:F0}) " +
                                         $"anchor {cbStruct?.ObjectInfo?.DisplayName} rot {(rot.HasValue ? "given" : "search")} result {res} cash {cbTeam?.TotalResources}");
                     },
