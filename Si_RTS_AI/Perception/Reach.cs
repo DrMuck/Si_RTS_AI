@@ -22,7 +22,8 @@ namespace Si_RTS_AI.Perception
     /// </summary>
     internal static class Reach
     {
-        const float SEARCH_M = 150f;
+        const float SEARCH_M   = 150f;
+        const float APPROACH_M = 220f;   // a node of the unit's own area this close to the target counts as reaching it
         const float CACHE_S  = 30f;
         const float MASKS_S  = 10f;
 
@@ -121,21 +122,29 @@ namespace Si_RTS_AI.Perception
                         // (every candidate site) or a unit standing among nodes
                         // resolved to the unwalkable node under the building, whose
                         // area is nobody's: Naraka 15:26 still refused 9 of 9 sites.
+                        // CAN THE UNIT GET WITHIN REACH OF THE TARGET? Naraka 17:08
+                        // diagnostics: alien ground units path on the Voxel Graph,
+                        // whose nearest walkable node to a point inside the Sol base
+                        // sits in a pocket the base structures cut off (area 1287
+                        // against the field's area 1), while a point 200 m away is
+                        // on the field. So the target lookup asks for a node of the
+                        // unit's own area within the approach radius; any such node
+                        // means the unit can stand next to the target.
                         var gm = GraphMask.FromGraphIndex(graph.graphIndex);
                         var a = NearestWalkable(from, gm);
-                        var b = a == null ? null : NearestWalkable(to, gm);
+                        var b = a == null ? null : NearestOfArea(to, gm, a.Area);
                         if (diag)
                         {
                             d.Append(" g").Append(gi).Append(inMask ? "" : "(out)").Append(':');
                             if (a == null) d.Append("A-none");
                             else d.Append("A").Append(a.Area).Append('@').Append(Dist(a, from).ToString("F0")).Append('m');
                             d.Append('/');
-                            if (b == null) d.Append("B-none");
+                            if (b == null) d.Append(a == null ? "B-skipped" : "B-none-in-area");
                             else d.Append("B").Append(b.Area).Append('@').Append(Dist(b, to).ToString("F0")).Append('m');
                         }
-                        if (a == null || b == null || !inMask) continue;
+                        if (a == null || !inMask) continue;
                         anyNode = true;
-                        if (a.Area == b.Area) ok = true;
+                        if (b != null) ok = true;
                     }
                 }
                 if (!anyNode) ok = true;
@@ -196,6 +205,22 @@ namespace Si_RTS_AI.Perception
         static float Dist(GraphNode n, Vector3 p)
         {
             try { Vector3 q = (Vector3)n.position; q.y = p.y; return Vector3.Distance(q, p); } catch { return -1f; }
+        }
+
+        static GraphNode NearestOfArea(Vector3 pos, GraphMask gm, uint area)
+        {
+            var constraint = new NearestNodeConstraint
+            {
+                graphMask = gm,
+                area = (int)area,
+                tags = -1,
+                maxDistance = APPROACH_M,
+                walkable = NearestNodeConstraint.WalkabilityConstraint.Walkable,
+            };
+            var nn = AstarPath.active.GetNearest(pos, constraint);
+            var node = nn.node;
+            if (node == null || !node.Walkable || node.Area != area) return null;
+            return node;
         }
 
         static GraphNode NearestWalkable(Vector3 pos, GraphMask gm)
