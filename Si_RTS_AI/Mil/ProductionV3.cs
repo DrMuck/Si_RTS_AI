@@ -67,6 +67,9 @@ namespace Si_RTS_AI.Mil
         static float _lastTickAt, _lastLogAt, _lastPlaceAt, _lastSiteAt;
         static int _busy, _total;
         internal static int QueuedThisRound, SpentThisRound, ProducersPlaced;
+        /// <summary>Producers standing (finished) this tick, and how many have a full queue.</summary>
+        internal static int ProducerCount => _total;
+        internal static int BusyProducerCount => _busy;
 
         // demand by pool, in effective cash
         static readonly float[] _demand = new float[4];   // Fast, Swarm, Line, Heavy
@@ -680,6 +683,13 @@ namespace Si_RTS_AI.Mil
         {
             if (now - _lastPlaceAt < PLACE_CADENCE_S) return;
             if (_producerCds.Count == 0) return;
+            // IDLE PRODUCERS MEAN THE PRODUCER COUNT IS NOT THE BOTTLENECK. Naraka,
+            // 2026-09-07 07:23: every unit was UnmetPrerequisite (research held),
+            // eleven cysts stood idle, and this loop placed 107 producers for
+            // 582,000 cash while queuing nothing. Whatever stops the standing
+            // producers from queuing — prerequisites, budget, the Queen — a new
+            // cyst will not fix.
+            if (_total >= 1 && _busy == 0) return;
             foreach (var kv in _producerCds)
             {
                 string name = kv.Key; var cd = kv.Value;
