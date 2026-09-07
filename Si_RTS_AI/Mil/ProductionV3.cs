@@ -63,6 +63,7 @@ namespace Si_RTS_AI.Mil
         static readonly Dictionary<string, bool>  _typeBusy = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
         static readonly Dictionary<string, float> _requestedAt = new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
         static readonly Dictionary<string, string> _pickLogged = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        static readonly HashSet<string> _offerLogged = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         static float _lastTickAt, _lastLogAt, _lastPlaceAt, _lastSiteAt;
         static int _busy, _total;
@@ -82,7 +83,8 @@ namespace Si_RTS_AI.Mil
         internal static void ResetForNewRound()
         {
             _claimed.Clear(); _producerCds.Clear(); _want.Clear(); _saturatedSince.Clear();
-            _typeBusy.Clear(); _requestedAt.Clear(); _pickLogged.Clear();
+            _typeBusy.Clear(); _requestedAt.Clear(); _pickLogged.Clear(); _offerLogged.Clear();
+            CompositionTarget.ResetForNewRound();
             _lastTickAt = _lastLogAt = _lastPlaceAt = _lastSiteAt = 0f;
             _busy = _total = 0; QueuedThisRound = SpentThisRound = ProducersPlaced = 0;
             Array.Clear(_demand, 0, _demand.Length); _demandAny = 0f;
@@ -268,6 +270,18 @@ namespace Si_RTS_AI.Mil
                 if (!functional) continue;
                 var opts = s.ConstructionOptions;
                 if (opts == null) continue;
+                string tn0 = s.ObjectInfo.DisplayName ?? "?";
+                if (!_offerLogged.Contains(tn0))
+                {
+                    _offerLogged.Add(tn0);
+                    try
+                    {
+                        var names = new System.Text.StringBuilder();
+                        foreach (var o2 in opts) { bool iu = false; try { iu = o2.IsUnit; } catch { } if (iu && o2?.ObjectInfo != null) names.Append(o2.ObjectInfo.DisplayName).Append(' '); }
+                        MilLog.Msg($"[MIL/PROD] {tn0} offers: {names}");
+                    }
+                    catch { }
+                }
                 bool offersCombat = false;
                 foreach (var opt in opts)
                 {
@@ -329,8 +343,9 @@ namespace Si_RTS_AI.Mil
                         ? Doctrine.ValueOf(n) * cost / capW
                         : Doctrine.ValueOf(n) * 100f;
                     float fit = Fit(n);
-                    float score = Mathf.Max(gap, 200f) * valuePerCap * fit;
-                    if (score > bestScore) { bestScore = score; best = opt; bestWhy = $"{n}: gap {gap:F0} x {valuePerCap:F0}/cap x fit {fit:F2}"; }
+                    float comp = CompositionTarget.Multiplier(n, cost);
+                    float score = Mathf.Max(gap, 200f) * valuePerCap * fit * comp;
+                    if (score > bestScore) { bestScore = score; best = opt; bestWhy = $"{n}: gap {gap:F0} x {valuePerCap:F0}/cap x fit {fit:F2} x mix {comp:F2}"; }
                 }
                 if (best == null) { _typeBusy[typeName] = false; continue; }
 
@@ -346,6 +361,7 @@ namespace Si_RTS_AI.Mil
                     float eff = Kernel.EffectiveOf(n);
                     if (_demand[(int)pool] > 0f) _demand[(int)pool] = Mathf.Max(0f, _demand[(int)pool] - eff);
                     else _demandAny = Mathf.Max(0f, _demandAny - eff);
+                    CompositionTarget.NoteQueued(n);
                     LogPick(typeName, bestWhy);
                 }
                 else
@@ -786,7 +802,8 @@ namespace Si_RTS_AI.Mil
         {
             if (QueuedThisRound == 0 && ProducersPlaced == 0) return "";
             return "--- Military production ---\n" +
-                   $"  units queued: {QueuedThisRound}, producers placed: {ProducersPlaced}, cash spent: {SpentThisRound}\n";
+                   $"  units queued: {QueuedThisRound}, producers placed: {ProducersPlaced}, cash spent: {SpentThisRound}\n" +
+                   (CompositionTarget.Summary().Length > 0 ? $"  mix queued: {CompositionTarget.Summary()}\n" : "");
         }
     }
 }
