@@ -149,6 +149,7 @@ namespace Si_RTS_AI.Mil
         static float _lastStampAt, _lastDecayAt, _lastReportAt;
         static int _nextTrackId;
         static Team _self;
+        internal static Team Self => _self;
         static Vector3 _nest;
         static bool _fogNull;
 

@@ -439,6 +439,7 @@ namespace Si_RTS_AI.Faction
         // (~400m+), so it still catches cross-patch contamination.
         const float REFINERY_PLACEMENT_QUALITY_RADIUS = 260f;
         const float REFINERY_SEARCH_OFFSET_M = 130f;
+        const float RAMP_EXIT_M = 30f;
         // Duplicate-refinery reject: minimum distance between two refineries.
         // Fixes the "2 refineries at 1 balterium" case where two nearby balteriums
         // both fire and their placements land next to each other. 250m keeps them
@@ -484,7 +485,12 @@ namespace Si_RTS_AI.Faction
             foreach (var patch in patches)
             {
                 if (patch == null) continue;
-                if (fired >= MAX_REFINERY_PER_TICK) break;
+                // TWO REFINERIES, THEN THE RESEARCH FACILITY. Three at the start left
+                // 1,500 and the tech building waited four minutes for income (DrMuck:
+                // "tech up came in too late"). Starting cash is two refineries plus
+                // the Research Facility plus a Barracks.
+                int perTick = CountOwnedIncludingSites(team, "Research Facility") == 0 ? 2 : MAX_REFINERY_PER_TICK;
+                if (fired >= perTick) break;
                 if (refCount >= ABSOLUTE_MAX_REFINERIES) break;
                 int refCost = 3000; try { refCost = refineryCd.ResourceCost; } catch { }
                 if (team.TotalResources < refCost * (fired + 1)) break;   // what we cannot pay for, we do not ask for
@@ -590,6 +596,29 @@ namespace Si_RTS_AI.Faction
                                     $"[H1] team={team.name} reject=Refinery-too-close-to-other patchAt=({firedFor.x:F0},{firedFor.z:F0}) " +
                                     $"landedAt=({gotPos.x:F0},{gotPos.z:F0})");
                                 return;
+                            }
+                            // THE RAMP MUST OPEN TOWARD THE FIELD. A refinery at (2020,-1661)
+                            // on Naraka 22:04 faced its field with the ramp cut off by the
+                            // ground on that side; the harvester had to go round. The point
+                            // thirty metres in front of the ramp has to reach the field on
+                            // the graph, or this landing is treated as obstructed.
+                            {
+                                Vector3 toB = new Vector3(firedFor.x - gotPos.x, 0f, firedFor.z - gotPos.z);
+                                float yawB = toB.sqrMagnitude > 0.01f
+                                    ? Mathf.Round(Quaternion.LookRotation(toB, Vector3.up).eulerAngles.y / 90f) * 90f + REFINERY_RAMP_QUARTER_TURNS * 90f
+                                    : wantYaw;
+                                Vector3 rampPoint = gotPos + Quaternion.Euler(0f, yawB, 0f) * Vector3.forward * RAMP_EXIT_M;
+                                bool rampOpen = true;
+                                try { rampOpen = Perception.Reach.CanReach(Pathfinding.GraphMask.everything, rampPoint, firedFor); } catch { }
+                                if (!rampOpen)
+                                {
+                                    RefFailures++;
+                                    _pendingRef.Remove(firedFor);
+                                    Si_RTS_AI.AppendToRound(
+                                        $"[H1] team={team.name} reject=Refinery-ramp-cut-off patchAt=({firedFor.x:F0},{firedFor.z:F0}) " +
+                                        $"landedAt=({gotPos.x:F0},{gotPos.z:F0}) yaw={yawB:F0}");
+                                    return;
+                                }
                             }
                             RefSuccesses++;
                             // Preferred yaw = ramp axis pointing at balterium, snapped

@@ -185,6 +185,14 @@ namespace Si_RTS_AI.Mil
                                      Kernel.PriceToBeat(Intel.EnemyEffective),
                                      MilConfig.HomeFloorCash);
             float reserveGap = target - Forces.ReserveEff;
+            // NO SITTING ON CASH. A human team with nothing threatened and no target
+            // yet had zero demand and 28,000 idle at minute six (DrMuck, 2026-09-07
+            // 22:10). Cash above the reinvest floor becomes line demand.
+            if (Faction.Construction.IsHuman(Intel.Self))
+            {
+                int cashNow = 0; try { cashNow = Intel.Self.TotalResources; } catch { }
+                if (cashNow > REINVEST_FLOOR) reserveGap = Mathf.Max(reserveGap, cashNow - REINVEST_FLOOR);
+            }
             if (reserveGap > 0f)
             {
                 // HEAVIES GET A SHARE FROM MINUTE EIGHT. Nothing ever asked for the
@@ -199,6 +207,7 @@ namespace Si_RTS_AI.Mil
             }
         }
 
+        const int REINVEST_FLOOR = 8000;
         static float GapFor(Forces.Pool p) => _demand[(int)p] + _demandAny;
         static float _airCheckedAt = -999f; static bool _airSeen;
         static bool EnemyAirSeen()
