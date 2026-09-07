@@ -22,7 +22,9 @@ namespace Si_RTS_AI.Perception
     /// </summary>
     internal static class Reach
     {
-        const float SEARCH_M = 120f;
+        const float SEARCH_M = 150f;
+        const float TOL_XZ_M = 60f;    // GetNearestNode squares this and compares in the plane
+        const float TOL_H_M  = 80f;
         const float CACHE_S  = 30f;
         const float MASKS_S  = 10f;
 
@@ -71,9 +73,34 @@ namespace Si_RTS_AI.Perception
                 long key = Key(mask, from, to);
                 float now = Time.time;
                 if (_cache.TryGetValue(key, out var c) && now - c.at < CACHE_S) return c.ok;
-                var a = GameAI.GetNearestNode(from, mask, out _, 20f, 2f, SEARCH_M);
-                var b = GameAI.GetNearestNode(to,   mask, out _, 20f, 2f, SEARCH_M);
-                bool ok = a.node != null && b.node != null && a.node.Area == b.node.Area;
+                // ONE GRAPH AT A TIME, WITH ROOM. GameAI.GetNearestNode returns
+                // nothing unless the point sits within its distance tolerance of
+                // the node (2 m by default) and its height tolerance (20 m); a base
+                // centre or a unit a few metres off the mesh then reads as
+                // unreachable, and on Naraka (14:29) every site and 56,000 unit
+                // checks did. Area numbers are also per graph, so a mask spanning
+                // two graphs is checked graph by graph: reachable on any one
+                // graph is reachable; no node on any graph is unknown, not no.
+                var graphs = AstarPath.active.data?.graphs;
+                bool anyNode = false, ok = false;
+                if (graphs != null)
+                {
+                    for (int g = 0; g < graphs.Length && !ok; g++)
+                    {
+                        var graph = graphs[g];
+                        if (graph == null) continue;
+                        int gi = (int)graph.graphIndex;
+                        if (gi < 0 || gi > 30 || ((mask.value >> gi) & 1) == 0) continue;
+                        var gm = GraphMask.FromGraphIndex(graph.graphIndex);
+                        var a = GameAI.GetNearestNode(from, gm, out _, TOL_H_M, TOL_XZ_M, SEARCH_M);
+                        if (a.node == null) continue;
+                        var b = GameAI.GetNearestNode(to,   gm, out _, TOL_H_M, TOL_XZ_M, SEARCH_M);
+                        if (b.node == null) continue;
+                        anyNode = true;
+                        if (a.node.Area == b.node.Area) ok = true;
+                    }
+                }
+                if (!anyNode) ok = true;
                 if (_cache.Count > 4000) _cache.Clear();
                 _cache[key] = (ok, now);
                 return ok;

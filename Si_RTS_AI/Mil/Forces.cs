@@ -400,7 +400,7 @@ namespace Si_RTS_AI.Mil
                         {
                             free.RemoveAt(idx);
                             Reach.Refusals++;
-                            if (Reach.Refusals <= 30 || Reach.Refusals % 100 == 0)
+                            if (Reach.Refusals <= 20 || Reach.Refusals % 1000 == 0)
                             {
                                 Vector3 up = Vector3.zero; try { up = u.transform.position; } catch { }
                                 MilLog.Msg($"[FORCE] no path: {n} at ({up.x:F0},{up.z:F0}) cannot reach {o.Kind}#{o.Id} at ({o.Where.x:F0},{o.Where.z:F0}) — left in the reserve (#{Reach.Refusals})");
