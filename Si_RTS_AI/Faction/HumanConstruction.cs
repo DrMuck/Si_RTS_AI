@@ -445,11 +445,23 @@ namespace Si_RTS_AI.Faction
         // realistic distance refineries land from balterium (~170-190m in observed
         // rounds — balterium has a large physical no-build footprint).
         const float REFINERY_ASSIGNED_RADIUS = 200f;
+        const float REFINERY_SERVE_RADIUS    = 300f;
+        static readonly List<Vector3> _landedRef = new List<Vector3>();
+        static bool LandedRefineryNear(Vector3 p, float r)
+        {
+            for (int i = 0; i < _landedRef.Count; i++)
+            {
+                float dx = _landedRef[i].x - p.x, dz = _landedRef[i].z - p.z;
+                if (dx * dx + dz * dz <= r * r) return true;
+            }
+            return false;
+        }
         // Post-callback quality gate — reject placements that landed too far from
         // the intended balterium. Sized larger than balterium's physical footprint
         // (~150m) but smaller than the typical distance between balterium patches
         // (~400m+), so it still catches cross-patch contamination.
-        const float REFINERY_PLACEMENT_QUALITY_RADIUS = 220f;
+        const float REFINERY_PLACEMENT_QUALITY_RADIUS = 260f;
+        const float REFINERY_SEARCH_OFFSET_M = 130f;
         // Duplicate-refinery reject: minimum distance between two refineries.
         // Fixes the "2 refineries at 1 balterium" case where two nearby balteriums
         // both fire and their placements land next to each other. 250m keeps them
@@ -501,7 +513,12 @@ namespace Si_RTS_AI.Faction
                 Vector3 balteriumPos = patch.SignalCenter;
 
                 // Skip: patch already has a nearby refinery / already pending / outside HQ range.
-                if (HasStructureTypeNear(team, "Refinery", balteriumPos, REFINERY_ASSIGNED_RADIUS)) continue;
+                // A SPOT IS SERVED BY ANY REFINERY WITHIN 300 M, standing or landed this
+                // round. The 200 m test missed refineries the search had set down 200-220 m
+                // from the spot, so Naraka 21:17 got three refineries on one field and two
+                // on each of two others (DrMuck: "the refinery at 2700,-2113 is too much").
+                if (HasStructureTypeNear(team, "Refinery", balteriumPos, REFINERY_SERVE_RADIUS)) continue;
+                if (LandedRefineryNear(balteriumPos, REFINERY_SERVE_RADIUS)) continue;
                 if (_pendingRef.ContainsKey(balteriumPos)) continue;
 
                 // ONLY SPOTS INSIDE THE REFINERY'S OWN REACH OF A HEADQUARTERS.
@@ -525,6 +542,19 @@ namespace Si_RTS_AI.Faction
                 RefAttempts++;
                 var closer = FindClosestStructureThatCanBuild(team, refineryCd, balteriumPos) ?? anchor;
                 Vector3 firedFor = balteriumPos;
+                // START THE SEARCH ON THE HEADQUARTERS SIDE OF THE FIELD. Started on
+                // the field itself, the search walked outward across the resource
+                // cells and set the refinery down 238 m away on the far side, which
+                // the quality test then rejected, 119 times for the best spot on
+                // Naraka (2026-09-07 21:17, DrMuck: "a refinery close to 2513,-2676
+                // would have been much better"). Between the HQ and the field is
+                // where the harvester's ramp wants to be anyway.
+                Vector3 searchFrom = balteriumPos;
+                {
+                    Vector3 hqFor = FindOwnHqPosition(team);
+                    Vector3 dirHq = hqFor - balteriumPos; dirHq.y = 0f;
+                    if (dirHq.sqrMagnitude > 1f) searchFrom = balteriumPos + dirHq.normalized * REFINERY_SEARCH_OFFSET_M;
+                }
                 var cd = refineryCd;
                 try
                 {
@@ -532,7 +562,7 @@ namespace Si_RTS_AI.Faction
                     // find a valid spot in 8s, it won't in 40 either. Faster failure
                     // = faster retry on next Alien tick when units may have moved.
                     ConstructionPlacement.QueueFirstValidPlacementAroundPoint(
-                        cd.ObjectPreviewSetup, team, closer, firedFor,
+                        cd.ObjectPreviewSetup, team, closer, searchFrom,
                         cd.GridSnapXZ, cd.GridSnapY,
                         REFINERY_SEARCH_RADIUS, 8f, 300,
                         (cData, ct, cs, gotPos, gotRot) =>
@@ -555,7 +585,8 @@ namespace Si_RTS_AI.Faction
                             // of another refinery, we'd be doubling up on one balterium.
                             // Check on the LANDED position (not target) — target dedup already
                             // handled by HasStructureTypeNear on balterium above.
-                            if (HasStructureTypeNear(team, "Refinery", gotPos, REFINERY_MIN_DIST_BETWEEN))
+                            if (HasStructureTypeNear(team, "Refinery", gotPos, REFINERY_MIN_DIST_BETWEEN)
+                                || LandedRefineryNear(gotPos, REFINERY_MIN_DIST_BETWEEN))
                             {
                                 RefFailures++;
                                 _pendingRef.Remove(firedFor);
@@ -610,6 +641,7 @@ namespace Si_RTS_AI.Faction
                                 }
                             }
 
+                            _landedRef.Add(gotPos);
                             Si_RTS_AI.AppendToRound(
                                 $"[H1] team={team.name} constructed=Refinery atBalterium=({firedFor.x:F0},{firedFor.z:F0}) " +
                                 $"landedAt=({winningPos.x:F0},{winningPos.z:F0}) yaw={winningYaw:F0} result={res}");
@@ -1021,6 +1053,7 @@ namespace Si_RTS_AI.Faction
             RefAttempts = RefSuccesses = RefFailures = 0;
             HqAttempts = HqSuccesses = HqFailures = 0;
             BarracksAttempts = BarracksSuccesses = BarracksFailures = 0;
+            _landedRef.Clear();
             ResearchAttempts = ResearchSuccesses = ResearchFailures = 0;
         }
 
