@@ -18,20 +18,25 @@ namespace Si_RTS_AI.Faction
     /// </summary>
     internal static class HumanBuild
     {
-        const float SEARCH_RANGE_M = 120f;
-        const float SEARCH_MAX_S   = 8f;
-        const int   SEARCH_STEPS   = 300;
+        // THE GAME'S OWN SEARCH GEOMETRY. The vanilla commander clamps the asked
+        // point to the anchor's build reach, searches a range of 1.2 x reach plus
+        // the distance asked (80..600 m) and gives the search reach/20 seconds
+        // (6..40). A flat 120 m / 8 s found no spot for a Barracks anywhere in
+        // the first Sol rounds (2026-09-07 19:55) while nine refineries landed.
+        const float DEFAULT_REACH_M = 500f;
+        const int   SEARCH_STEPS    = 300;
         const float DEDUPE_M       = 60f;
         const float DEDUPE_S       = 45f;
 
         struct Pending { public string Name; public Vector3 At; public float When; }
         static readonly List<Pending> _pending = new List<Pending>();
         static readonly Dictionary<string, int> _refusals = new Dictionary<string, int>();
+        static readonly HashSet<string> _geomLogged = new HashSet<string>();
         internal static int Fired, Landed, Failed;
 
         internal static void ResetForNewRound()
         {
-            _pending.Clear(); _refusals.Clear(); Fired = Landed = Failed = 0;
+            _pending.Clear(); _refusals.Clear(); _geomLogged.Clear(); Fired = Landed = Failed = 0;
         }
 
         static bool PendingNear(string name, Vector3 at)
@@ -93,6 +98,20 @@ namespace Si_RTS_AI.Faction
             if (cost > 0 && team.TotalResources < cost) { Refuse(name, $"cash {team.TotalResources} < {cost}"); return false; }
             var preview = cd.ObjectPreviewSetup;
             if (preview == null) { Refuse(name, "no preview"); return false; }
+            float reach = DEFAULT_REACH_M;
+            try { if (cd.MaximumBaseStructureDistance > 0f) reach = cd.MaximumBaseStructureDistance; } catch { }
+            Vector3 anchorPos = anchor.transform.position;
+            Vector3 toward = pos - anchorPos; toward.y = 0f;
+            float dist = toward.magnitude;
+            if (dist > reach && dist > 0.01f) pos = anchorPos + toward / dist * reach;
+            float range = Mathf.Clamp(reach * 1.2f + Mathf.Min(dist, reach), 80f, 600f);
+            float maxTime = Mathf.Clamp(range / 20f, 6f, 40f);
+            if (!_geomLogged.Contains(name))
+            {
+                _geomLogged.Add(name);
+                bool placeable = false; try { placeable = cd.Placeable; } catch { }
+                MelonLogger.Msg($"[HUMAN/BUILD] {name}: reach {reach:F0}m snap {cd.GridSnapXZ}/{cd.GridSnapY} placeable {placeable} cost {cost} anchor {anchor.ObjectInfo?.DisplayName} range {range:F0}m time {maxTime:F0}s");
+            }
             _pending.Add(new Pending { Name = name, At = pos, When = Time.time });
             Fired++;
             Vector3 asked = pos;
@@ -100,14 +119,14 @@ namespace Si_RTS_AI.Faction
             {
                 ConstructionPlacement.QueueFirstValidPlacementAroundPoint(
                     preview, team, anchor, pos, cd.GridSnapXZ, cd.GridSnapY,
-                    SEARCH_RANGE_M, SEARCH_MAX_S, SEARCH_STEPS,
+                    range, maxTime, SEARCH_STEPS,
                     (cData, cbTeam, cbStruct, gotPos, gotRot) =>
                     {
                         string res = "void";
                         try
                         {
                             if (cbStruct != null && !cbStruct.IsDestroyed)
-                                res = cbStruct.Construct(cData, gotPos, rot ?? gotRot).ToString();
+                                res = cbStruct.Construct(cData, gotPos, gotRot).ToString();
                         }
                         catch (Exception ex) { res = "threw " + ex.Message; }
                         if (res == "Success") Landed++; else Failed++;
@@ -117,8 +136,9 @@ namespace Si_RTS_AI.Faction
                     (cData, cbTeam, cbStruct) =>
                     {
                         Failed++;
-                        Refuse(name, $"no valid spot within {SEARCH_RANGE_M:F0}m of ({asked.x:F0},{asked.z:F0})");
-                    });
+                        Refuse(name, $"no valid spot within {range:F0}m of ({asked.x:F0},{asked.z:F0})");
+                    },
+                    false, rot.HasValue, rot ?? Quaternion.identity);
             }
             catch (Exception ex)
             {
