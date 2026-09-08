@@ -57,3 +57,26 @@ game's ConstructionData/ObjectInfo, never assumed — modded servers change them
 - Sol first, Centauri after? (assumed yes)
 - Headless HvH: both human teams under this AI, or one vanilla?
 - Public servers: human AI stands down for a player commander like the alien one? (assumed yes)
+
+## One military state per team (v0.92.67)
+
+The military layer (Intel, Objectives, Forces, ProductionV3, SpirePlanner, QueenKeeper, Shadow,
+ThreatMap, QueenStatus, Utilisation, Reach, BcIncome, ScoutPlanner, HarvesterManager) is static
+state written for one seat. `Mil/MilContext.cs` makes it per team without rewriting it: `Use(team)`
+saves the installed team's field values and installs the requested team's. A team's first `Use`
+gets a fresh allocation (every collection a new instance of the same type, arrays of the same
+length, everything else its pristine value) followed by each class's `ResetForNewRound()`.
+
+- `Use(team)` runs at the head of the team loop in `Si_RTS_AI.cs` and at the top of
+  `HumanConstruction.HandleTick` (the game's Think runs outside the loop).
+- Harmony hooks ask `MilContext.AnyHeld(u)` / `AnyScout(u)`: unions over all teams, rebuilt on
+  each swap, so an order event for a Sol unit is answered while the alien's state is installed.
+- `static readonly` was removed from the swapped fields: CoreCLR refuses `SetValue` on initonly
+  statics. Constants and `[ThreadStatic]` fields are left alone.
+- Shared on purpose: `Fields` (terrain), the CompositionTarget tables (its per-team tallies live
+  in swapped fields), Doctrine/MilConfig knobs.
+- Rules for code in the swapped classes: never hand a deferred callback that touches these
+  statics to another system (placement callbacks, coroutines); do the work in the tick.
+  Telemetry and console commands outside the loop see the last ticked team.
+- Diagnostics: `[MIL/CTX] per-team context over N static fields`, `fresh military state for
+  <team>`, and the status summary's "military context: k teams, n swaps, readonly-ok".
