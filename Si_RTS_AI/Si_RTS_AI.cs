@@ -120,6 +120,8 @@ namespace Si_RTS_AI
             // rtsai.json, so the config is loaded first.
             try { Planning.RtsaiConfig.Reload(); Perception.PerfProbes.Init(HarmonyInstance); Perception.ServerPatches.Init(HarmonyInstance); }
             catch (Exception ex) { MelonLogger.Warning("[RTSA/PROBE] init failed: " + ex.Message); }
+            try { Faction.SpawnablePrefabGuard.Install(HarmonyInstance); }
+            catch (Exception ex) { MelonLogger.Warning("[PREFAB/GUARD] install threw: " + ex.Message); }
             try { Faction.StartingResourcesGuard.Install(HarmonyInstance); }
             catch (Exception ex) { MelonLogger.Warning("[CASH/GUARD] install failed: " + ex.Message); }
         }
