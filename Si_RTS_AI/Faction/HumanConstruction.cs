@@ -91,6 +91,47 @@ namespace Si_RTS_AI.Faction
         static readonly Dictionary<Vector3, int> _refRejectsByPatch = new Dictionary<Vector3, int>();
         static readonly HashSet<Vector3> _refUnservedPatches = new HashSet<Vector3>();
 
+        /// <summary>
+        /// A FIELD WE CANNOT SERVE IS WHERE THE NEXT HEADQUARTERS BELONGS.
+        ///
+        /// The eco expansion grid picks cells on general worth. In the Sol round of
+        /// 2026-09-08 19:16 it asked for (1460,-140), (-260,-1980) and (1580,-100),
+        /// and the placement search answered "no valid spot within" three times
+        /// between t=550s and t=735s - the exact window in which Sol held 37,060
+        /// cash, more than three headquarters' worth. By the time a target was
+        /// placeable the money had gone into factories, every later attempt was
+        /// refused for cash, and the round ended with one HQ, four refineries and
+        /// 46.7/s against the alien's 237.7/s.
+        ///
+        /// Meanwhile the refinery pass had already recorded exactly where the
+        /// economy wanted to grow: patches dropped as unserved because no HQ is
+        /// near enough to reach them, (2015,-1417) and (2893,-1684) that round.
+        /// Nothing consumed that. This does. A patch we gave up on is a concrete,
+        /// economically motivated target, and the ground around a balterium field
+        /// is usually open, which is the other thing the search kept failing on.
+        ///
+        /// The cell is still checked by everything below - spacing, pending, the
+        /// per-cell backoff - so this only changes WHICH cell is proposed first.
+        /// </summary>
+        static bool TryUnservedPatchTarget(Team team, out Vector3 target)
+        {
+            target = Vector3.zero;
+            if (_refUnservedPatches.Count == 0) return false;
+            float best = float.MaxValue;
+            bool found = false;
+            foreach (var patch in _refUnservedPatches)
+            {
+                // Skip one we have already fired at too often; the backoff below
+                // would drop it anyway and we would rather propose the next patch.
+                _hqFireCountByCell.TryGetValue(patch, out int fires);
+                if (fires >= 3) continue;
+                float d = MinDistToOwnHq(team, patch);
+                if (d < HQ_MIN_DIST_FROM_OTHER_HQ) continue;     // already covered
+                if (d < best) { best = d; target = patch; found = true; }
+            }
+            return found;
+        }
+
         /// <summary>Counts a rejected placement for a patch; drops the patch once it has answered the same way too often.</summary>
         static void NoteRefineryReject(Team team, Vector3 patch, string reason)
         {
@@ -892,10 +933,23 @@ namespace Si_RTS_AI.Faction
             int fired = 0;
             while (fired < 1 && hqCount < ABSOLUTE_MAX_HQS)
             {
-                var (cx, cz, val) = expansion.ArgMax();
-                if (cx < 0 || val < HQ_MIN_VALUE) break;
-
-                Vector3 target = Perception.MapLayers.GridWorld.CellCenter(cx, cz);
+                // Demand first: a balterium field the refinery pass gave up on says
+                // where the economy wants an HQ. Fall back to the expansion grid.
+                Vector3 target;
+                int cx, cz; int val;
+                bool fromDemand = TryUnservedPatchTarget(team, out target);
+                if (fromDemand)
+                {
+                    cx = Perception.MapLayers.GridWorld.CellX(target.x);
+                    cz = Perception.MapLayers.GridWorld.CellZ(target.z);
+                    val = HQ_MIN_VALUE;
+                }
+                else
+                {
+                    (cx, cz, val) = expansion.ArgMax();
+                    if (cx < 0 || val < HQ_MIN_VALUE) break;
+                    target = Perception.MapLayers.GridWorld.CellCenter(cx, cz);
+                }
                 if (_pendingHq.ContainsKey(target))
                 {
                     expansion.SubtractDiskAtWorld(target,
@@ -939,7 +993,7 @@ namespace Si_RTS_AI.Faction
                 fired++;
 
                 Si_RTS_AI.AppendToRound(
-                    $"[H2] team={team.name} fire={hqName} argmaxCell=({cx},{cz}) val={val} " +
+                    $"[H2] team={team.name} fire={hqName} src={(fromDemand ? "unserved-patch" : "argmax")} cell=({cx},{cz}) val={val} " +
                     $"atWorld=({target.x:F0},{target.z:F0}) hqCount={hqCount}");
 
                 // Prevent picking cells that would be re-covered by this new HQ's refinery reach.
@@ -1110,6 +1164,7 @@ namespace Si_RTS_AI.Faction
         {
             _tickCounter = 0;
             _pendingRef.Clear();
+
             _pendingHq.Clear();
             _hqFireCountByCell.Clear();
             _pendingBarracks.Clear();
