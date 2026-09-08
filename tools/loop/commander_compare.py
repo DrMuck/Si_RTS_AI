@@ -12,7 +12,7 @@ import collections, glob, os, re, sys
 RTSA = r"E:\Steam\steamapps\common\Silica Dedicated Server\UserData\RTSA"
 CMD = re.compile(r"\[CMD\] t=(\d+) team=(\S+) by=(\w+)(?: who=(.+?) steam=\S+)? what=(.+?) kind=(\w+)(?: at=\(([-\d]+),([-\d]+)\) yaw=\d+)? from=(.+?) client=\w+ result=(\w+)")
 CASH = re.compile(r"\[CASH\] t=(\d+) team=(\S+) by=(\w+)(?: who=(.+?) steam=\S+)? cash=(\d+) units=(\d+) structures=(\d+)")
-ORDER = re.compile(r"\[ORDER\] t=(\d+) commander=(\w+) team=(\S+) unit=(.+?) kind=(\w+)")
+ORDER = re.compile(r"\[ORDER\] t=(\d+) commander=(\w+)(?: who=(.+?) steam=\S+)? team=(\S+) unit=(.+?) kind=(\w+)")
 
 
 def short(team):
@@ -42,8 +42,9 @@ def main():
                 continue
             m = ORDER.search(line)
             if m:
-                t, cmdr, team, unit, kind = m.groups()
+                t, cmdr, who, team, unit, kind = m.groups()
                 d = teams[team]
+                if cmdr == "player" and who: d["who"] = who
                 d["orders"][kind] += 1
                 d["order_minutes"][int(t) // 60] += 1
 
