@@ -499,10 +499,39 @@ namespace Si_RTS_AI.Mil
             }
         }
 
+        /// <summary>Record a structure option as a producer type if it makes combat units.</summary>
+        static void ConsiderProducer(ConstructionData opt)
+        {
+            if (opt?.ObjectInfo == null) return;
+            bool isStruct = false; try { isStruct = opt.IsStructure; } catch { }
+            if (!isStruct) return;
+            string n = opt.ObjectInfo.DisplayName ?? "";
+            if (_producerCds.ContainsKey(n)) return;
+            if (n.StartsWith("Lesser", StringComparison.OrdinalIgnoreCase)) return;   // the economy's
+            // A producer is a structure whose own options include a combat unit.
+            if (!ProducesCombat(opt)) return;
+            _producerCds[n] = opt;
+            MilLog.Msg($"[MIL/PROD] producer type available: {n} (cost {opt.ResourceCost})");
+        }
+
         static void DiscoverProducerCds(Team team)
         {
             try
             {
+                // THE HANDLER'S LIST FIRST. Scanning the options of structures we
+                // already own finds the alien's cysts off the Nest, but found
+                // nothing at all for Sol and Centauri: _producerCds stayed empty,
+                // UpdateWanted iterated nothing, no producer was ever wanted, and
+                // the starter Barracks remained the only one - which is why
+                // Centauri built only Juggernauts and both human teams held 80-90k
+                // cash with "producers busy 1/1" (RiftBasin, 2026-09-08 23:00).
+                // HumanConstruction caches what the game itself says the team can
+                // build; that list has the factories in it.
+                var buildable = Faction.HumanConstruction.BuildableStructures(team);
+                if (buildable != null)
+                    for (int i = 0; i < buildable.Count; i++)
+                        ConsiderProducer(buildable[i]);
+
                 var structs = team.Structures;
                 if (structs == null) return;
                 for (int i = 0; i < structs.Count; i++)
@@ -511,16 +540,7 @@ namespace Si_RTS_AI.Mil
                     if (opts == null) continue;
                     foreach (var opt in opts)
                     {
-                        if (opt?.ObjectInfo == null) continue;
-                        bool isStruct = false; try { isStruct = opt.IsStructure; } catch { }
-                        if (!isStruct) continue;
-                        string n = opt.ObjectInfo.DisplayName ?? "";
-                        if (_producerCds.ContainsKey(n)) continue;
-                        if (n.StartsWith("Lesser", StringComparison.OrdinalIgnoreCase)) continue;   // the economy's
-                        // A producer is a structure whose own options include a combat unit.
-                        if (!ProducesCombat(opt)) continue;
-                        _producerCds[n] = opt;
-                        MilLog.Msg($"[MIL/PROD] producer type available: {n} (cost {opt.ResourceCost})");
+                        ConsiderProducer(opt);
                     }
                 }
             }
