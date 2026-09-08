@@ -662,7 +662,6 @@ namespace Si_RTS_AI
             Perception.ServerPatches.ResetForNewRound();
             Mil.Objectives.ResetForNewRound();
             Mil.Forces.ResetForNewRound();
-            Mil.MilContext.ResetForNewRound();
             Mil.ProductionV3.ResetForNewRound();
             Perception.UnitValues.ResetForNewRound();
             Perception.ShrimpStateSampler.ResetForNewRound();
@@ -673,6 +672,8 @@ namespace Si_RTS_AI
             Planning.TechPlanner.ResetForNewRound();
             Faction.SuppressHumanAI.ResetForNewRound();
             Faction.VanillaOrderGate.ResetForNewRound();
+            // last: the reset + configured state above is the template every further team starts from
+            Mil.MilContext.ResetForNewRound();
             Perception.MapLayers.LayerReplay.OnNewRound(sceneName);
             _sceneReady = true;
 

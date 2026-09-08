@@ -86,9 +86,11 @@ namespace Si_RTS_AI.Mil
             MelonLogger.Msg($"[MIL/CTX] per-team context over {_fields.Length} static fields of {CLASSES.Length} classes");
         }
 
+        /// <summary>Called LAST in the round reset: the reset and freshly configured values become the template for further teams.</summary>
         internal static void ResetForNewRound()
         {
             Init();
+            for (int i = 0; i < _fields.Length; i++) { try { _pristine[i] = _fields[i].GetValue(null); } catch { } }
             _snap.Clear(); _teams.Clear(); _current = null; Swaps = 0;
             _heldUnion.Clear(); _scoutUnion.Clear();
         }
