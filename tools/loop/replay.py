@@ -154,7 +154,9 @@ def main():
         if not path:
             continue
         try:
-            rec["replay"] = analyse(path, cost, is_structure)
+            our = rec.get("our_team", "Team_Alien")
+            prefix = "alien" if our == "Team_Alien" else ("sol" if "Sol" in our else "cent")
+            rec["replay"] = analyse(path, cost, is_structure, team_prefix=prefix)
             n += 1
             a = rec["replay"]["army"]
             print(f"{rec['round']}: exchange {a['exchange']} clumping {a['clumping']} idle {a['idle_share']} ({os.path.basename(path)})")

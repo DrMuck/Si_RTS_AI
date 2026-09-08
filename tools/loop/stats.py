@@ -93,7 +93,7 @@ def main():
     def comp(rs):
         c = collections.Counter()
         for r in rs:
-            c.update(r["teams"].get("Team_Alien", {}).get("units_built_by", {}))
+            c.update(r["teams"].get(r.get("our_team", "Team_Alien"), {}).get("units_built_by", {}))
         c.pop("Shrimp", None); c.pop("Queen", None)
         return shares(c)
     wins = [r for r in rows if r["outcome"] == "win"]; others = [r for r in rows if r["outcome"] != "win"]

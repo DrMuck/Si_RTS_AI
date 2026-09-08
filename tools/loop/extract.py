@@ -138,7 +138,7 @@ def extract(path, events):
     if siege_on is not None:
         siege_s += last_t - siege_on
     rec["duration_s"] = last_t
-    rec["complete"] = any("END ROUND SUMMARY" in l for l in lines) or any("ForceEndRound" in l for l in lines[-200:])
+    rec["complete"] = any("END ROUND SUMMARY" in l for l in lines) or any("ForceEndRound" in l for l in lines[-200:]) or last_t >= 3500
     rec["timeline"] = [samples[k] for k in sorted(samples)]
     rec["objectives"] = {"done": dict(obj_done), "failed": dict(obj_failed)}
     rec["forces"] = {"withdrawals": withdrawals, "first_killhq_s": first_killhq, "hq_gone_s": hq_gone,
@@ -194,20 +194,31 @@ def extract(path, events):
         if mm:
             rec["alien"]["mix_queued"] = parse_counts(mm.group(1).replace(" ", ", "))
 
-    # outcome: game log first, then the round's own evidence
+    # OUR TEAM: a human team the mod commanded leaves [H1]/[H2]/[H3]/[HARV] lines
+    # in the round log; otherwise the alien was ours.
+    our = "Team_Alien"
+    for l in lines:
+        if l.startswith("[H1] team=") or l.startswith("[H2] team=") or l.startswith("[H3] team=") or l.startswith("[HARV]"):
+            m2 = re.search(r"team=(Team_Human_\w+)", l)
+            if m2:
+                our = m2.group(1); break
+    rec["our_team"] = our
+    def lost(team, name):
+        return rec["teams"].get(team, {}).get("structures_lost_by", {}).get(name, 0) > 0
+    our_main = "Nest" if our == "Team_Alien" else "Headquarters"
+    we_lost = lost(our, our_main)
+    enemy_lost = any(lost(k, "Nest" if k == "Team_Alien" else "Headquarters") for k in rec["teams"] if k != our)
     winner = outcome_from_oracle(events, started, last_t)
     rec["winner"] = winner
-    alien_lost_nest = rec["teams"].get("Team_Alien", {}).get("structures_lost_by", {}).get("Nest", 0) > 0
-    enemy_lost_hq = any(v.get("structures_lost_by", {}).get("Headquarters", 0) > 0
-                        for k, v in rec["teams"].items() if k != "Team_Alien")
-    if winner == "Alien":
+    ours_short = "Alien" if our == "Team_Alien" else ("Sol" if "Sol" in our else "Centauri")
+    if winner == ours_short:
         rec["outcome"] = "win"
-    elif winner in ("Sol", "Centauri", "Human"):
+    elif winner in ("Sol", "Centauri", "Alien", "Human"):
         rec["outcome"] = "loss"
-    elif (hq_gone is not None or enemy_lost_hq) and not alien_lost_nest:
+    elif we_lost:
+        rec["outcome"] = "loss"
+    elif enemy_lost or (our == "Team_Alien" and hq_gone is not None):
         rec["outcome"] = "win"
-    elif alien_lost_nest or nest_gone is not None:
-        rec["outcome"] = "loss"
     elif last_t >= 3500 or any("ForceEndRound" in l for l in lines[-80:]):
         rec["outcome"] = "timeout"
     else:
