@@ -91,6 +91,16 @@ namespace Si_RTS_AI.Faction
         static readonly Dictionary<Vector3, int> _refRejectsByPatch = new Dictionary<Vector3, int>();
         static readonly HashSet<Vector3> _refUnservedPatches = new HashSet<Vector3>();
 
+        // THE PATCHES WE NEVER EVEN TRY ARE THE LOUDEST DEMAND.
+        // A patch outside refReach of every Headquarters is skipped before any
+        // placement is attempted, so it never records a rejection and never
+        // reaches _refUnservedPatches. Those are exactly the fields that want an
+        // HQ nearer: the 3-way round of 2026-09-08 20:31 ended 25 minutes in with
+        // eighteen HQ targets taken from the expansion argmax and not one from
+        // demand, because no patch had been rejected - they were all simply out of
+        // reach. Rebuilt every pass, since a new HQ brings patches into reach.
+        static readonly HashSet<Vector3> _refOutOfReachPatches = new HashSet<Vector3>();
+
         /// <summary>
         /// A FIELD WE CANNOT SERVE IS WHERE THE NEXT HEADQUARTERS BELONGS.
         ///
@@ -113,13 +123,20 @@ namespace Si_RTS_AI.Faction
         /// The cell is still checked by everything below - spacing, pending, the
         /// per-cell backoff - so this only changes WHICH cell is proposed first.
         /// </summary>
+        /// <summary>Patches the refinery pass gave up on: rejected too often, or never in reach of any HQ.</summary>
+        static IEnumerable<Vector3> Demand()
+        {
+            foreach (var p in _refUnservedPatches) yield return p;
+            foreach (var p in _refOutOfReachPatches) if (!_refUnservedPatches.Contains(p)) yield return p;
+        }
+
         static bool TryUnservedPatchTarget(Team team, out Vector3 target)
         {
             target = Vector3.zero;
-            if (_refUnservedPatches.Count == 0) return false;
+            if (_refUnservedPatches.Count == 0 && _refOutOfReachPatches.Count == 0) return false;
             float best = float.MaxValue;
             bool found = false;
-            foreach (var patch in _refUnservedPatches)
+            foreach (var patch in Demand())
             {
                 // Skip one we have already fired at too often; the backoff below
                 // would drop it anyway and we would rather propose the next patch.
@@ -484,7 +501,8 @@ namespace Si_RTS_AI.Faction
 
                 // HQ mask cell count.
                 int hqMaskCells = 0;
-                var hqMask = Perception.MapLayers.HumanEcoLayers.GetHqMask(team);
+                _refOutOfReachPatches.Clear();
+            var hqMask = Perception.MapLayers.HumanEcoLayers.GetHqMask(team);
                 var d = hqMask.Data;
                 for (int i = 0; i < d.Length; i++) if (d[i] != 0) hqMaskCells++;
 
@@ -609,7 +627,11 @@ namespace Si_RTS_AI.Faction
                 // the radius are long-distance harvesting targets, no refinery.
                 float refReach = 600f;
                 try { if (refineryCd.MaximumBaseStructureDistance > 0f) refReach = refineryCd.MaximumBaseStructureDistance; } catch { }
-                if (DistanceToNearestHq(team, balteriumPos) > refReach) continue;
+                if (DistanceToNearestHq(team, balteriumPos) > refReach)
+                {
+                    _refOutOfReachPatches.Add(balteriumPos);   // wants a Headquarters nearer
+                    continue;
+                }
                 // A FIELD THE GAME REPORTS AS TWO AREAS GETS ONE REFINERY: skip a
                 // spot with another refinery request pending within 120 m.
                 bool pendingNear = false;
@@ -1180,6 +1202,7 @@ namespace Si_RTS_AI.Faction
             RefAttempts = RefSuccesses = RefFailures = 0;
             _refRejectsByPatch.Clear();
             _refUnservedPatches.Clear();
+            _refOutOfReachPatches.Clear();
             HqAttempts = HqSuccesses = HqFailures = 0;
             BarracksAttempts = BarracksSuccesses = BarracksFailures = 0;
             _landedRef.Clear();
@@ -1191,8 +1214,8 @@ namespace Si_RTS_AI.Faction
             if (RefAttempts == 0 && HqAttempts == 0 && BarracksAttempts == 0 && ResearchAttempts == 0 && SiloAttempts == 0) return "";
             return "--- Human construction (Refinery + HQ + Barracks + Research + Silo) ---\n" +
                    $"  Refinery fires: attempts={RefAttempts} success={RefSuccesses} fail={RefFailures}\n" +
-                   (_refUnservedPatches.Count > 0
-                        ? $"  Refinery patches dropped as unserved (want an HQ nearer): {_refUnservedPatches.Count}\n"
+                   (_refUnservedPatches.Count > 0 || _refOutOfReachPatches.Count > 0
+                        ? $"  Refinery patches wanting an HQ nearer: {_refUnservedPatches.Count} unplaceable, {_refOutOfReachPatches.Count} out of reach\n"
                         : "") +
                    $"  HQ fires:       attempts={HqAttempts}  success={HqSuccesses}  fail={HqFailures}\n" +
                    $"  Barracks fires: attempts={BarracksAttempts} success={BarracksSuccesses} fail={BarracksFailures}\n" +
