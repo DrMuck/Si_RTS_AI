@@ -142,6 +142,12 @@ namespace Si_RTS_AI.Faction
                 // would drop it anyway and we would rather propose the next patch.
                 _hqFireCountByCell.TryGetValue(patch, out int fires);
                 if (fires >= 3) continue;
+                // MUST skip a pending one. The loop below drops a pending target by
+                // subtracting it from the expansion grid and going round again, which
+                // moves argmax but does nothing to this list: the same patch came back,
+                // was still pending, and the tick span forever on the game thread
+                // (server hang, 2026-09-08 21:35).
+                if (_pendingHq.ContainsKey(patch)) continue;
                 float d = MinDistToOwnHq(team, patch);
                 if (d < HQ_MIN_DIST_FROM_OTHER_HQ) continue;     // already covered
                 if (d < best) { best = d; target = patch; found = true; }
@@ -953,7 +959,12 @@ namespace Si_RTS_AI.Faction
                 return;
             }
             int fired = 0;
-            while (fired < 1 && hqCount < ABSOLUTE_MAX_HQS)
+            // BOUNDED. Every continue below relies on the next iteration proposing a
+            // different cell; a selector that does not is a hung server, not a bad
+            // placement. Sixteen tries is far more than the handful of candidates a
+            // tick ever has.
+            int guard = 0;
+            while (fired < 1 && hqCount < ABSOLUTE_MAX_HQS && ++guard <= 16)
             {
                 // Demand first: a balterium field the refinery pass gave up on says
                 // where the economy wants an HQ. Fall back to the expansion grid.
