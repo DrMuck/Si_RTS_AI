@@ -240,17 +240,39 @@ namespace Si_RTS_AI.Mil
         static object NewCollection(Type t, object like)
         {
             // Dictionary<,> and HashSet<> carry a comparer worth keeping (OrdinalIgnoreCase keys).
+            object made = null;
             var cmp = t.GetProperty("Comparer")?.GetValue(like, null);
             if (cmp != null)
-            {
-                var ctor = t.GetConstructor(new[] { cmp.GetType().GetInterfaces()[0] }) ;
                 foreach (var c in t.GetConstructors())
                 {
                     var ps = c.GetParameters();
-                    if (ps.Length == 1 && ps[0].ParameterType.IsInstanceOfType(cmp)) return c.Invoke(new[] { cmp });
+                    if (ps.Length == 1 && ps[0].ParameterType.IsInstanceOfType(cmp)) { made = c.Invoke(new[] { cmp }); break; }
+                }
+            if (made == null) made = Activator.CreateInstance(t);
+
+            // AND ITS CONTENTS. Emptying is right for a scratch collection and wrong
+            // for a static table: ProductionV3.WorkerNames { "Shrimp", "Queen" } and
+            // ScoutPlanner.ALIEN_SCOUTS { "Crab", "Squid" } are declared with their
+            // members and never cleared, so every team after the first was scouting
+            // with no unit type that counts as a scout. _pristine is captured after
+            // the round reset, which empties the scratch collections and leaves the
+            // tables alone, so copying it is right for both - the same reasoning as
+            // the Array.Copy above.
+            try
+            {
+                if (like is IDictionary src && made is IDictionary dst)
+                {
+                    foreach (DictionaryEntry e in src) dst[e.Key] = e.Value;
+                }
+                else if (like is IEnumerable seq && !(like is string))
+                {
+                    var add = t.GetMethod("Add", new[] { t.IsGenericType ? t.GetGenericArguments()[0] : typeof(object) });
+                    if (add != null)
+                        foreach (var item in seq) add.Invoke(made, new[] { item });
                 }
             }
-            return Activator.CreateInstance(t);
+            catch (Exception ex) { MelonLogger.Warning("[MIL/CTX] collection copy threw for " + t.Name + ": " + ex.Message); }
+            return made;
         }
 
         static void RebuildUnions()
