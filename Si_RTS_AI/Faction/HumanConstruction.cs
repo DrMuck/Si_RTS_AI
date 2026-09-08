@@ -1060,43 +1060,8 @@ namespace Si_RTS_AI.Faction
 
         // ---- helpers ----
 
-        // THE GAME'S OWN LIST OF WHAT THIS TEAM CAN BUILD.
-        // ProductionV3 discovered producer types by scanning the options of
-        // structures the team already owns, which works for the alien (a Nest
-        // offers cysts) and yielded NOTHING for Sol and Centauri: no producer type
-        // was ever known, so none was ever wanted, so the starter Barracks stayed
-        // the only producer all round. Centauri built nothing but Juggernauts, and
-        // both human teams sat on 80-90k cash against a 75k budget with
-        // "producers busy 1/1" (RiftBasin, 2026-09-08 23:00). This is the source
-        // that works, cached per team for anyone who needs it.
-        static readonly Dictionary<Team, List<ConstructionData>> _buildableByTeam =
-            new Dictionary<Team, List<ConstructionData>>();
-
-        /// <summary>Every structure this team can build, from the game's handler. Empty until the first Think.</summary>
-        internal static List<ConstructionData> BuildableStructures(Team team)
-        {
-            if (team != null && _buildableByTeam.TryGetValue(team, out var l)) return l;
-            return null;
-        }
-
         static void EnsureConstructionData(AIConstructionHandler h, Team team)
         {
-            try
-            {
-                var all = h?.BuildableStructuresAll;
-                if (all != null && all.Count > 0)
-                {
-                    if (!_buildableByTeam.TryGetValue(team, out var cache))
-                    { cache = new List<ConstructionData>(all.Count); _buildableByTeam[team] = cache; }
-                    if (cache.Count != all.Count)
-                    {
-                        cache.Clear();
-                        for (int i = 0; i < all.Count; i++) cache.Add(all[i]);
-                    }
-                }
-            }
-            catch { }
-
             bool haveRef  = _refineryCdByTeam.ContainsKey(team);
             bool haveHq   = _hqCdByTeam.ContainsKey(team);
             bool haveBar  = _barracksCdByTeam.ContainsKey(team);
@@ -1238,7 +1203,6 @@ namespace Si_RTS_AI.Faction
             _pendingBarracks.Clear();
             _pendingResearch.Clear();
             _pendingSilo.Clear();
-            _buildableByTeam.Clear();
             _refineryCdByTeam.Clear();
             _hqCdByTeam.Clear();
             _barracksCdByTeam.Clear();

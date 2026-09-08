@@ -296,16 +296,6 @@ namespace Si_RTS_AI
             return _sw.ElapsedMilliseconds;
         }
 
-        /// <summary>Teams that have owned at least one structure, and those whose stand-down we logged.</summary>
-        static readonly System.Collections.Generic.HashSet<int> _everBuilt = new System.Collections.Generic.HashSet<int>();
-        static readonly System.Collections.Generic.HashSet<int> _standDownLogged = new System.Collections.Generic.HashSet<int>();
-
-        /// <summary>Live structures a team owns; 0 for a team that has been wiped out.</summary>
-        static int StructureCount(Team team)
-        {
-            try { return team?.Structures?.Count ?? 0; } catch { return 0; }
-        }
-
         static void PeriodicTelemetryTick()
         {
             if (!_sceneReady) return;
@@ -367,23 +357,8 @@ namespace Si_RTS_AI
                     // Since v0.92.67 the military state is per team (MilContext), so
                     // every enabled team perceives for itself; the alien also
                     // perceives when nobody is enabled (shadow/eco soaks).
-                    // A TEAM WITH NOTHING LEFT TO BUILD FROM IS DONE THINKING.
-                    // RiftBasin, 2026-09-08 23:00: the alien lost its last structure
-                    // at t=881s and the layer kept planning objectives, production
-                    // and intel for eighteen more minutes - "army 0 eff (0 cash) |
-                    // building toward 80 for RaidProduction", "producers busy 0/0" -
-                    // burning tick budget and filling the log, with the eco
-                    // blueprint still drawn. Once a team that HAD structures has
-                    // none, it cannot rebuild; stand its planners down and leave the
-                    // cheap telemetry running.
-                    int tid = team.GetInstanceID();
-                    if (StructureCount(team) > 0) _everBuilt.Add(tid);
-                    bool eliminated = _everBuilt.Contains(tid) && StructureCount(team) == 0;
-                    if (eliminated && _standDownLogged.Add(tid))
-                        MelonLogger.Msg($"[RTSA] {team.name} has no structures left — planners stood down for the rest of the round");
-
-                    bool perceiver = !eliminated && (tn.Contains("Alien") ? (alienOn || !humanOn)
-                                                          : (Faction.Construction.IsHuman(team) && Faction.FactionControl.IsEnabled(team)));
+                    bool perceiver = tn.Contains("Alien") ? (alienOn || !humanOn)
+                                                          : (Faction.Construction.IsHuman(team) && Faction.FactionControl.IsEnabled(team));
                     if (perceiver)
                     {
                         if (tn.Contains("Alien")) try { Mil.Shadow.Tick(team); }
@@ -440,7 +415,7 @@ namespace Si_RTS_AI
                     // Skip Alien-side planners when RTSAI_Alien=false —
                     // stock game AI runs for Alien instead. Telemetry
                     // samplers above keep running (observability only).
-                    if (Faction.FactionControl.IsEnabled(team) && !eliminated)
+                    if (Faction.FactionControl.IsEnabled(team))
                     {
                         Planning.MoneyBroker.Tick(team);
                         tPlan    = TimedMs(() => Planning.EcoPlanner.MaybePlan(team));
@@ -661,7 +636,6 @@ namespace Si_RTS_AI
             Planning.NodeManager.ResetForNewRound();
             Perception.ThreatMap.ResetForNewRound();
             Perception.ControlMap.ResetForNewRound();
-            _everBuilt.Clear(); _standDownLogged.Clear();
             Perception.BuildTimeline.ReportHookState();
             Faction.SuppressCombat.ResetForNewRound();
             Faction.HumanConstruction.ResetForNewRound();
