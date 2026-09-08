@@ -72,6 +72,7 @@ namespace Si_RTS_AI.Mil
         static Team _team;
 
         const float TICK_S            = 2f;
+        const int   MIN_FORCE_UNITS   = 4;
         const float ARRIVED_M         = 90f;
         const float ORDER_MOVED_M     = 90f;
         const float ORDER_BACKSTOP_S  = 60f;
@@ -424,6 +425,18 @@ namespace Si_RTS_AI.Mil
                 if (force != null)
                 {
                     Measure(force);
+                    // NO FORCE OF ONE. A new force with fewer than MIN_FORCE_UNITS units is
+                    // sent back to the reserve unless it defends the Nest or scouts:
+                    // 39 intercept forces of one or two units on Naraka 22:04 (DrMuck:
+                    // "units get sent in one by one").
+                    bool tiny = force.Phase == State.Forming && force.Units.Count < MIN_FORCE_UNITS
+                                && o.Kind != Objectives.Kind.DefendQueen && o.Kind != Objectives.Kind.Recon;
+                    if (tiny && taken > 0)
+                    {
+                        for (int k = 0; k < force.Units.Count; k++) free.Add(force.Units[k]);
+                        Active.Remove(force);
+                        continue;
+                    }
                     if (taken > 0 && o.Status == Objectives.Status.Proposed) Objectives.NoteActivated(o, now);
                 }
             }

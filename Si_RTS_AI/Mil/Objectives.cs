@@ -122,6 +122,7 @@ namespace Si_RTS_AI.Mil
         const float CHECK_S       = 2f;
         const float HOLD_AFTER_FAIL_S = 120f;
         const float DEFEND_GRACE_S = 60f;
+        const float INTERCEPT_MIN_EFF = 1200f;
         const float SITE_COVER_EFF = 4000f;   // the least that stands beside an expansion HQ while it goes up
         const float RAZE_BUDGET_S  = 240f;    // a raid should finish inside this
         const float BASE_REACH_M   = 1200f;   // enemy reinforcements counted from here
@@ -439,6 +440,10 @@ namespace Si_RTS_AI.Mil
                 if (!t.InsideOurGround || !t.Seen) continue;
                 if (now - t.FirstSeenAt < 4f) continue;            // a fresh cluster, not yet a group
                 if (t.Effective < 100f && t.Piloted == 0) continue; // one scout is not an incursion
+                // A TRACK WORTH A FORCE. 69 intercept forces of one to three units on
+                // Naraka 2026-09-07 22:04 chased single raiders around; below this a
+                // track is the reserve's business where it stands.
+                if (t.Effective < INTERCEPT_MIN_EFF && t.Piloted == 0) continue;
                 bool small = t.Effective < Mathf.Max(3000f, ArmyEff * 0.15f);
                 if (!small && t.Piloted == 0) continue;
                 // Already answered by a site defence within reach? Let the
@@ -480,11 +485,20 @@ namespace Si_RTS_AI.Mil
                     float beat = Mathf.Max(def * Doctrine.HqCommitAt, 80f);
                     float razeNeed = b.TotalHp / (RAZE_BUDGET_S * Mathf.Max(0.01f, DpsPerEff));
                     float price = Mathf.Max(beat, razeNeed);
-                    bool affordable = ArmyEff >= price;
+                    // BUILD UP, THEN STEAMROLL. DrMuck: "no build up for a steamroll or war
+                    // of attrition; units get sent in one by one". Whatever stands beyond
+                    // the home guard is the commitment: the push is priced at the
+                    // favourable ratio and takes everything the army can spare, and it is
+                    // affordable once that spare part clears the refuse line. TheMaw
+                    // 2026-09-08: 62k against 35k waited an hour for a 73k price.
+                    float homeGuard = Mathf.Min(MilConfig.HomeFloorCash, ArmyEff * 0.5f);
+                    float spare = Mathf.Max(0f, ArmyEff - homeGuard);
+                    bool affordable = spare >= price || (spare >= def * Doctrine.RefuseBelow && spare >= razeNeed);
+                    if (affordable) price = Mathf.Min(price, spare);
                     into.Add(new Objective
                     {
                         Kind = Kind.KillHQ, Key = "killhq@" + b.Key, Where = b.Centre, Radius = 500f,
-                        RequiredEff = price, CeilingEff = Mathf.Max(price, def * Doctrine.WastefulAbove), DefenceEff = def,
+                        RequiredEff = price, CeilingEff = Mathf.Max(price, affordable ? spare : def * Doctrine.WastefulAbove), DefenceEff = def,
                         Rank = affordable ? 3 : 7, Score = b.Cost / Mathf.Max(1f, price),
                         PoolPref = Pool.Line, Attack = true, Offensive = true, BaseRef = b,
                         Gain = b.Cost * 2f, ExpectedLoss = Kernel.ExpectedLossOfWinner(price, def),
