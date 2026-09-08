@@ -62,7 +62,7 @@ namespace Si_RTS_AI.Mil
         /// <summary>Structures worth reporting a shortfall on, in the order a
         /// reader cares about them. Everything else in the trajectory file is
         /// context rather than a decision this layer makes.</summary>
-        static readonly string[] Watch =
+        static string[] Watch =
         {
             "Greater Spawning Cyst", "Lesser Spawning Cyst",
             "Grand Spawning Cyst", "Colossal Spawning Cyst",

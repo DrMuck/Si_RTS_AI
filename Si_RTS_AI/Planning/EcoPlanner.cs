@@ -312,6 +312,22 @@ namespace Si_RTS_AI.Planning
                     w = UNEXPLORED_VALUE_DISCOUNT;
                 value += s.patches[p].remaining * w;
             }
+            // A CLOSE ENEMY DISCOUNTS GROUND NEAR HIM EARLY. DrMuck on Great Erg
+            // (2026-09-07 02:18): close spawns get the alien economy harassed from
+            // the start; expand away from the enemy in the early game. For the
+            // first ten minutes a target within 900 m of a known enemy base is
+            // worth a quarter, within 1,400 m six tenths; after that the ground
+            // is priced on what it earns.
+            try
+            {
+                if (Mil.Forces.RoundSeconds() < 600f)
+                {
+                    float dEnemy = Mil.Intel.NearestEnemyBaseDist(target);
+                    if (dEnemy < 900f) value *= 0.25f;
+                    else if (dEnemy < 1400f) value *= 0.6f;
+                }
+            }
+            catch { }
             r.RawValue = value;
 
             // Nodes build in sequence as cash allows; then the BC; then the
@@ -1968,6 +1984,11 @@ namespace Si_RTS_AI.Planning
                         // have kept three producers running is the same trade
                         // in a larger denomination.
                         floor = Mathf.Max(floor, shrimpReserve);
+                        // UNDER SIEGE THE ECONOMY LEAVES THE ARMY ITS MONEY. Three
+                        // thousand stays for a producer or a spire; the expansion
+                        // that spent to 280 cash on The Maw earned nothing, because
+                        // the Nest fell first.
+                        try { if (Mil.Objectives.UnderSiege) floor = Mathf.Max(floor, 3000); } catch { }
                         // NOT starvation. This is the planner deliberately
                         // HOLDING money for a Cyst or the shrimp queue — it has
                         // the cash and is choosing not to spend it here. Counting
@@ -2304,6 +2325,7 @@ namespace Si_RTS_AI.Planning
                     // same first step and the loop would order one position
                     // REPAIR_HOPS_PER_CYCLE times.
                     Vector3 anchor = repFrom;
+                    string blockWhy = "";
                     for (int hop = 0; hop < REPAIR_HOPS_PER_CYCLE; hop++)
                     {
                         // Node reach, not Bio Cache reach -- see needWithinM.
@@ -2311,7 +2333,8 @@ namespace Si_RTS_AI.Planning
                         // like any other node, so letting this pick the nearest
                         // structure to the goal picks the orphan itself.
                         if (!NextNodeTowards(state, repTo, out Vector3 repHop,
-                                             EcoSimulator.NODE_REACH_M, anchor)) break;
+                                             EcoSimulator.NODE_REACH_M, anchor))
+                        { blockWhy = $"no hop from ({anchor.x:F0},{anchor.z:F0}), gap {Vector3.Distance(anchor, repTo):F0}m"; break; }
                         int beforeRep = fired;
                         TryFireAction(new Candidate
                         {
@@ -2320,7 +2343,7 @@ namespace Si_RTS_AI.Planning
                             cost = EcoSimulator.NODE_COST,
                             patchIdx = -1,
                         }, rescue: true);
-                        if (fired == beforeRep) break;      // could not, stop asking
+                        if (fired == beforeRep) { blockWhy = $"fire refused at ({repHop.x:F0},{repHop.z:F0})"; break; }
                         laid++;
                         anchor = repHop;
                         MelonLogger.Msg($"[PLAN/EXEC] REPAIR node at ({repHop.x:F0},{repHop.z:F0}) " +
@@ -2337,7 +2360,7 @@ namespace Si_RTS_AI.Planning
                         MelonLogger.Msg($"[PLAN/EXEC] REPAIR BLOCKED toward " +
                                         $"({repTo.x:F0},{repTo.z:F0}) — cash={cashLeft} " +
                                         $"nodeCost={EcoSimulator.NODE_COST} " +
-                                        $"(no reachable hop, or unaffordable)");
+                                        $"({(blockWhy.Length > 0 ? blockWhy : "no reachable hop, or unaffordable")})");
                 }
 
                 // CLOSE A LOOP, BUT ONLY OUT OF SURPLUS.
@@ -2353,7 +2376,9 @@ namespace Si_RTS_AI.Planning
                 // got a turn: NarakaCity 2026-08-02 proposed a loop 19 times
                 // with 50,000 cash in hand and built none of them. The cash
                 // floor is the surplus test — an idle tick is not.
-                if (!openerDrove
+                bool loopTime = false;
+                try { loopTime = Mil.Forces.RoundSeconds() >= 480f; } catch { }
+                if (!openerDrove && loopTime
                     && _currentPhase == PlanPhase.Phase2_Expand
                     && state.cash >= LOOP_CASH_FLOOR
                     && NodeManager.TryGetLoop(out Vector3 loopFrom, out Vector3 loopTo, out int loopNodes)
@@ -5031,7 +5056,19 @@ namespace Si_RTS_AI.Planning
             float need = needWithinM > 0f
                        ? needWithinM
                        : EcoSimulator.BcPlaceReachM + BC_TIGHT_GAP_M;
-            if (gap <= need) return false;
+            // A PINNED REPAIR WITHIN REACH STILL NEEDS ITS LINK. Crimson Peak
+            // 13:02: 16 repairs reported BLOCKED against 9 laid while orphans
+            // stood for minutes. When the live end is already inside node reach
+            // of the orphan and the game still counts it cut, the link between
+            // them is what is missing: lay a node halfway.
+            if (gap <= need)
+            {
+                if (!pinned || gap < 30f) return false;
+                var mid = new Vector3((from.x + goal.x) * 0.5f, from.y, (from.z + goal.z) * 0.5f);
+                if (IsObstructed(mid)) return false;
+                pos = mid;
+                return true;
+            }
 
             float hop = Mathf.Max(1f, EcoSimulator.NODE_REACH_M - NODE_DRIFT_MARGIN_M);
             Vector3 dir = goal - from;

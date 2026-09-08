@@ -270,6 +270,18 @@ namespace Si_RTS_AI.Planning
             var existingCortex = FindResearchStructure(ctx.Team);
             if (existingCortex != null)
             {
+                // UNDER SIEGE RESEARCH WAITS. The Maw, 2026-09-07 06:48: Gamma III,
+                // Delta IV and Theta V (2,000 each) fired while raiders stood at the
+                // Nest and no producer existed. A tier bought after the Nest falls
+                // is worth nothing.
+                // But research is also the prerequisite of every unit beyond the
+                // starters: held for a whole Naraka round (07:23) it left eleven
+                // cysts unable to queue anything. So research waits only while
+                // there is no producer at all — the producer comes first, the
+                // tier right after.
+                bool siege = false;
+                try { siege = Mil.Objectives.UnderSiege && Mil.ProductionV3.ProducerCount == 0; } catch { }
+                if (siege) return proposals;
                 var researchProp = ProposeResearchUpgrade(ctx, s, existingCortex);
                 if (researchProp.HasValue) proposals.Add(researchProp.Value);
                 return proposals;

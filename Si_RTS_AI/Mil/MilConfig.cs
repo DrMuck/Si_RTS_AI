@@ -25,7 +25,8 @@ namespace Si_RTS_AI.Mil
         /// says. About three Behemoths. PLACEHOLDER.</summary>
         internal static int   HomeFloorCash        = 12000;
         internal static int   EnemyStartEff        = 4000;    // an enemy team is never assumed weaker than its starting army
-        internal static float NoOffenceBeforeS     = 300f;    // no offensive force leaves home before this
+        internal static bool  ReachEnforce { get; private set; } = false;
+        internal static float NoOffenceBeforeS     = 600f;    // no offensive force leaves home before this (DrMuck: keep Shockers and Hunters home the first ten minutes)
         /// <summary>How far ahead an arrival is believed, seconds.</summary>
         internal static float ForecastHorizonS     = 180f;
         /// <summary>Raids may never hold more than this share of army value.</summary>
@@ -60,7 +61,8 @@ namespace Si_RTS_AI.Mil
         internal static void Reload()
         {
             EnemyStartEff          = RtsaiConfig.Int  ("mil.enemyStartEff", 4000);
-            NoOffenceBeforeS       = RtsaiConfig.Float("mil.noOffenceBeforeS", 300f);
+            NoOffenceBeforeS       = RtsaiConfig.Float("mil.noOffenceBeforeS", 600f);
+            ReachEnforce           = RtsaiConfig.Bool("mil.reachEnforce", false);   // graph reachability acts on forces and sites (advisory otherwise)
             HomeFloorCash          = RtsaiConfig.Int  ("mil.homeFloorCash",        RtsaiConfig.Int("military.homeFloorCash", 12000));
             ForecastHorizonS       = RtsaiConfig.Float("mil.forecastHorizonS",     180f);
             RaidShare              = RtsaiConfig.Float("mil.raidShare",            0.25f);

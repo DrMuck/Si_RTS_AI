@@ -84,6 +84,7 @@ namespace Si_RTS_AI.Mil
             public Intel.Track          TrackRef;
             public Intel.KnownStructure StructRef;
             public Structure            OwnStructRef;    // the thing we defend
+            public ConstructionSite     SiteRef;         // a site going up that we cover
             // what the force reported
             public float AssignedEff, PeakAssignedEff;
             public int   AssignedUnits;
@@ -94,9 +95,9 @@ namespace Si_RTS_AI.Mil
             public float LastProgressAt;
         }
 
-        internal static readonly List<Objective> Portfolio = new List<Objective>(16);
-        static readonly Dictionary<string, Objective> _byKey = new Dictionary<string, Objective>();
-        static readonly Dictionary<string, float> _holdUntil = new Dictionary<string, float>();
+        internal static List<Objective> Portfolio = new List<Objective>(16);
+        static Dictionary<string, Objective> _byKey = new Dictionary<string, Objective>();
+        static Dictionary<string, float> _holdUntil = new Dictionary<string, float>();
 
         /// <summary>
         /// WHAT A BASE ACTUALLY ANSWERED WITH. The kernel prices a base against
@@ -106,7 +107,7 @@ namespace Si_RTS_AI.Mil
         /// target is remembered for that base and every later price starts from
         /// it. Half-life ten minutes: a base can be reinforced or stripped.
         /// </summary>
-        static readonly Dictionary<int, (float eff, float at)> _baseAnswer = new Dictionary<int, (float, float)>();
+        static Dictionary<int, (float eff, float at)> _baseAnswer = new Dictionary<int, (float, float)>();
         const float ANSWER_HALF_LIFE_S = 600f;
 
         static float AnsweredWith(Intel.Base b)
@@ -114,13 +115,15 @@ namespace Si_RTS_AI.Mil
             if (b == null || !_baseAnswer.TryGetValue(b.Id, out var a)) return 0f;
             return a.eff * Mathf.Pow(0.5f, (Time.time - a.at) / ANSWER_HALF_LIFE_S);
         }
-        static readonly List<Intel.Arrival> _arr = new List<Intel.Arrival>(8);
-        static readonly List<Intel.Base> _stale = new List<Intel.Base>(4);
+        static List<Intel.Arrival> _arr = new List<Intel.Arrival>(8);
+        static List<Intel.Base> _stale = new List<Intel.Base>(4);
 
         const float REFRESH_S     = 15f;
         const float CHECK_S       = 2f;
         const float HOLD_AFTER_FAIL_S = 120f;
         const float DEFEND_GRACE_S = 60f;
+        const float INTERCEPT_MIN_EFF = 1200f;
+        const float SITE_COVER_EFF = 4000f;   // the least that stands beside an expansion HQ while it goes up
         const float RAZE_BUDGET_S  = 240f;    // a raid should finish inside this
         const float BASE_REACH_M   = 1200f;   // enemy reinforcements counted from here
 
@@ -129,6 +132,19 @@ namespace Si_RTS_AI.Mil
         static Team _team;
         static Vector3 _nest;
         internal static float ArmyEff { get; private set; }
+
+        /// <summary>
+        /// OUTNUMBERED. The enemy's estimated strength exceeds the whole army.
+        /// Great Erg and Monument Valley, 2026-09-07: Sol rushed at minute four
+        /// to twelve with 5,000 to 9,000 strength, the starter army bled out
+        /// defending outlying biotic centres one force at a time, the economy
+        /// spent to the last credit so military production had no budget, and
+        /// the Nest fell. Under siege the rules change: the army has right of
+        /// way over expansion, no defence force leaves the Nest for an eco
+        /// site, and the Nest may take a second spire below the cash floor.
+        /// </summary>
+        internal static bool UnderSiege { get; private set; }
+        const float SIEGE_MARGIN = 1.0f;
         internal static int   ArmyCash { get; private set; }
         internal static float DpsPerEff { get; private set; } = 0.05f;
 
@@ -194,6 +210,11 @@ namespace Si_RTS_AI.Mil
             catch { }
             ArmyEff = f.Effective();
             ArmyCash = f.Cash();
+            bool siege = Intel.EnemyEffective > ArmyEff * SIEGE_MARGIN;
+            if (siege != UnderSiege)
+                MilLog.Msg(siege ? $"[OBJ] UNDER SIEGE: enemy ~{Intel.EnemyEffective:F0} eff against our {ArmyEff:F0} — army has right of way, home guard stays home"
+                                 : $"[OBJ] siege lifted: enemy ~{Intel.EnemyEffective:F0} eff against our {ArmyEff:F0}");
+            UnderSiege = siege;
             float dps = f.Dps();
             if (ArmyEff > 0f && dps > 0f) DpsPerEff = dps / ArmyEff;
             _nest = Intel.Nest;
@@ -326,6 +347,38 @@ namespace Si_RTS_AI.Mil
             }
             catch { }
 
+            // AN EXPANSION HEADQUARTERS GOING UP IS COVERED, THREAT OR NO THREAT.
+            // Naraka 2026-09-07 22:04: the site at (2285,-608) stood alone and the
+            // cash that would have bought its cover went into two more HQs (DrMuck).
+            // A standing DefendProduction objective for every HQ construction site
+            // of ours, priced at the local threat or the cover floor, done when the
+            // site is up or gone.
+            try
+            {
+                var csites = ConstructionSite.ConstructionSites;
+                if (csites != null)
+                    for (int i = 0; i < csites.Count; i++)
+                    {
+                        var cs = csites[i];
+                        if (cs == null || cs.IsDestroyed || cs.Team != team || cs.ObjectInfo == null) continue;
+                        if ((cs.ObjectInfo.DisplayName ?? "") != "Headquarters") continue;
+                        Vector3 p = cs.transform.position;
+                        float threat = Intel.EffectiveNear(p, 700f);
+                        float price = Mathf.Max(Kernel.PriceToBeat(threat), SITE_COVER_EFF);
+                        into.Add(new Objective
+                        {
+                            Kind = Kind.DefendProduction, Key = "defsite@" + Cell(p),
+                            Where = p, Radius = 350f,
+                            RequiredEff = price, CeilingEff = Mathf.Max(price, threat * Doctrine.WastefulAbove), DefenceEff = threat,
+                            DeadlineAt = float.PositiveInfinity, Rank = 1, Score = 2e6f,
+                            PoolPref = Pool.Any, Attack = true, Offensive = false, SiteRef = cs,
+                            Gain = 9800f, ExpectedLoss = Kernel.ExpectedLossOfWinner(price, threat), PWin = Kernel.PWin(price, threat),
+                            Note = $"expansion HQ going up at ({p.x:F0},{p.z:F0}), threat {threat:F0} within 700m",
+                            Expectation = "the site completes",
+                        });
+                    }
+            }
+            catch { }
             for (int i = 0; i < sites.Count; i++)
             {
                 var site = sites[i];
@@ -364,7 +417,7 @@ namespace Si_RTS_AI.Mil
         }
 
         const float FORECAST_CONFIRM_S = 20f;
-        static readonly Dictionary<string, float> _forecastSince = new Dictionary<string, float>();
+        static Dictionary<string, float> _forecastSince = new Dictionary<string, float>();
 
         static float SumArrivals(List<Intel.Arrival> arr, out float firstEta)
         {
@@ -387,6 +440,10 @@ namespace Si_RTS_AI.Mil
                 if (!t.InsideOurGround || !t.Seen) continue;
                 if (now - t.FirstSeenAt < 4f) continue;            // a fresh cluster, not yet a group
                 if (t.Effective < 100f && t.Piloted == 0) continue; // one scout is not an incursion
+                // A TRACK WORTH A FORCE. 69 intercept forces of one to three units on
+                // Naraka 2026-09-07 22:04 chased single raiders around; below this a
+                // track is the reserve's business where it stands.
+                if (t.Effective < INTERCEPT_MIN_EFF && t.Piloted == 0) continue;
                 bool small = t.Effective < Mathf.Max(3000f, ArmyEff * 0.15f);
                 if (!small && t.Piloted == 0) continue;
                 // Already answered by a site defence within reach? Let the
@@ -421,15 +478,27 @@ namespace Si_RTS_AI.Mil
                 // KillHQ — the win condition.
                 if (b.HasHq)
                 {
-                    float def = Mathf.Max(local, Intel.EnemyEffectiveOf(b.Team));
-                    float beat = Kernel.PriceToBeat(def);
+                    // Local defence plus reinforcements within reach, floored at a
+                    // share of the enemy army (they will come home), and committed
+                    // at the HQ ratio rather than the general 2:1.
+                    float def = Mathf.Max(local, Intel.EnemyEffectiveOf(b.Team) * Doctrine.HqArmyShare);
+                    float beat = Mathf.Max(def * Doctrine.HqCommitAt, 80f);
                     float razeNeed = b.TotalHp / (RAZE_BUDGET_S * Mathf.Max(0.01f, DpsPerEff));
                     float price = Mathf.Max(beat, razeNeed);
-                    bool affordable = ArmyEff >= price;
+                    // BUILD UP, THEN STEAMROLL. DrMuck: "no build up for a steamroll or war
+                    // of attrition; units get sent in one by one". Whatever stands beyond
+                    // the home guard is the commitment: the push is priced at the
+                    // favourable ratio and takes everything the army can spare, and it is
+                    // affordable once that spare part clears the refuse line. TheMaw
+                    // 2026-09-08: 62k against 35k waited an hour for a 73k price.
+                    float homeGuard = Mathf.Min(MilConfig.HomeFloorCash, ArmyEff * 0.5f);
+                    float spare = Mathf.Max(0f, ArmyEff - homeGuard);
+                    bool affordable = spare >= price || (spare >= def * Doctrine.RefuseBelow && spare >= razeNeed);
+                    if (affordable) price = Mathf.Min(price, spare);
                     into.Add(new Objective
                     {
                         Kind = Kind.KillHQ, Key = "killhq@" + b.Key, Where = b.Centre, Radius = 500f,
-                        RequiredEff = price, CeilingEff = Mathf.Max(price, def * Doctrine.WastefulAbove), DefenceEff = def,
+                        RequiredEff = price, CeilingEff = Mathf.Max(price, affordable ? spare : def * Doctrine.WastefulAbove), DefenceEff = def,
                         Rank = affordable ? 3 : 7, Score = b.Cost / Mathf.Max(1f, price),
                         PoolPref = Pool.Line, Attack = true, Offensive = true, BaseRef = b,
                         Gain = b.Cost * 2f, ExpectedLoss = Kernel.ExpectedLossOfWinner(price, def),
@@ -618,6 +687,13 @@ namespace Si_RTS_AI.Mil
                     case Kind.DefendEco:
                     case Kind.DefendProduction:
                     {
+                        if (o.SiteRef != null)
+                        {
+                            bool alive = false;
+                            try { alive = !o.SiteRef.IsDestroyed && ConstructionSite.ConstructionSites != null && ConstructionSite.ConstructionSites.Contains(o.SiteRef); } catch { }
+                            if (!alive) { done = "the site is up, or gone"; break; }
+                            break;   // a site is covered for as long as it stands
+                        }
                         if (o.OwnStructRef != null && o.OwnStructRef.IsDestroyed) { failed = "the asset was destroyed"; break; }
                         float near = Intel.EffectiveNear(o.Where, o.Radius + 100f);
                         if (near <= 0f && now > o.DeadlineAt + DEFEND_GRACE_S) done = "nothing arrived, or it left";

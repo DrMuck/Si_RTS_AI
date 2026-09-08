@@ -65,13 +65,14 @@ namespace Si_RTS_AI.Mil
             public string Name => Obj == null ? "reserve" : $"{Obj.Kind}#{Obj.Id}/{Id}";
         }
 
-        internal static readonly List<Force> Active = new List<Force>(8);
+        internal static List<Force> Active = new List<Force>(8);
         static Force _reserve;
         static float _lastTickAt, _lastLogAt;
         static int _nextId;
         static Team _team;
 
         const float TICK_S            = 2f;
+        const int   MIN_FORCE_UNITS   = 4;
         const float ARRIVED_M         = 90f;
         const float ORDER_MOVED_M     = 90f;
         const float ORDER_BACKSTOP_S  = 60f;
@@ -167,7 +168,7 @@ namespace Si_RTS_AI.Mil
 
         // ---- rosters ----------------------------------------------------------
 
-        static readonly HashSet<Unit> _held = new HashSet<Unit>();
+        static HashSet<Unit> _held = new HashSet<Unit>();
 
         static List<Unit> FreeCombatUnits(Team team)
         {
@@ -282,6 +283,10 @@ namespace Si_RTS_AI.Mil
                     if (force != null) { Active.Remove(force); }
                     continue;
                 }
+                // UNDER SIEGE THE HOME GUARD STAYS HOME. A force sent to a biotic
+                // centre against a stronger enemy is a force lost; the Nest is
+                // the loss condition and everything stands there with the spires.
+                if (Objectives.UnderSiege && force == null && !o.Offensive && o.Kind != Objectives.Kind.DefendQueen) continue;
                 if (IsRaid(o) && force == null && raidHeld >= raidBudget) continue;
                 // NOTHING LEAVES HOME IN THE FIRST FIVE MINUTES. There is nothing
                 // to know about the enemy yet and the starter army is the only
@@ -388,6 +393,20 @@ namespace Si_RTS_AI.Mil
                         if (idx < 0) break;
                         var u = free[idx];
                         string n = ""; try { n = u.ObjectInfo?.DisplayName ?? ""; } catch { }
+                        // A UNIT THAT CANNOT WALK THERE IS NOT SENT. Crimson Peak
+                        // 13:02: 31 Behemoths priced at 83k stood in a KillHQ force
+                        // for a thousand seconds without moving; the graph had no
+                        // way from their plateau to the HQ. They stay in the reserve.
+                        if (!Reach.CanReach(u, o.Where))
+                        {
+                            Reach.Refusals++;
+                            if (Reach.Refusals <= 20 || Reach.Refusals % 1000 == 0)
+                            {
+                                Vector3 up = Vector3.zero; try { up = u.transform.position; } catch { }
+                                MilLog.Msg($"[FORCE] no path: {n} at ({up.x:F0},{up.z:F0}) cannot reach {o.Kind}#{o.Id} at ({o.Where.x:F0},{o.Where.z:F0}) — {(Reach.Enforce ? "left in the reserve" : "advisory, sent anyway")} (#{Reach.Refusals})");
+                            }
+                            if (Reach.Enforce) { free.RemoveAt(idx); continue; }
+                        }
                         float e = Kernel.EffectiveOf(n);
                         if (IsRaid(o) && raidHeld + e > raidBudget && have > 0f) break;
                         if (force == null)
@@ -406,6 +425,18 @@ namespace Si_RTS_AI.Mil
                 if (force != null)
                 {
                     Measure(force);
+                    // NO FORCE OF ONE. A new force with fewer than MIN_FORCE_UNITS units is
+                    // sent back to the reserve unless it defends the Nest or scouts:
+                    // 39 intercept forces of one or two units on Naraka 22:04 (DrMuck:
+                    // "units get sent in one by one").
+                    bool tiny = force.Phase == State.Forming && force.Units.Count < MIN_FORCE_UNITS
+                                && o.Kind != Objectives.Kind.DefendQueen && o.Kind != Objectives.Kind.Recon;
+                    if (tiny && taken > 0)
+                    {
+                        for (int k = 0; k < force.Units.Count; k++) free.Add(force.Units[k]);
+                        Active.Remove(force);
+                        continue;
+                    }
                     if (taken > 0 && o.Status == Objectives.Status.Proposed) Objectives.NoteActivated(o, now);
                 }
             }
@@ -448,8 +479,8 @@ namespace Si_RTS_AI.Mil
 
         static Vector3 _reservePoint;
         static float _lastReserveMoveAt, _reserveFallBackUntil;
-        static readonly List<(Vector3 pos, float weight)> _assets = new List<(Vector3, float)>();
-        static readonly List<Vector3> _candidates = new List<Vector3>();
+        static List<(Vector3 pos, float weight)> _assets = new List<(Vector3, float)>();
+        static List<Vector3> _candidates = new List<Vector3>();
 
         static void Reserve(List<Unit> free, float now)
         {
@@ -480,6 +511,10 @@ namespace Si_RTS_AI.Mil
                     float w = 0.3f + recent / 4000f;
                     int sector = Intel.SectorOf(pos - nest);
                     w += Intel.SectorWeight(sector) * 0.5f;
+                    // An expansion nearer the enemy than the Nest pulls the reserve
+                    // toward it: the standing point is a picket, not a huddle.
+                    float dEnemy = Intel.NearestEnemyBaseDist(pos);
+                    if (dEnemy < 1000f || dEnemy < (pos - nest).magnitude) w += 0.8f;
                     _assets.Add((pos, Mathf.Min(w, 3f)));
                 });
             }
@@ -520,7 +555,7 @@ namespace Si_RTS_AI.Mil
                     MilLog.Every("reserve:fallback", 30f, $"[FORCE] reserve gives ground: {Kernel.Describe(ours, theirs)} — standing nearer the Nest for 90s");
                 }
             }
-            if (now < _reserveFallBackUntil)
+            if (now < _reserveFallBackUntil || Objectives.UnderSiege)   // under siege the reserve stands at the Nest
             {
                 _assets.Clear(); _assets.Add((nest, 1f));
             }
@@ -552,11 +587,18 @@ namespace Si_RTS_AI.Mil
                 // two scouts finds their army came home; the refresh re-reads the
                 // defence every fifteen seconds, and a force that has not yet
                 // fought turns back when the kernel would now refuse the fight.
+                // THE WHOLE COMMITMENT IS WEIGHED, NOT THE LAST WAVE. Crimson Peak,
+                // 2026-09-07 13:02: three waves of 90k, 62k and 48k stood against
+                // a 48k defence; the third wave alone read as a coin flip, the
+                // objective ended and all 145 units went home. A 250k army then
+                // sat at the Nest for twenty minutes and the round timed out.
+                float committedEff = AssignedTo(o);
                 if ((force.Phase == State.Staging || force.Phase == State.Advancing) && o.Offensive &&
-                    o.DefenceEff > 0f && Kernel.Ratio(force.Eff, o.DefenceEff) < Doctrine.RefuseBelow)
+                    o.DefenceEff > 0f && Kernel.Ratio(committedEff, o.DefenceEff) < Doctrine.RefuseBelow)
                 {
                     Withdrawals++;
-                    string why = $"the price rose: {Kernel.Describe(force.Eff, o.DefenceEff)}";
+                    string why = $"the price rose: {Kernel.Describe(committedEff, o.DefenceEff)}" +
+                                 (committedEff > force.Eff ? $" (all waves; this one {force.Eff:F0})" : "");
                     force.Rally = Fields.RallyFor(Centroid(force), o.Where, MilConfig.StandoffM * 2f, force.Flying);
                     SetPhase(force, State.Withdrawing, now, why);
                     Objectives.NoteWithdrawn(o, why, now);
@@ -660,11 +702,20 @@ namespace Si_RTS_AI.Mil
             why = null;
             if (now - force.LastTargetCheckAt < KERNEL_CHECK_S) return false;
             force.LastTargetCheckAt = now;
-            float ours = force.Eff + OwnDefenceNear(Centroid(force));
+            // THE WHOLE COMMITMENT FIGHTS, AND A FORCE IN THE FIGHT HOLDS TO
+            // PARITY. Naraka 2026-09-07 18:18, minute 23: KillHQ wave one (38k)
+            // judged itself alone against 32k at the HQ, called it a coin flip
+            // and pulled both waves (97k) home; the second wave was 200 m behind.
+            // DrMuck: "army pull back around 24 min, unnecessary". Every force on
+            // the objective counts, and once engaged the line is 1:1, not the
+            // pre-fight 1.25 that decides whether to start a fight at all.
+            float ours = (o.Offensive ? Mathf.Max(force.Eff, AssignedTo(o)) : force.Eff) + OwnDefenceNear(Centroid(force));
             float theirs = Intel.EffectiveNear(Centroid(force), ENGAGE_RADIUS_M) + DefenceStructsNear(o, Centroid(force));
             float ratio = Kernel.Ratio(ours, theirs);
             var band = Doctrine.Classify(ratio);
-            float refuseAt = o.Offensive ? Doctrine.RefuseBelow : MilConfig.DefendRefuseBelow;
+            float refuseAt = o.Offensive
+                ? (force.Phase == State.Engaged ? 1.0f : Doctrine.RefuseBelow)
+                : MilConfig.DefendRefuseBelow;
             if (theirs > 0f && ratio < refuseAt)
             {
                 why = $"{Kernel.Describe(ours, theirs)} — {(o.Offensive ? Doctrine.Advice(band) : "clearly losing our own ground")}";
@@ -798,7 +849,7 @@ namespace Si_RTS_AI.Mil
         // ---- orders ----------------------------------------------------------------
 
         [ThreadStatic] internal static bool PlannerOverride;
-        static readonly List<BaseGameObject> _scratch = new List<BaseGameObject>(64);
+        static List<BaseGameObject> _scratch = new List<BaseGameObject>(64);
 
         static void Execute(float now)
         {
@@ -876,6 +927,28 @@ namespace Si_RTS_AI.Mil
             ExecuteReserve(now);
         }
 
+        const float POST_RADIUS_M = 250f;
+        static bool NearOwnStructure(Vector3 p, float r)
+        {
+            try
+            {
+                var structs = _team?.Structures;
+                if (structs == null) return false;
+                float r2 = r * r;
+                for (int i = 0; i < structs.Count; i++)
+                {
+                    var s = structs[i];
+                    if (s?.ObjectInfo == null || s.IsDestroyed) continue;
+                    string n = s.ObjectInfo.DisplayName ?? "";
+                    if (n == "Node") continue;               // a node line is not a post
+                    var q = s.transform.position;
+                    float dx = q.x - p.x, dz = q.z - p.z;
+                    if (dx * dx + dz * dz <= r2) return true;
+                }
+            }
+            catch { }
+            return false;
+        }
         static void ExecuteReserve(float now)
         {
             if (_reserve == null || _reserve.Units.Count == 0 || _reservePoint == Vector3.zero) return;
@@ -888,17 +961,28 @@ namespace Si_RTS_AI.Mil
                 Vector3 p;
                 try { p = u.transform.position; } catch { continue; }
                 float dx = p.x - _reservePoint.x, dz = p.z - _reservePoint.z;
-                if (dx * dx + dz * dz <= RESERVE_LEASH_M * RESERVE_LEASH_M) continue;
+                // Under siege the leash is short and the recall quick: the starter
+                // crabs on The Maw chased kiting raiders 450 m from the Nest and
+                // died there, six at a time.
+                float leash = Objectives.UnderSiege ? 150f : RESERVE_LEASH_M;
+                if (dx * dx + dz * dz <= leash * leash) continue;
                 if (IsFighting(u)) continue;
+                // POSTED, NOT STRAY. DrMuck on Naraka 18:18: "army tries to gather
+                // in sector G5, but why, there is no threat". Released forces
+                // marched a hundred units to one standing point. A unit already
+                // standing at one of our structures is a picket where it is;
+                // only units in the open are collected. Under siege everything
+                // comes home.
+                if (!Objectives.UnderSiege && NearOwnStructure(p, POST_RADIUS_M)) continue;
                 stray.Add(u);
             }
             if (stray.Count == 0) return;
-            if (now - _reserve.LastOrderAt < 30f) return;
+            if (now - _reserve.LastOrderAt < (Objectives.UnderSiege ? 10f : 30f)) return;
             _reserve.LastOrderAt = now;
             _reserve.OrdersIssued += MoveEach(stray, _reservePoint);
         }
 
-        static float RoundSeconds()
+        internal static float RoundSeconds()
         {
             try { return Perception.MapLayers.LayerReplay.CurrentRoundTime; } catch { return float.MaxValue; }
         }
@@ -1024,11 +1108,33 @@ namespace Si_RTS_AI.Mil
             {
                 var u = _scratch[i];
                 if (u == null) continue;
-                Issue(() => OrderCompat.Attack(u, at, target), 1);
+                // RANGED UNITS ATTACK FROM RANGE. The attack order carries an
+                // attack-from position (the agent's ChasingPosition); every unit
+                // used to get the target itself, so a Barrage Truck drove up to
+                // the Nest it could have shelled from 300 m (DrMuck, 2026-09-07
+                // 20:50). A unit with a real weapon range stops at 80% of it on
+                // its own line of approach.
+                Vector3 atU = at;
+                try
+                {
+                    string n2 = u.ObjectInfo?.DisplayName ?? "";
+                    float r = UnitStats.RangeOf(n2);
+                    if (r >= STANDOFF_MIN_RANGE_M)
+                    {
+                        Vector3 from = u.transform.position;
+                        Vector3 d = from - at; d.y = 0f;
+                        float len = d.magnitude;
+                        if (len > 1f) atU = at + d / len * (r * STANDOFF_SHARE);
+                    }
+                }
+                catch { }
+                Issue(() => OrderCompat.Attack(u, atU, target), 1);
                 n++;
             }
             force.OrdersIssued += n;
         }
+        const float STANDOFF_MIN_RANGE_M = 80f;
+        const float STANDOFF_SHARE       = 0.8f;
 
         static void AttackMove(Force force, Vector3 dest, float now)
         {
@@ -1077,7 +1183,7 @@ namespace Si_RTS_AI.Mil
         {
             if (u == null || !MilConfig.Enabled || !MilConfig.Execute) return false;
             try { if (ScoutPlanner.IsScout(u)) return false; } catch { }
-            return _held.Contains(u);
+            return MilContext.AnyHeld(u);
         }
 
         /// <summary>

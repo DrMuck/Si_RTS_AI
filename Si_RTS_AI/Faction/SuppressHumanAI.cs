@@ -156,7 +156,7 @@ namespace Si_RTS_AI.Faction
 
         static MethodInfo? _setterMi;
         static string? _setterName;
-        static string? TrySetResourcesReflective(Team team, int value)
+        internal static string? TrySetResourcesReflective(Team team, int value)
         {
             if (_setterMi != null)
             {

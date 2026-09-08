@@ -60,8 +60,13 @@ namespace Si_RTS_AI.Planning
         // Units we are willing to conscript — the tier-0 chassis the round
         // starts with. Both are cheap and fast, and neither is worth much in a
         // fight this early.
-        static readonly HashSet<string> SCOUT_UNIT_NAMES =
+        static HashSet<string> ALIEN_SCOUTS =
             new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Crab", "Squid" };
+        // Sol and Centauri: the Scout is the chassis the round starts with and the
+        // Barracks makes it; the Light Quad is the fast one.
+        static HashSet<string> HUMAN_SCOUTS =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Scout", "Light Quad" };
+        static HashSet<string> SCOUT_UNIT_NAMES = ALIEN_SCOUTS;
 
         // Scouts work alone, never as a pack — one unit per arm of the star.
         // Wired to the ScoutMaxUnits preference. We now BUILD up to this many,
@@ -89,7 +94,7 @@ namespace Si_RTS_AI.Planning
         // rings clipped to nothing on one side while the far side of the map,
         // 5000m+ away, sat outside the largest ring entirely. As fractions the
         // outermost waypoint IS the border, in every direction, on every map.
-        static readonly float[] RING_FRACTIONS = { 0.3f, 0.55f, 0.78f, 0.95f };
+        static float[] RING_FRACTIONS = { 0.3f, 0.55f, 0.78f, 0.95f };
         // Don't bother walking a ray that barely leaves the base.
         const float MIN_RAY_M = 300f;
         // If an undiscovered biotics patch sits near the geometric waypoint,
@@ -115,7 +120,7 @@ namespace Si_RTS_AI.Planning
         // ---- Filling the gaps: build scouts we weren't given ----
         //
         // MaxScouts is a CEILING, not a target to sprint for. The roster grows
-        // slowly all game: BUILD_TARGET_AT_START scouts to begin with, plus one
+        // slowly all game: BuildTargetAtStart scouts to begin with, plus one
         // more per BUILD_TARGET_RAMP_S, until it reaches MaxScouts. On the
         // defaults that is 2 at spawn, 7 by five minutes, and the full 20 only
         // in a long round — vision keeps improving without ever competing with
@@ -123,10 +128,10 @@ namespace Si_RTS_AI.Planning
         //
         // Units the spawn already gave us are exempt: those are free, so we
         // conscript every one of them up to MaxScouts immediately.
-        const string SCOUT_BUILD_UNIT       = "Crab";
-        const int    BUILD_TARGET_AT_START  = 2;
+        static string SCOUT_BUILD_UNIT      = "Crab";
+        static int   BuildTargetAtStart     = 2;
         const float  BUILD_TARGET_RAMP_S    = 60f;   // +1 allowed scout per minute
-        const float  SCOUT_BUILD_INTERVAL_S = 30f;   // at most one queued per interval
+        static float ScoutBuildIntervalS    = 30f;   // at most one queued per interval
         const int    SCOUT_BUILD_CASH_FLOOR = 1500;  // only spend genuine surplus
         // Units alive inside this window are treated as spawn-issued and are
         // conscripted regardless of the ceiling.
@@ -166,7 +171,7 @@ namespace Si_RTS_AI.Planning
         /// because the scout revealed it on the way in.
         /// </summary>
         struct Grave { public Vector3 Pos; public float At; public int Arm; }
-        static readonly List<Grave> _graves = new List<Grave>(8);
+        static List<Grave> _graves = new List<Grave>(8);
 
         /// <summary>
         /// WHERE OUR SCOUTS KEEP DYING IS WHERE THEY LIVE.
@@ -232,13 +237,13 @@ namespace Si_RTS_AI.Planning
             return n;
         }
 
-        static readonly List<Scout> _scouts = new List<Scout>();
-        static readonly HashSet<Unit> _scoutSet = new HashSet<Unit>();
+        static List<Scout> _scouts = new List<Scout>();
+        static HashSet<Unit> _scoutSet = new HashSet<Unit>();
         // Units we handed back to vanilla. Without this the roster churned:
         // release -> Recruit picks the same unit up 2s later -> its arm has
         // nothing left -> release again, forever. The v0.7.63 round logged
         // 4773 [SCOUT] lines, almost all of them that loop.
-        static readonly HashSet<Unit> _released = new HashSet<Unit>();
+        static HashSet<Unit> _released = new HashSet<Unit>();
         static float _lastTickAt, _lastDiagAt;
 
         internal static int WaypointsReached;
@@ -248,7 +253,7 @@ namespace Si_RTS_AI.Planning
         internal static bool IsScout(Unit u)
         {
             if (u == null) return false;
-            try { return _scoutSet.Contains(u); } catch { return false; }
+            try { return Mil.MilContext.AnyScout(u); } catch { return false; }
         }
 
         // Set while WE issue a scout move, so our own OnMoveOrder prefix lets it
@@ -278,7 +283,16 @@ namespace Si_RTS_AI.Planning
             // would: it must never spend a player's cash or move a player's units.
             try { if (!Silica.AI.AIManager.IsCommanderEnabled(team)) return; } catch { }
             if (!Enabled || team == null) return;
-            if (!(team.name ?? "").Contains("Alien")) return;
+            bool human = Faction.Construction.IsHuman(team) && Faction.FactionControl.IsEnabled(team);
+            if (!(team.name ?? "").Contains("Alien") && !human) return;
+            // One planner, one team at a time: the chassis follow the faction.
+            SCOUT_UNIT_NAMES = human ? HUMAN_SCOUTS : ALIEN_SCOUTS;
+            SCOUT_BUILD_UNIT = human ? "Scout" : "Crab";
+            // A Barracks can spam Scouts at 30 cash: humans start the star with six
+            // and top it up every ten seconds (DrMuck: "scouting for humans looks
+            // too weak, hindering exploration for expansion HQs").
+            BuildTargetAtStart = human ? 6 : 2;
+            ScoutBuildIntervalS = human ? 10f : 30f;
             if (!global::Si_RTS_AI.TestHarnessNs.TestHarness.IsRoundActive) return;
 
             float now = Time.time;
@@ -301,7 +315,11 @@ namespace Si_RTS_AI.Planning
                 {
                     var s = structs[i];
                     if (s == null || s.ObjectInfo == null || s.IsDestroyed) continue;
-                    if (s.ObjectInfo.DisplayName == "Nest") { nest = s.transform.position; haveNest = true; break; }
+                    // The home structure: the Nest, or the Headquarters for Sol and
+                    // Centauri. Looking for "Nest" only, the planner never ran for a
+                    // human team (2026-09-07 21:52: no scout line in a Sol round).
+                    string dn = s.ObjectInfo.DisplayName ?? "";
+                    if (dn == "Nest" || dn == "Headquarters") { nest = s.transform.position; haveNest = true; break; }
                 }
             }
             catch { return; }
@@ -569,7 +587,7 @@ namespace Si_RTS_AI.Planning
         {
             float roundT = 0f;
             try { roundT = Perception.MapLayers.LayerReplay.CurrentRoundTime; } catch { }
-            int ramped = BUILD_TARGET_AT_START + Mathf.FloorToInt(roundT / BUILD_TARGET_RAMP_S);
+            int ramped = BuildTargetAtStart + Mathf.FloorToInt(roundT / BUILD_TARGET_RAMP_S);
             return Mathf.Min(ramped, MaxScouts);
         }
 
@@ -582,7 +600,7 @@ namespace Si_RTS_AI.Planning
         static void MaybeBuildScout(Team team, float now)
         {
             if (_scouts.Count >= BuildTargetNow()) return;
-            if (now - _lastBuildAt < SCOUT_BUILD_INTERVAL_S) return;
+            if (now - _lastBuildAt < ScoutBuildIntervalS) return;
             try
             {
                 if (team.TotalResources < SCOUT_BUILD_CASH_FLOOR) return;
@@ -897,7 +915,7 @@ namespace Si_RTS_AI.Planning
         [HarmonyPatch(typeof(AIGroup), nameof(AIGroup.OnAttackOrder))]
         static class Patch_AIGroup_OnAttackOrder_Scout
         {
-            static readonly List<Unit> _scratch = new List<Unit>(4);
+            static List<Unit> _scratch = new List<Unit>(4);
 
             static void Prefix(AIGroup __instance)
             {

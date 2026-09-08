@@ -75,6 +75,35 @@ namespace Si_RTS_AI.Faction
         static readonly Dictionary<Team, string> _ownHqNameByTeam = new Dictionary<Team, string>();
 
         static readonly Dictionary<Vector3, int> _pendingRef      = new Dictionary<Vector3, int>();
+
+        // A PATCH THE SEARCH CANNOT SERVE IS DROPPED, NOT RETRIED FOREVER.
+        // Naraka 2026-09-08 16:30: 337 of 343 refinery attempts were one patch,
+        // (1365,-663). The search landed 320-412 m away every time, the quality
+        // gate (260 m) rejected it, the reject cleared _pendingRef, and the next
+        // tick fired at the identical patch again — for 29 minutes, while the
+        // economy sat at six refineries. The gate is right: REFINERY_SERVE_RADIUS
+        // is 300 m, so a refinery 320 m out would not serve that field anyway.
+        // The bug is retrying a question already answered. After
+        // REFINERY_MAX_REJECTS answers the patch is left alone for the round and
+        // recorded as unserved — it wants a Headquarters nearer to it, which is a
+        // question for HQ siting, not for another placement search.
+        const int REFINERY_MAX_REJECTS = 3;
+        static readonly Dictionary<Vector3, int> _refRejectsByPatch = new Dictionary<Vector3, int>();
+        static readonly HashSet<Vector3> _refUnservedPatches = new HashSet<Vector3>();
+
+        /// <summary>Counts a rejected placement for a patch; drops the patch once it has answered the same way too often.</summary>
+        static void NoteRefineryReject(Team team, Vector3 patch, string reason)
+        {
+            RefFailures++;
+            _pendingRef.Remove(patch);
+            _refRejectsByPatch.TryGetValue(patch, out int n);
+            n++;
+            _refRejectsByPatch[patch] = n;
+            if (n == REFINERY_MAX_REJECTS && _refUnservedPatches.Add(patch))
+                Si_RTS_AI.AppendToRound(
+                    $"[H1] team={team?.name} unserved=Refinery patchAt=({patch.x:F0},{patch.z:F0}) " +
+                    $"after={n} rejects lastReason={reason} - needs a Headquarters nearer than the search can reach");
+        }
         static readonly Dictionary<Vector3, int> _pendingHq       = new Dictionary<Vector3, int>();
         // Fire-count-per-argmax-cell for HQ, so we back off after N failures at the
         // same target cell (see v0.7.41 backoff in FireHqExpansion).
@@ -128,7 +157,6 @@ namespace Si_RTS_AI.Faction
             if (!FactionControl.IsEnabled(team)) return true;
 
             // Opt-in via the same /rtsai override flag Alien uses.
-            if (!Suppression.Phase31_Production.OverrideByTeam.TryGetValue(team, out bool ov) || !ov) return true;
 
             // Alien-eco-only soak mode: return FALSE here so Harmony skips
             // Silica's stock AIConstructionHandler.Think too. Returning true
@@ -137,7 +165,9 @@ namespace Si_RTS_AI.Faction
             // planner was still running underneath us.
             if (SuppressHumanAI.Enabled) return false;
 
-            // We own this tick.
+            // We own this tick: install this team's military state first (the
+            // game's Think runs outside the mod's team loop).
+            Mil.MilContext.Use(team);
             _tickCounter++;
 
             EnsureOwnHqName(team);
@@ -161,9 +191,13 @@ namespace Si_RTS_AI.Faction
 
             MaybeLogDiagnostics(team);
 
-            FireRefinery(team);
+            // ORDER OF SPENDING. Refineries first until two stand, then the Barracks and
+            // the Research Facility get first call on cash, then refineries again.
+            // 16,500 sat idle at minute four (2026-09-07 21:45) while every credit
+            // went to refinery searches.
+            if (CountOwnedIncludingSites(team, "Refinery") >= 2) { FireTech(team); FireRefinery(team); }
+            else { FireRefinery(team); FireTech(team); }
             FireHqExpansion(team);
-            FireTech(team);
 
             // Ride-along: queue Mark I → V research at every Research Facility.
             HumanTechResearcher.Tick(team);
@@ -230,7 +264,7 @@ namespace Si_RTS_AI.Faction
                         string n = siloCd.ObjectInfo.name;
                         if (!string.IsNullOrEmpty(n)) classname = n;
                     }
-                    var go = HelperMethods.SpawnAtLocation(classname, spawnPos, Quaternion.identity, team.Index);
+                    UnityEngine.GameObject go = null;   // spawning structures for free is a test cheat and is off
                     if (go != null)
                     {
                         SiloSuccesses++;
@@ -257,42 +291,15 @@ namespace Si_RTS_AI.Faction
             Action onSuccessCount, Action onFailCount, Action onAttemptCount,
             bool freeConstruct = false)
         {
-            var anchor = FindStructureThatCanBuild(team, cd);
-            if (anchor == null) return;
-
+            // THROUGH THE EXECUTOR: reach-aware search, prerequisite and cash checked,
+            // result logged. The 120 m / 8 s search here took nine minutes to land a
+            // Research Facility (2026-09-07 20:12) and never landed a Barracks.
             pendingDict[nearHq] = _tickCounter;
             onAttemptCount();
-            Vector3 firedFor = nearHq;
-            try
-            {
-                ConstructionPlacement.QueueFirstValidPlacementAroundPoint(
-                    cd.ObjectPreviewSetup, team, anchor, firedFor,
-                    cd.GridSnapXZ, cd.GridSnapY,
-                    TECH_SEARCH_RADIUS, 8f, 300,
-                    (cData, ct, cs, gotPos, gotRot) =>
-                    {
-                        onSuccessCount();
-                        string res = "no-call";
-                        try
-                        {
-                            if (freeConstruct)
-                                res = ConstructFree(cs, cData, gotPos, gotRot, team).ToString();
-                            else if (cs != null)
-                                res = cs.Construct(cData, gotPos, gotRot).ToString();
-                        }
-                        catch (Exception cx) { res = "throw:" + cx.Message; }
-                        Si_RTS_AI.AppendToRound(
-                            $"[H3] team={team.name} constructed={displayName} " +
-                            $"landedAt=({gotPos.x:F0},{gotPos.z:F0}) free={freeConstruct} result={res}");
-                    },
-                    (cData, ct, cs) => { onFailCount(); pendingDict.Remove(firedFor); });
-            }
-            catch (Exception ex) { MelonLogger.Warning($"[RTSA/Human] {displayName} placement threw: " + ex.Message); }
-
-            Si_RTS_AI.AppendToRound(
-                $"[H3] team={team.name} fire={displayName} nearHq=({nearHq.x:F0},{nearHq.z:F0}) free={freeConstruct}");
+            bool queued = HumanBuild.TryBuild(team, cd, nearHq, null);
+            if (queued) onSuccessCount(); else { onFailCount(); pendingDict.Remove(nearHq); }
+            Si_RTS_AI.AppendToRound($"[H3] team={team.name} fire={displayName} nearHq=({nearHq.x:F0},{nearHq.z:F0}) queued={queued}");
         }
-
         // Grant + restore team.TotalResources around Construct so the structure spawns
         // without deducting cost from the team's bank. Used for Silo (and Alien BC) —
         // storage buildings the user wants as "free buffers" for eco overflow.
@@ -325,15 +332,57 @@ namespace Si_RTS_AI.Faction
             var fi = ResolveTotalResourcesField();
             if (fi == null) { return cs.Construct(cd, pos, rot); } // fallback — no free
 
-            int saved = 0;
-            try { saved = (int)fi.GetValue(team); } catch { }
-            try { fi.SetValue(team, 999999); } catch { }
-            object result;
-            try { result = cs.Construct(cd, pos, rot); }
-            finally { try { fi.SetValue(team, saved); } catch { } }
-            return result;
+            // NO FREE CONSTRUCTION. This used to grant 999,999 cash around the
+            // call for test buffers; a commander pays for what it builds.
+            return cs.Construct(cd, pos, rot);
         }
 
+        static float DistanceToNearestHq(Team team, Vector3 p)
+        {
+            float best = float.MaxValue;
+            try
+            {
+                var structs = team.Structures;
+                if (structs == null) return best;
+                for (int i = 0; i < structs.Count; i++)
+                {
+                    var s = structs[i];
+                    if (s?.ObjectInfo == null || s.IsDestroyed) continue;
+                    if ((s.ObjectInfo.DisplayName ?? "") != "Headquarters") continue;
+                    bool functional = false; try { functional = s.IsFunctional; } catch { }
+                    if (!functional) continue;
+                    float dx = s.transform.position.x - p.x, dz = s.transform.position.z - p.z;
+                    float d = Mathf.Sqrt(dx * dx + dz * dz);
+                    if (d < best) best = d;
+                }
+            }
+            catch { }
+            return best;
+        }
+        static float _lastHqFireAt = -999f;
+        const float HQ_FIRE_INTERVAL_S = 60f;
+        const float HQ_COVER_RESERVE_EFF = 4000f;
+        static float _lastHqCoverLogAt = -999f;
+        const float HQ_MAX_DRIFT_M     = 300f;
+        static int CountOwned(Team team, string name)
+        {
+            int n = 0;
+            try
+            {
+                var structs = team.Structures;
+                if (structs != null)
+                    for (int i = 0; i < structs.Count; i++)
+                    {
+                        var s = structs[i];
+                        if (s?.ObjectInfo == null || s.IsDestroyed) continue;
+                        if (!string.Equals(s.ObjectInfo.DisplayName, name, StringComparison.OrdinalIgnoreCase)) continue;
+                        bool functional = false; try { functional = s.IsFunctional; } catch { }
+                        if (functional) n++;
+                    }
+            }
+            catch { }
+            return n;
+        }
         static Vector3 FindOwnHqPosition(Team team)
         {
             try
@@ -428,11 +477,24 @@ namespace Si_RTS_AI.Faction
         // realistic distance refineries land from balterium (~170-190m in observed
         // rounds — balterium has a large physical no-build footprint).
         const float REFINERY_ASSIGNED_RADIUS = 200f;
+        const float REFINERY_SERVE_RADIUS    = 300f;
+        static readonly List<Vector3> _landedRef = new List<Vector3>();
+        static bool LandedRefineryNear(Vector3 p, float r)
+        {
+            for (int i = 0; i < _landedRef.Count; i++)
+            {
+                float dx = _landedRef[i].x - p.x, dz = _landedRef[i].z - p.z;
+                if (dx * dx + dz * dz <= r * r) return true;
+            }
+            return false;
+        }
         // Post-callback quality gate — reject placements that landed too far from
         // the intended balterium. Sized larger than balterium's physical footprint
         // (~150m) but smaller than the typical distance between balterium patches
         // (~400m+), so it still catches cross-patch contamination.
-        const float REFINERY_PLACEMENT_QUALITY_RADIUS = 220f;
+        const float REFINERY_PLACEMENT_QUALITY_RADIUS = 260f;
+        const float REFINERY_SEARCH_OFFSET_M = 130f;
+        const float RAMP_EXIT_M = 30f;
         // Duplicate-refinery reject: minimum distance between two refineries.
         // Fixes the "2 refineries at 1 balterium" case where two nearby balteriums
         // both fire and their placements land next to each other. 250m keeps them
@@ -478,33 +540,89 @@ namespace Si_RTS_AI.Faction
             foreach (var patch in patches)
             {
                 if (patch == null) continue;
-                if (fired >= MAX_REFINERY_PER_TICK) break;
+                // TWO REFINERIES, THEN THE RESEARCH FACILITY. Three at the start left
+                // 1,500 and the tech building waited four minutes for income (DrMuck:
+                // "tech up came in too late"). Starting cash is two refineries plus
+                // the Research Facility plus a Barracks.
+                int perTick = CountOwnedIncludingSites(team, "Research Facility") == 0 ? 2 : MAX_REFINERY_PER_TICK;
+                if (fired >= perTick) break;
                 if (refCount >= ABSOLUTE_MAX_REFINERIES) break;
+                int refCost = 3000; try { refCost = refineryCd.ResourceCost; } catch { }
+                if (team.TotalResources < refCost * (fired + 1)) break;   // what we cannot pay for, we do not ask for
 
                 Vector3 balteriumPos = patch.SignalCenter;
 
                 // Skip: patch already has a nearby refinery / already pending / outside HQ range.
-                if (HasStructureTypeNear(team, "Refinery", balteriumPos, REFINERY_ASSIGNED_RADIUS)) continue;
+                // A SPOT IS SERVED BY ANY REFINERY WITHIN 300 M, standing or landed this
+                // round. The 200 m test missed refineries the search had set down 200-220 m
+                // from the spot, so Naraka 21:17 got three refineries on one field and two
+                // on each of two others (DrMuck: "the refinery at 2700,-2113 is too much").
+                if (HasStructureTypeNear(team, "Refinery", balteriumPos, REFINERY_SERVE_RADIUS)) continue;
+                if (LandedRefineryNear(balteriumPos, REFINERY_SERVE_RADIUS)) continue;
                 if (_pendingRef.ContainsKey(balteriumPos)) continue;
+                if (_refUnservedPatches.Contains(balteriumPos)) continue;   // answered already, this round
 
-                int cx = Perception.MapLayers.GridWorld.CellX(balteriumPos.x);
-                int cz = Perception.MapLayers.GridWorld.CellZ(balteriumPos.z);
-                if (!hqMask.IsSet(cx, cz)) continue;
+                // ONLY SPOTS INSIDE THE REFINERY'S OWN REACH OF A HEADQUARTERS.
+                // The HQ mask is the HQ-to-HQ range, so refineries chained out
+                // 700-900 m on Naraka (2026-09-07 20:12). DrMuck: spots outside
+                // the radius are long-distance harvesting targets, no refinery.
+                float refReach = 600f;
+                try { if (refineryCd.MaximumBaseStructureDistance > 0f) refReach = refineryCd.MaximumBaseStructureDistance; } catch { }
+                if (DistanceToNearestHq(team, balteriumPos) > refReach) continue;
+                // A FIELD THE GAME REPORTS AS TWO AREAS GETS ONE REFINERY: skip a
+                // spot with another refinery request pending within 120 m.
+                bool pendingNear = false;
+                foreach (var pk in _pendingRef.Keys)
+                {
+                    float pdx = pk.x - balteriumPos.x, pdz = pk.z - balteriumPos.z;
+                    if (pdx * pdx + pdz * pdz <= 120f * 120f) { pendingNear = true; break; }
+                }
+                if (pendingNear) continue;
 
                 _pendingRef[balteriumPos] = _tickCounter;
                 RefAttempts++;
                 var closer = FindClosestStructureThatCanBuild(team, refineryCd, balteriumPos) ?? anchor;
                 Vector3 firedFor = balteriumPos;
+                // START THE SEARCH ON THE HEADQUARTERS SIDE OF THE FIELD. Started on
+                // the field itself, the search walked outward across the resource
+                // cells and set the refinery down 238 m away on the far side, which
+                // the quality test then rejected, 119 times for the best spot on
+                // Naraka (2026-09-07 21:17, DrMuck: "a refinery close to 2513,-2676
+                // would have been much better"). Between the HQ and the field is
+                // where the harvester's ramp wants to be anyway.
+                Vector3 searchFrom = balteriumPos;
+                {
+                    Vector3 hqFor = FindOwnHqPosition(team);
+                    Vector3 dirHq = hqFor - balteriumPos; dirHq.y = 0f;
+                    if (dirHq.sqrMagnitude > 1f) searchFrom = balteriumPos + dirHq.normalized * REFINERY_SEARCH_OFFSET_M;
+                }
                 var cd = refineryCd;
                 try
                 {
                     // maxTime shrunk 40s → 8s: if the game's placement search can't
                     // find a valid spot in 8s, it won't in 40 either. Faster failure
                     // = faster retry on next Alien tick when units may have moved.
+                    // THE SEARCH IS TOLD THE FACING. With the ramp yaw handed to the
+                    // search, every position it returns is valid for that yaw, so the
+                    // rotation sweep that used to accept a refinery facing away from
+                    // its field (Naraka 21:17: yaw 0 with the patch due south) is only
+                    // a last resort. Ramp faces the yaw direction; measured from
+                    // DrMuck's own placements as commander (2026-09-07 21:33).
+                    Vector3 toPatch0 = new Vector3(balteriumPos.x - searchFrom.x, 0f, balteriumPos.z - searchFrom.z);
+                    float wantYaw = toPatch0.sqrMagnitude > 0.01f
+                        ? Mathf.Round(Quaternion.LookRotation(toPatch0, Vector3.up).eulerAngles.y / 90f) * 90f + REFINERY_RAMP_QUARTER_TURNS * 90f
+                        : 0f;
+                    Quaternion wantRot = Quaternion.Euler(0f, wantYaw, 0f);
+                    // THE SEARCH RADIUS IS THE BUILDING'S OWN BUILD RADIUS, read from the
+                    // game: it is modded on DrMuck's servers, so no constant may stand in
+                    // for it. The distance to the patch that a landing must respect is a
+                    // separate, economic rule (REFINERY_PLACEMENT_QUALITY_RADIUS).
+                    float refSearch = REFINERY_SEARCH_RADIUS;
+                    try { if (refineryCd.MaximumBaseStructureDistance > 0f) refSearch = refineryCd.MaximumBaseStructureDistance; } catch { }
                     ConstructionPlacement.QueueFirstValidPlacementAroundPoint(
-                        cd.ObjectPreviewSetup, team, closer, firedFor,
+                        cd.ObjectPreviewSetup, team, closer, searchFrom,
                         cd.GridSnapXZ, cd.GridSnapY,
-                        REFINERY_SEARCH_RADIUS, 8f, 300,
+                        refSearch, Mathf.Clamp(refSearch / 20f, 6f, 40f), 300,
                         (cData, ct, cs, gotPos, gotRot) =>
                         {
                             // Quality gate: reject placements that landed too far from
@@ -514,8 +632,7 @@ namespace Si_RTS_AI.Faction
                             float dxq = gotPos.x - firedFor.x, dzq = gotPos.z - firedFor.z;
                             if (dxq * dxq + dzq * dzq > REFINERY_PLACEMENT_QUALITY_RADIUS * REFINERY_PLACEMENT_QUALITY_RADIUS)
                             {
-                                RefFailures++;
-                                _pendingRef.Remove(firedFor);
+                                NoteRefineryReject(team, firedFor, "too-far");
                                 Si_RTS_AI.AppendToRound(
                                     $"[H1] team={team.name} reject=Refinery-too-far patchAt=({firedFor.x:F0},{firedFor.z:F0}) " +
                                     $"landedAt=({gotPos.x:F0},{gotPos.z:F0}) dist={Mathf.Sqrt(dxq*dxq+dzq*dzq):F0}m");
@@ -525,14 +642,36 @@ namespace Si_RTS_AI.Faction
                             // of another refinery, we'd be doubling up on one balterium.
                             // Check on the LANDED position (not target) — target dedup already
                             // handled by HasStructureTypeNear on balterium above.
-                            if (HasStructureTypeNear(team, "Refinery", gotPos, REFINERY_MIN_DIST_BETWEEN))
+                            if (HasStructureTypeNear(team, "Refinery", gotPos, REFINERY_MIN_DIST_BETWEEN)
+                                || LandedRefineryNear(gotPos, REFINERY_MIN_DIST_BETWEEN))
                             {
-                                RefFailures++;
-                                _pendingRef.Remove(firedFor);
+                                NoteRefineryReject(team, firedFor, "too-close-to-other");
                                 Si_RTS_AI.AppendToRound(
                                     $"[H1] team={team.name} reject=Refinery-too-close-to-other patchAt=({firedFor.x:F0},{firedFor.z:F0}) " +
                                     $"landedAt=({gotPos.x:F0},{gotPos.z:F0})");
                                 return;
+                            }
+                            // THE RAMP MUST OPEN TOWARD THE FIELD. A refinery at (2020,-1661)
+                            // on Naraka 22:04 faced its field with the ramp cut off by the
+                            // ground on that side; the harvester had to go round. The point
+                            // thirty metres in front of the ramp has to reach the field on
+                            // the graph, or this landing is treated as obstructed.
+                            {
+                                Vector3 toB = new Vector3(firedFor.x - gotPos.x, 0f, firedFor.z - gotPos.z);
+                                float yawB = toB.sqrMagnitude > 0.01f
+                                    ? Mathf.Round(Quaternion.LookRotation(toB, Vector3.up).eulerAngles.y / 90f) * 90f + REFINERY_RAMP_QUARTER_TURNS * 90f
+                                    : wantYaw;
+                                Vector3 rampPoint = gotPos + Quaternion.Euler(0f, yawB, 0f) * Vector3.forward * RAMP_EXIT_M;
+                                bool rampOpen = true;
+                                try { rampOpen = Perception.Reach.CanReach(Pathfinding.GraphMask.everything, rampPoint, firedFor); } catch { }
+                                if (!rampOpen)
+                                {
+                                    NoteRefineryReject(team, firedFor, "ramp-cut-off");
+                                    Si_RTS_AI.AppendToRound(
+                                        $"[H1] team={team.name} reject=Refinery-ramp-cut-off patchAt=({firedFor.x:F0},{firedFor.z:F0}) " +
+                                        $"landedAt=({gotPos.x:F0},{gotPos.z:F0}) yaw={yawB:F0}");
+                                    return;
+                                }
                             }
                             RefSuccesses++;
                             // Preferred yaw = ramp axis pointing at balterium, snapped
@@ -541,7 +680,7 @@ namespace Si_RTS_AI.Faction
                             float baseYaw = toBalt.sqrMagnitude > 0.01f
                                 ? Mathf.Round(Quaternion.LookRotation(toBalt, Vector3.up).eulerAngles.y / 90f) * 90f
                                   + REFINERY_RAMP_QUARTER_TURNS * 90f
-                                : Mathf.Round(gotRot.eulerAngles.y / 90f) * 90f;
+                                : wantYaw;
 
                             // Try 4 rotations at the returned position, then re-search
                             // NEW positions around it if all obstructed (a unit standing
@@ -580,11 +719,13 @@ namespace Si_RTS_AI.Faction
                                 }
                             }
 
+                            _landedRef.Add(gotPos);
                             Si_RTS_AI.AppendToRound(
                                 $"[H1] team={team.name} constructed=Refinery atBalterium=({firedFor.x:F0},{firedFor.z:F0}) " +
                                 $"landedAt=({winningPos.x:F0},{winningPos.z:F0}) yaw={winningYaw:F0} result={res}");
                         },
-                        (cData, ct, cs) => { RefFailures++; _pendingRef.Remove(firedFor); });
+                        (cData, ct, cs) => { NoteRefineryReject(team, firedFor, "search-failed"); },
+                        false, true, wantRot);
                 }
                 catch (Exception ex) { MelonLogger.Warning("[RTSA/Human] refinery placement threw: " + ex.Message); }
 
@@ -736,9 +877,20 @@ namespace Si_RTS_AI.Faction
             if (hqCount >= ABSOLUTE_MAX_HQS) return;
 
             var expansion = Perception.MapLayers.HumanEcoLayers.GetEcoHqExpansionValue(team);
-
+            // ONE HEADQUARTERS AT A TIME. Four went up in fifty seconds on Naraka 22:04,
+            // three of them within 300 m of each other: no wait for the one in progress
+            // and no spacing at the landing. One in flight, a minute between fires.
+            if (CountOwnedIncludingSites(team, hqName) > CountOwned(team, hqName)) return;   // a site is in progress
+            if (Time.time - _lastHqFireAt < HQ_FIRE_INTERVAL_S) return;
+            // AN EXPANSION NEEDS AN ARMY TO STAND BESIDE IT. No reserve to spare, no HQ.
+            float reserve = 0f; try { reserve = Mil.Forces.ReserveEff; } catch { }
+            if (reserve < HQ_COVER_RESERVE_EFF)
+            {
+                if (Time.time - _lastHqCoverLogAt > 60f) { _lastHqCoverLogAt = Time.time; Si_RTS_AI.AppendToRound($"[H2] team={team.name} hold=Headquarters reserve {reserve:F0} eff cannot cover a site (needs {HQ_COVER_RESERVE_EFF:F0})"); }
+                return;
+            }
             int fired = 0;
-            while (fired < MAX_HQ_PER_TICK && hqCount < ABSOLUTE_MAX_HQS)
+            while (fired < 1 && hqCount < ABSOLUTE_MAX_HQS)
             {
                 var (cx, cz, val) = expansion.ArgMax();
                 if (cx < 0 || val < HQ_MIN_VALUE) break;
@@ -768,38 +920,20 @@ namespace Si_RTS_AI.Faction
 
                 _pendingHq[target] = _tickCounter;
                 HqAttempts++;
-                var closer = FindClosestStructureThatCanBuild(team, hqCd, target) ?? anchor;
                 Vector3 firedFor = target;
-                var cd = hqCd;
-                try
+                // THROUGH THE EXECUTOR. The old call searched 150 m around a cell that
+                // could lie beyond the HQ-to-HQ reach of every anchor and failed in
+                // silence: sixteen fires and no Headquarters on Naraka 21:17 with
+                // 46,000 cash and tier 5 (DrMuck: "Sol could have placed one or two
+                // expansion HQs by now"). HumanBuild clamps to the reach, searches
+                // the way the vanilla commander does and logs the answer.
+                if (MinDistToOwnHq(team, target) < HQ_MIN_DIST_FROM_OTHER_HQ)
                 {
-                    ConstructionPlacement.QueueFirstValidPlacementAroundPoint(
-                        cd.ObjectPreviewSetup, team, closer, firedFor,
-                        cd.GridSnapXZ, cd.GridSnapY,
-                        HQ_SEARCH_RADIUS, 8f, 400,
-                        (cData, ct, cs, gotPos, gotRot) =>
-                        {
-                            // Hard reject if the game's placement search slid this HQ
-                            // back near an existing one (common: fog / no-vision at
-                            // our far argmax cell → game returns nearest team-coverage
-                            // spot near starter HQ). Without this we get 3 HQs stacked.
-                            float minDist = MinDistToOwnHq(team, gotPos);
-                            if (minDist < HQ_MIN_DIST_FROM_OTHER_HQ)
-                            {
-                                HqFailures++;
-                                _pendingHq.Remove(firedFor);
-                                Si_RTS_AI.AppendToRound(
-                                    $"[H2] team={team.name} reject=HQ-too-close " +
-                                    $"targetCell=({firedFor.x:F0},{firedFor.z:F0}) " +
-                                    $"landedAt=({gotPos.x:F0},{gotPos.z:F0}) distToExistingHq={minDist:F0}m");
-                                return;   // don't Construct
-                            }
-                            HqSuccesses++;
-                            try { cs?.Construct(cData, gotPos, gotRot); } catch { }
-                        },
-                        (cData, ct, cs) => { HqFailures++; _pendingHq.Remove(firedFor); });
+                    HqFailures++; _pendingHq.Remove(firedFor);
+                    Si_RTS_AI.AppendToRound($"[H2] team={team.name} reject=HQ-too-close targetCell=({target.x:F0},{target.z:F0})");
                 }
-                catch (Exception ex) { MelonLogger.Warning("[RTSA/Human] HQ placement threw: " + ex.Message); }
+                else if (HumanBuild.TryBuild(team, hqCd, target, null, HQ_MAX_DRIFT_M, HQ_MIN_DIST_FROM_OTHER_HQ)) { HqSuccesses++; _lastHqFireAt = Time.time; }
+                else { HqFailures++; _pendingHq.Remove(firedFor); }
 
                 hqCount++;
                 fired++;
@@ -989,8 +1123,11 @@ namespace Si_RTS_AI.Faction
             _ownHqNameByTeam.Clear();
             SiloAttempts = SiloSuccesses = SiloFailures = 0;
             RefAttempts = RefSuccesses = RefFailures = 0;
+            _refRejectsByPatch.Clear();
+            _refUnservedPatches.Clear();
             HqAttempts = HqSuccesses = HqFailures = 0;
             BarracksAttempts = BarracksSuccesses = BarracksFailures = 0;
+            _landedRef.Clear();
             ResearchAttempts = ResearchSuccesses = ResearchFailures = 0;
         }
 
@@ -999,6 +1136,9 @@ namespace Si_RTS_AI.Faction
             if (RefAttempts == 0 && HqAttempts == 0 && BarracksAttempts == 0 && ResearchAttempts == 0 && SiloAttempts == 0) return "";
             return "--- Human construction (Refinery + HQ + Barracks + Research + Silo) ---\n" +
                    $"  Refinery fires: attempts={RefAttempts} success={RefSuccesses} fail={RefFailures}\n" +
+                   (_refUnservedPatches.Count > 0
+                        ? $"  Refinery patches dropped as unserved (want an HQ nearer): {_refUnservedPatches.Count}\n"
+                        : "") +
                    $"  HQ fires:       attempts={HqAttempts}  success={HqSuccesses}  fail={HqFailures}\n" +
                    $"  Barracks fires: attempts={BarracksAttempts} success={BarracksSuccesses} fail={BarracksFailures}\n" +
                    $"  Research fires: attempts={ResearchAttempts} success={ResearchSuccesses} fail={ResearchFailures}\n" +

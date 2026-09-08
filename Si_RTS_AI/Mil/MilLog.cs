@@ -30,14 +30,16 @@ namespace Si_RTS_AI.Mil
 
         internal static void Msg(string line)
         {
-            MelonLogger.Msg(line);
-            try { Si_RTS_AI.AppendToRound(Stamp() + line); } catch { }
+            string tag = MilContext.Tag;
+            MelonLogger.Msg(tag + line);
+            try { Si_RTS_AI.AppendToRound(Stamp() + tag + line); } catch { }
         }
 
         internal static void Warn(string line)
         {
-            MelonLogger.Warning(line);
-            try { Si_RTS_AI.AppendToRound(Stamp() + "WARN " + line); } catch { }
+            string tag = MilContext.Tag;
+            MelonLogger.Warning(tag + line);
+            try { Si_RTS_AI.AppendToRound(Stamp() + tag + "WARN " + line); } catch { }
         }
 
         /// <summary>Round-log only, for lines a human reads later, not now.
@@ -53,7 +55,7 @@ namespace Si_RTS_AI.Mil
         internal static void Quiet(string line)
         {
             if (_quietCount >= QUIET_CAP) return;          // a flood is not information
-            _quiet.Append(Stamp()).Append(line).Append(NL);
+            _quiet.Append(Stamp()).Append(MilContext.Tag).Append(line).Append(NL);
             _quietCount++;
         }
 
@@ -72,6 +74,7 @@ namespace Si_RTS_AI.Mil
         internal static void Every(string key, float everyS, string line)
         {
             float now = Time.time;
+            key = MilContext.Tag + key;                      // throttles are per team
             if (_lastAt.TryGetValue(key, out float at) && now - at < everyS) return;
             _lastAt[key] = now;
             Msg(line);
@@ -79,7 +82,7 @@ namespace Si_RTS_AI.Mil
 
         internal static void Once(string key, string line)
         {
-            if (!_once.Add(key)) return;
+            if (!_once.Add(MilContext.Tag + key)) return;
             Msg(line);
         }
 

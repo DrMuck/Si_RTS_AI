@@ -49,27 +49,31 @@ namespace Si_RTS_AI.Mil
         const float FOB_RADIUS_M = 400f;
         const float SITE_REFRESH_S = 20f;
 
-        static readonly HashSet<string> WorkerNames =
+        static HashSet<string> WorkerNames =
             new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Shrimp", "Queen" };
 
-        static readonly HashSet<Structure> _claimed = new HashSet<Structure>();
+        static HashSet<Structure> _claimed = new HashSet<Structure>();
         internal static bool IsClaimed(Structure s) => s != null && _claimed.Count > 0 && _claimed.Contains(s);
 
         // producer types we can build, discovered from options
-        static readonly Dictionary<string, ConstructionData> _producerCds =
+        static Dictionary<string, ConstructionData> _producerCds =
             new Dictionary<string, ConstructionData>(StringComparer.OrdinalIgnoreCase);
-        static readonly Dictionary<string, int>   _want = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        static readonly Dictionary<string, float> _saturatedSince = new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
-        static readonly Dictionary<string, bool>  _typeBusy = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
-        static readonly Dictionary<string, float> _requestedAt = new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
-        static readonly Dictionary<string, string> _pickLogged = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        static Dictionary<string, int>   _want = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        static Dictionary<string, float> _saturatedSince = new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
+        static Dictionary<string, bool>  _typeBusy = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+        static Dictionary<string, float> _requestedAt = new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
+        static Dictionary<string, string> _pickLogged = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        static HashSet<string> _offerLogged = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         static float _lastTickAt, _lastLogAt, _lastPlaceAt, _lastSiteAt;
         static int _busy, _total;
         internal static int QueuedThisRound, SpentThisRound, ProducersPlaced;
+        /// <summary>Producers standing (finished) this tick, and how many have a full queue.</summary>
+        internal static int ProducerCount => _total;
+        internal static int BusyProducerCount => _busy;
 
         // demand by pool, in effective cash
-        static readonly float[] _demand = new float[4];   // Fast, Swarm, Line, Heavy
+        static float[] _demand = new float[4];   // Fast, Swarm, Line, Heavy
         static float _demandAny;
 
         internal static Vector3 ForwardBase { get; private set; }
@@ -79,7 +83,8 @@ namespace Si_RTS_AI.Mil
         internal static void ResetForNewRound()
         {
             _claimed.Clear(); _producerCds.Clear(); _want.Clear(); _saturatedSince.Clear();
-            _typeBusy.Clear(); _requestedAt.Clear(); _pickLogged.Clear();
+            _typeBusy.Clear(); _requestedAt.Clear(); _pickLogged.Clear(); _offerLogged.Clear();
+            CompositionTarget.ResetForNewRound();
             _lastTickAt = _lastLogAt = _lastPlaceAt = _lastSiteAt = 0f;
             _busy = _total = 0; QueuedThisRound = SpentThisRound = ProducersPlaced = 0;
             Array.Clear(_demand, 0, _demand.Length); _demandAny = 0f;
@@ -122,8 +127,18 @@ namespace Si_RTS_AI.Mil
         /// and one measured one, unchanged from v2 because they were right.</summary>
         internal static int SpendableCash(Team team)
         {
-            try { if (OpenerPlanner.QueueActive) return 0; } catch { }
-            try { if (EcoPlanner.EcoStarvedOfCash) return 0; } catch { }
+            // UNDER SIEGE THE OPENER YIELDS TOO. The Maw, 2026-09-07 05:10: siege
+            // declared at nineteen seconds, but the opener's queue held the
+            // military at zero budget until minute five, the first producer
+            // came at minute seven, and the Nest fell at fourteen. An opening
+            // is worth nothing if the Nest falls before it earns.
+            bool siege = false;
+            try { siege = Objectives.UnderSiege; } catch { }
+            if (!siege)
+            {
+                try { if (OpenerPlanner.QueueActive) return 0; } catch { }
+                try { if (EcoPlanner.EcoStarvedOfCash) return 0; } catch { }
+            }
             int cash = 0;
             try { cash = team.TotalResources; } catch { }
             // THE ECONOMY KEEPS ITS NEXT PLACEMENT. The first v3 round spent
@@ -135,6 +150,7 @@ namespace Si_RTS_AI.Mil
             // the economy is still converting cash into workers that earn.
             int reserve = WorkerPlan.CanStillConvertCash ? MilitaryConfig.EcoReserve : MilConfig.EcoFloorCash;
             try { reserve += MoneyBroker.GetReservedCash(team); } catch { }
+            if (Objectives.UnderSiege) reserve = Mathf.Min(reserve, 1500);
             return Mathf.Max(0, cash - reserve);
         }
 
@@ -169,14 +185,46 @@ namespace Si_RTS_AI.Mil
                                      Kernel.PriceToBeat(Intel.EnemyEffective),
                                      MilConfig.HomeFloorCash);
             float reserveGap = target - Forces.ReserveEff;
+            // NO SITTING ON CASH. A human team with nothing threatened and no target
+            // yet had zero demand and 28,000 idle at minute six (DrMuck, 2026-09-07
+            // 22:10). Cash above the reinvest floor becomes line demand.
+            if (Faction.Construction.IsHuman(Intel.Self))
+            {
+                int cashNow = 0; try { cashNow = Intel.Self.TotalResources; } catch { }
+                if (cashNow > REINVEST_FLOOR) reserveGap = Mathf.Max(reserveGap, cashNow - REINVEST_FLOOR);
+            }
             if (reserveGap > 0f)
             {
-                _demand[(int)Forces.Pool.Line] += reserveGap * 0.75f;
-                _demand[(int)Forces.Pool.Fast] += reserveGap * 0.25f;
+                // HEAVIES GET A SHARE FROM MINUTE EIGHT. Nothing ever asked for the
+                // heavy pool, so Scorpions and Colossi were only ever built by
+                // accident of the any-pool. DrMuck: "no Scorps and Colossus were
+                // built at all, despite they can be very valuable."
+                float heavy = 0f;
+                try { heavy = Forces.RoundSeconds() >= 480f ? 0.25f : 0f; } catch { }
+                _demand[(int)Forces.Pool.Line]  += reserveGap * (0.75f - heavy);
+                _demand[(int)Forces.Pool.Fast]  += reserveGap * 0.25f;
+                _demand[(int)Forces.Pool.Heavy] += reserveGap * heavy;
             }
         }
 
+        const int REINVEST_FLOOR = 8000;
         static float GapFor(Forces.Pool p) => _demand[(int)p] + _demandAny;
+        static float _airCheckedAt = -999f; static bool _airSeen;
+        static bool EnemyAirSeen()
+        {
+            float now = Time.time;
+            if (now - _airCheckedAt < 10f) return _airSeen;
+            _airCheckedAt = now; _airSeen = false;
+            try
+            {
+                var mix = ThreatMap.EnemyMix;
+                if (mix != null)
+                    foreach (var kv in mix)
+                        if (kv.Value > 0f && UnitStats.IsFlyer(kv.Key)) { _airSeen = true; break; }
+            }
+            catch { }
+            return _airSeen;
+        }
 
         static Forces.Pool PoolOfName(string n)
         {
@@ -211,6 +259,7 @@ namespace Si_RTS_AI.Mil
         {
             var structs = team.Structures;
             if (structs == null) return;
+            CompositionTarget.UseTeam(team);
             _busy = _total = 0;
             foreach (var k in new List<string>(_typeBusy.Keys)) _typeBusy[k] = true;
 
@@ -231,6 +280,26 @@ namespace Si_RTS_AI.Mil
                 if (!functional) continue;
                 var opts = s.ConstructionOptions;
                 if (opts == null) continue;
+                string tn0 = s.ObjectInfo.DisplayName ?? "?";
+                if (!_offerLogged.Contains(tn0))
+                {
+                    _offerLogged.Add(tn0);
+                    try
+                    {
+                        var names = new System.Text.StringBuilder();
+                        var other = new System.Text.StringBuilder();
+                        foreach (var o2 in opts)
+                        {
+                            if (o2?.ObjectInfo == null) continue;
+                            bool iu = false; try { iu = o2.IsUnit; } catch { }
+                            bool it = false; try { it = o2.IsTechTier; } catch { }
+                            if (iu) names.Append(o2.ObjectInfo.DisplayName).Append(' ');
+                            else other.Append(o2.ObjectInfo.DisplayName).Append(it ? "(tier) " : " ");
+                        }
+                        MilLog.Msg($"[MIL/PROD] {tn0} offers: {names}| other: {other}");
+                    }
+                    catch { }
+                }
                 bool offersCombat = false;
                 foreach (var opt in opts)
                 {
@@ -258,7 +327,12 @@ namespace Si_RTS_AI.Mil
                 int queued = 0;
                 try { queued = s.ProductionQueue?.Count ?? 0; } catch { }
                 _total++;
-                if (queued >= depth) { _busy++; continue; }
+                // QUEUE DEPTH. Two per producer, three only when cash has idled six
+                // minutes, and never more than one at an Ultra Heavy Factory or a
+                // Colossal Spawning Cyst (DrMuck, 2026-09-08: "same rule as aliens").
+                int depthHere = typeName.IndexOf("Ultra", StringComparison.OrdinalIgnoreCase) >= 0
+                             || typeName.IndexOf("Colossal", StringComparison.OrdinalIgnoreCase) >= 0 ? 1 : depth;
+                if (queued >= depthHere) { _busy++; continue; }
 
                 // Pick.
                 ConstructionData best = null; float bestScore = 0f; string bestWhy = "";
@@ -269,6 +343,9 @@ namespace Si_RTS_AI.Mil
                     if (!isUnit) continue;
                     string n = opt.ObjectInfo.DisplayName ?? "";
                     if (WorkerNames.Contains(n)) continue;
+                    // SQUIDS ONLY AGAINST AIR. DrMuck: "a lot of squids are built, too
+                    // many; only usable against air or single soldiers."
+                    if (n == "Squid" && !EnemyAirSeen()) continue;
                     int cost = 0; try { cost = opt.ResourceCost; } catch { }
                     if (cost <= 0 || cost > budget) continue;
                     if (!CapRoom(team, opt.ObjectInfo)) continue;
@@ -289,8 +366,9 @@ namespace Si_RTS_AI.Mil
                         ? Doctrine.ValueOf(n) * cost / capW
                         : Doctrine.ValueOf(n) * 100f;
                     float fit = Fit(n);
-                    float score = Mathf.Max(gap, 200f) * valuePerCap * fit;
-                    if (score > bestScore) { bestScore = score; best = opt; bestWhy = $"{n}: gap {gap:F0} x {valuePerCap:F0}/cap x fit {fit:F2}"; }
+                    float comp = CompositionTarget.Multiplier(n, cost);
+                    float score = Mathf.Max(gap, 200f) * valuePerCap * fit * comp;
+                    if (score > bestScore) { bestScore = score; best = opt; bestWhy = $"{n}: gap {gap:F0} x {valuePerCap:F0}/cap x fit {fit:F2} x mix {comp:F2}"; }
                 }
                 if (best == null) { _typeBusy[typeName] = false; continue; }
 
@@ -306,6 +384,7 @@ namespace Si_RTS_AI.Mil
                     float eff = Kernel.EffectiveOf(n);
                     if (_demand[(int)pool] > 0f) _demand[(int)pool] = Mathf.Max(0f, _demand[(int)pool] - eff);
                     else _demandAny = Mathf.Max(0f, _demandAny - eff);
+                    CompositionTarget.NoteQueued(n);
                     LogPick(typeName, bestWhy);
                 }
                 else
@@ -452,11 +531,15 @@ namespace Si_RTS_AI.Mil
         /// balance dump's production tree via UnitStats: a Greater Cyst offers
         /// Behemoths. Falls back to the name containing "Spawning" when the dump
         /// is absent.</summary>
+        static string[] HUMAN_PRODUCERS = { "Barracks", "Light Factory", "Heavy Factory", "Ultra Heavy Factory", "Air Factory" };
         static bool ProducesCombat(ConstructionData cd)
         {
             string n = cd.ObjectInfo?.DisplayName ?? "";
             if (n.IndexOf("Spawning Cyst", StringComparison.OrdinalIgnoreCase) >= 0 ||
                 n.IndexOf("Spawner", StringComparison.OrdinalIgnoreCase) >= 0) return true;
+            // Sol and Centauri: the balance dump's production tree lists these.
+            for (int i = 0; i < HUMAN_PRODUCERS.Length; i++)
+                if (string.Equals(n, HUMAN_PRODUCERS[i], StringComparison.OrdinalIgnoreCase)) return true;
             return false;
         }
 
@@ -554,7 +637,7 @@ namespace Si_RTS_AI.Mil
 
         // ---- producers: where -----------------------------------------------------
 
-        static readonly List<(Vector3 pos, float weight)> _fights = new List<(Vector3, float)>();
+        static List<(Vector3 pos, float weight)> _fights = new List<(Vector3, float)>();
 
         static void PlanSites(Team team)
         {
@@ -615,9 +698,15 @@ namespace Si_RTS_AI.Mil
             Vector3 best = Vector3.zero; float bestScore = float.MaxValue; string bestWhy = "";
             Vector3 fob = Vector3.zero; float fobScore = float.MaxValue; string fobWhy = "";
             Fields.Field toMain = mainOffence != null ? Fields.Cached(mainOffence.Centre, false) : null;
+            int unreachable = 0; string unreachWhy = "";
             for (int c = 0; c < cands.Count; c++)
             {
                 var p = cands[c];
+                // A CYST WHOSE UNITS CANNOT WALK TO THE ENEMY IS A CYST WASTED.
+                // Crimson Peak 13:02: six cysts on the Nest plateau, 67 Behemoths
+                // that never crossed the ridge. The game's graph decides.
+                if (mainOffence != null && !Reach.AllGroundCanReach(team, p, mainOffence.Centre, out string rw))
+                { unreachable++; unreachWhy = rw; if (Reach.Enforce) continue; }
                 float walk = 0f;
                 for (int f = 0; f < _fights.Count; f++)
                 {
@@ -635,11 +724,20 @@ namespace Si_RTS_AI.Mil
                     float toThem = toMain.SecondsAt(p, 9f);
                     if (float.IsInfinity(toThem)) continue;
                     // Not inside their reach, and held: something of ours stands here.
+                    // A FORWARD BASE STANDS WHERE THE ARMY STANDS. The Maw replay
+                    // (2026-09-06 22:43): FOBs placed close to the enemy with no army
+                    // to cover the build-up, several producers lost. Cover is the
+                    // reserve within 500 m or a spire within 250 m, and the enemy
+                    // strength within 700 m must not exceed the reserve.
                     bool covered = (Forces.ReservePoint - p).sqrMagnitude < 500f * 500f || SpireNear(team, p, 250f);
-                    float fs = toThem + danger / 20f + (covered ? 0f : 120f);
+                    if (!covered) continue;
+                    if (Intel.EffectiveNear(p, 700f) > Forces.ReserveEff) continue;
+                    float fs = toThem + danger / 20f;
                     if (fs < fobScore) { fobScore = fs; fob = p; fobWhy = $"{toThem:F0}s from {Intel.Short(mainOffence.Team)} base, danger {danger:F0}{(covered ? ", covered" : "")}"; }
                 }
             }
+            if (unreachable > 0)
+                MilLog.Every("site:unreachable", 120f, $"[MIL/SITE] {unreachable} of {cands.Count} candidate sites cannot reach the enemy base for {unreachWhy}; best ({best.x:F0},{best.z:F0})");
             _bestSite = best; _bestSiteWhy = bestWhy;
             if (fob != Vector3.zero && (fob - ForwardBase).sqrMagnitude > 200f * 200f)
                 MilLog.Msg($"[MIL/SITE] forward base at ({fob.x:F0},{fob.z:F0}) — {fobWhy}; general site ({best.x:F0},{best.z:F0}) — {bestWhy}");
@@ -669,6 +767,13 @@ namespace Si_RTS_AI.Mil
         {
             if (now - _lastPlaceAt < PLACE_CADENCE_S) return;
             if (_producerCds.Count == 0) return;
+            // IDLE PRODUCERS MEAN THE PRODUCER COUNT IS NOT THE BOTTLENECK. Naraka,
+            // 2026-09-07 07:23: every unit was UnmetPrerequisite (research held),
+            // eleven cysts stood idle, and this loop placed 107 producers for
+            // 582,000 cash while queuing nothing. Whatever stops the standing
+            // producers from queuing — prerequisites, budget, the Queen — a new
+            // cyst will not fix.
+            if (_total >= 1 && _busy == 0) return;
             foreach (var kv in _producerCds)
             {
                 string name = kv.Key; var cd = kv.Value;
@@ -689,7 +794,7 @@ namespace Si_RTS_AI.Mil
                 Vector3 dir = (Intel.Bases.Count > 0 ? Intel.Bases[0].Centre : site) - site; dir.y = 0f;
                 Vector3 at2 = dir.sqrMagnitude > 1f ? site + dir.normalized * 60f : site;
                 bool fired = false;
-                try { fired = Faction.AlienConstruction.TryBuildStructureByCd(team, cd, at2); }
+                try { fired = Faction.Construction.TryBuild(team, cd, at2); }
                 catch (Exception ex) { MelonLogger.Warning("[MIL/PROD] place threw: " + ex.Message); }
                 _lastPlaceAt = now;
                 if (fired)
@@ -724,7 +829,8 @@ namespace Si_RTS_AI.Mil
         {
             if (QueuedThisRound == 0 && ProducersPlaced == 0) return "";
             return "--- Military production ---\n" +
-                   $"  units queued: {QueuedThisRound}, producers placed: {ProducersPlaced}, cash spent: {SpentThisRound}\n";
+                   $"  units queued: {QueuedThisRound}, producers placed: {ProducersPlaced}, cash spent: {SpentThisRound}\n" +
+                   (CompositionTarget.Summary().Length > 0 ? $"  mix queued: {CompositionTarget.Summary()}\n" : "");
         }
     }
 }

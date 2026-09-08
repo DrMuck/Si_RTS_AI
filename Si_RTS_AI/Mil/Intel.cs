@@ -137,18 +137,19 @@ namespace Si_RTS_AI.Mil
         }
 
         // ---- state ----------------------------------------------------------
-        static readonly List<Track> _tracks = new List<Track>(32);
-        static readonly Dictionary<string, KnownStructure> _known =
+        static List<Track> _tracks = new List<Track>(32);
+        static Dictionary<string, KnownStructure> _known =
             new Dictionary<string, KnownStructure>(128);
-        static readonly List<Base> _bases = new List<Base>(8);
-        static readonly Dictionary<string, (float at, int count)> _baseCountHist =
+        static List<Base> _bases = new List<Base>(8);
+        static Dictionary<string, (float at, int count)> _baseCountHist =
             new Dictionary<string, (float, int)>();
-        static readonly List<(Vector3 pos, string team)> _harvesters = new List<(Vector3, string)>();
+        static List<(Vector3 pos, string team)> _harvesters = new List<(Vector3, string)>();
         static float[] _corridor = new float[0];
-        static readonly float[] _sector = new float[8];
+        static float[] _sector = new float[8];
         static float _lastStampAt, _lastDecayAt, _lastReportAt;
         static int _nextTrackId;
         static Team _self;
+        internal static Team Self => _self;
         static Vector3 _nest;
         static bool _fogNull;
 
@@ -195,6 +196,7 @@ namespace Si_RTS_AI.Mil
                 _fogNull = vis == null;
 
                 _harvesters.Clear();
+                _enemyAlive.Clear();
                 var teams = Team.Teams;
                 if (teams != null)
                     for (int t = 0; t < teams.Count; t++)
@@ -204,6 +206,7 @@ namespace Si_RTS_AI.Mil
                         bool enemy = true;
                         try { enemy = Team.GetTeamsAreEnemy(self, other); } catch { }
                         if (!enemy) continue;
+                        try { if (other.Structures != null && other.Structures.Count > 0) _enemyAlive.Add(other.name ?? "?"); } catch { }
                         ObserveUnits(other, vis, now, dt);
                         ObserveStructures(other, vis, now);
                     }
@@ -219,8 +222,8 @@ namespace Si_RTS_AI.Mil
         // ---- units -> clusters -> tracks --------------------------------------
 
         struct Seen { public Unit U; public Vector3 P; public string Name; public int Cost; public bool Piloted; public float Speed; public float Reach; }
-        static readonly List<Seen> _seen = new List<Seen>(128);
-        static readonly List<List<int>> _clusters = new List<List<int>>(16);
+        static List<Seen> _seen = new List<Seen>(128);
+        static List<List<int>> _clusters = new List<List<int>>(16);
 
         static void ObserveUnits(Team enemy, LayerB vis, float now, float dt)
         {
@@ -415,8 +418,23 @@ namespace Si_RTS_AI.Mil
                     kv.Value >= pk.eff * Mathf.Pow(0.5f, (now - pk.at) / TEAM_PEAK_HALF_S))
                     _teamPeak[kv.Key] = (kv.Value, now);
             }
+            // THE AGGREGATE IS FLOORED LIKE THE PER-TEAM ESTIMATE. The Maw,
+            // 2026-09-07 06:48: EnemyEffectiveOf() said 4,000 for Sol from the
+            // first second, but this sum said 2,696, so the siege flag that
+            // hangs on it came at 116 s — after the starter reserve had already
+            // chased raiders and died. Every enemy team still holding a
+            // structure counts for at least its starting army.
             float floor = 0f;
-            foreach (var kv in _teamPeak) floor += kv.Value.eff * Mathf.Pow(0.5f, (now - kv.Value.at) / TEAM_PEAK_HALF_S);
+            for (int i = 0; i < _enemyAlive.Count; i++)
+            {
+                float f = MilConfig.EnemyStartEff;
+                if (_teamPeak.TryGetValue(_enemyAlive[i], out var pk))
+                    f = Mathf.Max(f, pk.eff * Mathf.Pow(0.5f, (now - pk.at) / TEAM_PEAK_HALF_S));
+                floor += f;
+            }
+            foreach (var kv in _teamPeak)
+                if (!_enemyAlive.Contains(kv.Key))
+                    floor += kv.Value.eff * Mathf.Pow(0.5f, (now - kv.Value.at) / TEAM_PEAK_HALF_S);
             EnemyEffective = Mathf.Max(eff, floor); EnemyCash = cash; EnemyPiloted = pil;
         }
 
@@ -519,6 +537,23 @@ namespace Si_RTS_AI.Mil
         }
 
         /// <summary>Effective enemy force within a radius, confidence-weighted.</summary>
+        /// <summary>Distance to the nearest known enemy base centre; float.MaxValue when none is known.</summary>
+        internal static float NearestEnemyBaseDist(Vector3 p)
+        {
+            float best = float.MaxValue;
+            try
+            {
+                for (int i = 0; i < Bases.Count; i++)
+                {
+                    var b = Bases[i];
+                    float dx = b.Centre.x - p.x, dz = b.Centre.z - p.z;
+                    float d = Mathf.Sqrt(dx * dx + dz * dz);
+                    if (d < best) best = d;
+                }
+            }
+            catch { }
+            return best;
+        }
         internal static float EffectiveNear(Vector3 p, float radiusM)
         {
             float e = 0f; float r2 = radiusM * radiusM;
@@ -554,7 +589,8 @@ namespace Si_RTS_AI.Mil
         }
 
         const float TEAM_PEAK_HALF_S = 300f;
-        static readonly Dictionary<string, (float eff, float at)> _teamPeak = new Dictionary<string, (float, float)>();
+        static List<string> _enemyAlive = new List<string>();
+        static Dictionary<string, (float eff, float at)> _teamPeak = new Dictionary<string, (float, float)>();
 
         internal static Track NearestTrack(Vector3 p, float maxM)
         {
@@ -770,7 +806,8 @@ namespace Si_RTS_AI.Mil
                     {
                         var s = structs[i];
                         if (s?.ObjectInfo == null || s.IsDestroyed) continue;
-                        if (s.ObjectInfo.DisplayName == "Nest") return s.transform.position;
+                        string dn = s.ObjectInfo.DisplayName ?? "";
+                        if (dn == "Nest" || dn == "Headquarters") return s.transform.position;
                     }
             }
             catch { }

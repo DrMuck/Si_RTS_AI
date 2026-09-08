@@ -8,7 +8,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 
-[assembly: MelonInfo(typeof(Si_RTS_AI.Si_RTS_AI), "Si_RTS_AI", "0.92.27", "DrMuck")]
+[assembly: MelonInfo(typeof(Si_RTS_AI.Si_RTS_AI), "Si_RTS_AI", "0.92.69", "DrMuck")]
 [assembly: MelonGame("Bohemia Interactive", "Silica")]
 
 namespace Si_RTS_AI
@@ -120,6 +120,8 @@ namespace Si_RTS_AI
             // rtsai.json, so the config is loaded first.
             try { Planning.RtsaiConfig.Reload(); Perception.PerfProbes.Init(HarmonyInstance); Perception.ServerPatches.Init(HarmonyInstance); }
             catch (Exception ex) { MelonLogger.Warning("[RTSA/PROBE] init failed: " + ex.Message); }
+            try { Faction.StartingResourcesGuard.Install(HarmonyInstance); }
+            catch (Exception ex) { MelonLogger.Warning("[CASH/GUARD] install failed: " + ex.Message); }
         }
 
         public override void OnUpdate()
@@ -318,6 +320,9 @@ namespace Si_RTS_AI
                     if (team == null) continue;
 
                     string tn = team.name ?? "";
+                    // ONE STATE PER TEAM: the military layer's statics are swapped to
+                    // this team's before anything below reads or writes them.
+                    Mil.MilContext.Use(team);
                     long tLayer = 0, tBcMetrics = 0, tShrimpState = 0, tEcoRate = 0, tPlan = 0, tMil = 0;
                     if (tn.Contains("Alien"))
                     {
@@ -332,15 +337,31 @@ namespace Si_RTS_AI
                         tBcMetrics = TimedMs(() => Perception.BcMetrics.TickHuman(team));
                     }
                     tShrimpState = TimedMs(() => Perception.ShrimpStateSampler.Tick(team));
+                    try { Perception.CommanderLog.SampleCash(team); } catch { }
                     // OUTSIDE the FactionControl / military.enabled gate, and
                     // deliberately: the doctrine comparison is most needed on
                     // exactly the rounds where the military layer is off, which
                     // is every eco soak we run. It issues no orders, so there is
                     // nothing for the gate to protect.
-                    if ((team.name ?? "").Contains("Alien"))
+                    // THE PERCEIVER IS THE TEAM THAT HOLDS THE MILITARY LAYER. Intel,
+                    // fields and the threat map are single-team state; they used to
+                    // run for the alien no matter what, so in the first Sol test
+                    // (2026-09-07 19:46) Sol's objectives read the alien's intel,
+                    // tracked Sol's own units as the enemy and proposed KillHQ on
+                    // Sol's own Headquarters. With the alien switch off and a human
+                    // team on, that human team perceives.
+                    bool alienOn = Faction.FactionControl.AlienEnabled;
+                    bool humanOn = Faction.FactionControl.SolEnabled || Faction.FactionControl.CentauriEnabled;
+                    // Since v0.92.67 the military state is per team (MilContext), so
+                    // every enabled team perceives for itself; the alien also
+                    // perceives when nobody is enabled (shadow/eco soaks).
+                    bool perceiver = tn.Contains("Alien") ? (alienOn || !humanOn)
+                                                          : (Faction.Construction.IsHuman(team) && Faction.FactionControl.IsEnabled(team));
+                    if (perceiver)
                     {
-                        try { Mil.Shadow.Tick(team); }
+                        if (tn.Contains("Alien")) try { Mil.Shadow.Tick(team); }
                         catch (Exception ex) { MelonLogger.Warning("[MIL/SHADOW] threw: " + ex.Message); }
+                        if (!tn.Contains("Alien")) try { Perception.BcIncome.Sample(team, "Refinery"); } catch { }
                         // Perception for the military layer runs whatever the
                         // switches say: tracks and walkability are data, and the
                         // rounds that need them most are the ones with the
@@ -359,9 +380,14 @@ namespace Si_RTS_AI
                         catch (Exception ex) { MelonLogger.Warning("[MIL/SPIRE] threw: " + ex.Message); }
                     }
                     Perception.BuildTimeline.Tick(team);
-                    if ((team.name ?? "").Contains("Alien")) Perception.QueenStatus.Evaluate(team);
-                    long tThreat = TimedMs(() => { Perception.ThreatMap.Observe(team);
-                                                    Perception.ThreatMap.Tick(team); });
+                    if ((team.name ?? "").Contains("Alien"))
+                    {
+                        Perception.QueenStatus.Evaluate(team);
+                        if (Faction.FactionControl.IsEnabled(team)) try { Mil.QueenKeeper.Tick(team); }
+                        catch (Exception ex) { MelonLogger.Warning("[QUEEN] keeper threw: " + ex.Message); }
+                    }
+                    long tThreat = perceiver ? TimedMs(() => { Perception.ThreatMap.Observe(team);
+                                                                Perception.ThreatMap.Tick(team); }) : 0;
                     // OURS MEANS THE ALIEN'S. Rebuild used to run for every team in
                     // turn under a 2s throttle, so whichever team ticked first
                     // defined "our" ground — Sol, on this rig. Every ControlGain
@@ -433,6 +459,23 @@ namespace Si_RTS_AI
 
                             // Cyst steps react within ~1s of their BC finishing.
                             Planning.OpenerPlanner.TickFast(team);
+                        }
+                        else if (Faction.Construction.IsHuman(team))
+                        {
+                            // SOL AND CENTAURI UNDER OUR COMMAND share the military
+                            // layer; their economy is HumanConstruction for now.
+                            Planning.ScoutPlanner.Tick(team);
+                            tMil += TimedMs(() => { try { Mil.Objectives.Tick(team); }
+                                                    catch (Exception ex) { MelonLogger.Warning("[OBJ] threw: " + ex.Message); } });
+                            tMil += TimedMs(() => { try { Mil.Forces.Tick(team); }
+                                                    catch (Exception ex) { MelonLogger.Warning("[FORCE] threw: " + ex.Message); } });
+                            tMil += TimedMs(() => { try { Mil.ProductionV3.Tick(team); }
+                                                    catch (Exception ex) { MelonLogger.Warning("[MIL/PROD] threw: " + ex.Message); } });
+                            try { Mil.SpirePlanner.Tick(team); }
+                            catch (Exception ex) { MelonLogger.Warning("[MIL/SPIRE] threw: " + ex.Message); }
+                            try { Human.HarvesterManager.Tick(team); }
+                            catch (Exception ex) { MelonLogger.Warning("[HARV] threw: " + ex.Message); }
+                            Perception.Utilisation.Tick(team);
                         }
                     }
                     RecentModWork.AddPlanKick(tPlan);
@@ -521,6 +564,10 @@ namespace Si_RTS_AI
                 if (!string.IsNullOrEmpty(sna))
                     AppendToRound(sna);
 
+                string hvm = Human.HarvesterManager.Summary();
+                if (!string.IsNullOrEmpty(hvm))
+                    AppendToRound(hvm);
+
                 string sc = Faction.SuppressCombat.BuildRoundSummaryFragment();
                 if (!string.IsNullOrEmpty(sc))
                     AppendToRound(sc);
@@ -578,12 +625,17 @@ namespace Si_RTS_AI
             Planning.SupplyForecast.ResetForNewRound();
             Planning.WorkerPlan.ResetForNewRound();
             Perception.QueenStatus.ResetForNewRound();
+            Mil.QueenKeeper.ResetForNewRound();
+            Perception.Reach.ResetForNewRound();
             Planning.NodeManager.ResetForNewRound();
             Perception.ThreatMap.ResetForNewRound();
             Perception.ControlMap.ResetForNewRound();
             Perception.BuildTimeline.ReportHookState();
             Faction.SuppressCombat.ResetForNewRound();
             Faction.HumanConstruction.ResetForNewRound();
+            Faction.HumanBuild.ResetForNewRound();
+            Human.HarvesterManager.ResetForNewRound();
+            Perception.CommanderLog.ResetForNewRound();
             Faction.HumanTechResearcher.ResetForNewRound();
             Faction.HumanHarvesterController.ResetForNewRound();
             Perception.EcoRateSampler.ResetForNewRound();
@@ -626,6 +678,8 @@ namespace Si_RTS_AI
             Planning.TechPlanner.ResetForNewRound();
             Faction.SuppressHumanAI.ResetForNewRound();
             Faction.VanillaOrderGate.ResetForNewRound();
+            // last: the reset + configured state above is the template every further team starts from
+            Mil.MilContext.ResetForNewRound();
             Perception.MapLayers.LayerReplay.OnNewRound(sceneName);
             _sceneReady = true;
 
@@ -777,6 +831,10 @@ namespace Si_RTS_AI
         // Note: we can't easily tell WHICH human commander issued a given order
         // (there's no "issuer" field on the event), only that it came from the
         // player-commander of that team.
+        static string OrderTime()
+        {
+            try { return Perception.MapLayers.LayerReplay.CurrentRoundTime.ToString("F0"); } catch { return "-"; }
+        }
         static string AttributeSource(Unit unit)
         {
             try
@@ -786,7 +844,10 @@ namespace Si_RTS_AI
 
                 var team = unit?.Team;
                 if (team != null && !AIManager.IsCommanderEnabled(team))
-                    return "commander=player";
+                {
+                    string tag = Perception.CommanderLog.CommanderTag(team);
+                    return tag.Length > 0 ? "commander=player " + tag : "commander=player";
+                }
             }
             catch { }
             return "commander=ai";
@@ -806,13 +867,13 @@ namespace Si_RTS_AI
             string src = AttributeSource(unit);
             var p2 = Phase2.Get(team);
             if      (src.StartsWith("piloted"))    p2.OrdersPiloted_Attack++;
-            else if (src == "commander=player")    p2.OrdersCommanderPlayer_Attack++;
+            else if (src.StartsWith("commander=player")) p2.OrdersCommanderPlayer_Attack++;
             else                                    p2.OrdersCommanderAi_Attack++;
 
             string tgtDesc = "?";
             try { tgtDesc = target?.ToString() ?? "?"; } catch { }
             AppendToRound(
-                $"[ORDER] {src} team={ResolveTeamName(team)} " +
+                $"[ORDER] t={OrderTime()} {src} team={ResolveTeamName(team)} " +
                 $"unit={UnitDisplay(unit)} kind=attack tgt={tgtDesc}");
         }
 
@@ -825,11 +886,11 @@ namespace Si_RTS_AI
             string src = AttributeSource(unit);
             var p2 = Phase2.Get(team);
             if      (src.StartsWith("piloted"))    p2.OrdersPiloted_Move++;
-            else if (src == "commander=player")    p2.OrdersCommanderPlayer_Move++;
+            else if (src.StartsWith("commander=player")) p2.OrdersCommanderPlayer_Move++;
             else                                    p2.OrdersCommanderAi_Move++;
 
             AppendToRound(
-                $"[ORDER] {src} team={ResolveTeamName(team)} " +
+                $"[ORDER] t={OrderTime()} {src} team={ResolveTeamName(team)} " +
                 $"unit={UnitDisplay(unit)} kind=move " +
                 $"dst=({destination.x:F0},{destination.y:F0},{destination.z:F0})");
         }

@@ -290,6 +290,13 @@ namespace Si_RTS_AI.Perception.MapLayers
             var sm   = minSepMask.Data;
             var bm   = buildableMask.Data;
             var dt   = distanceToHq.Data;
+            // A HEADQUARTERS AT THE MAP BORDER WASTES ITS RADIUS. Naraka 2026-09-07
+            // 22:04: an expansion HQ landed at (-975,-3030), on the southern edge,
+            // while a cell of similar value sat at (-1580,-2020) (DrMuck). A cell
+            // within a refinery reach of the border keeps only the share of that
+            // reach that lies inside the map, never less than a quarter.
+            int w = GridWorld.Width, h = GridWorld.Height;
+            float reachCells = Mathf.Max(1f, REFINERY_HQ_RADIUS / GridWorld.CellSize);
             for (int i = 0; i < dst.Length; i++)
             {
                 // Candidate iff INSIDE HQ→HQ chain reach (bm=1) AND OUTSIDE the min-
@@ -302,7 +309,10 @@ namespace Si_RTS_AI.Perception.MapLayers
                 // Value = balterium-in-reach × distance-to-nearest-HQ (in cells). The
                 // distance factor makes ArgMax prefer FAR cells with good eco over
                 // near cells with slightly better eco.
-                dst[i] = (bm[i] != 0 && sm[i] == 0) ? wsrc[i] * dt[i] : 0;
+                int x = i % w, z = i / w;
+                int dEdge = Mathf.Min(Mathf.Min(x, w - 1 - x), Mathf.Min(z, h - 1 - z));
+                float edge = Mathf.Clamp(dEdge / reachCells, 0.25f, 1f);
+                dst[i] = (bm[i] != 0 && sm[i] == 0) ? (int)(wsrc[i] * dt[i] * edge) : 0;
             }
         }
 

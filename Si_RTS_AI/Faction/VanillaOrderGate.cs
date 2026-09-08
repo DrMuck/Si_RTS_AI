@@ -73,7 +73,10 @@ namespace Si_RTS_AI.Faction
             // player-orders-ignored report was about, and blocking by ORIGIN is
             // safe either way. A player's order never comes from inside Think.
             string n = t.name ?? "";
-            return n.IndexOf("Alien", StringComparison.OrdinalIgnoreCase) >= 0;
+            if (n.IndexOf("Alien", StringComparison.OrdinalIgnoreCase) >= 0) return true;
+            // A Sol or Centauri team under our command is protected the same way;
+            // with the human switches off nothing changes for them.
+            return Construction.IsHuman(t) && FactionControl.IsEnabled(t);
         }
 
         static bool ShouldBlock(Team t) => Enabled && _inAiTick && Protected(t) && FactionControl.IsEnabled(t);

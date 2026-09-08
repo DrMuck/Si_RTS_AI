@@ -91,8 +91,19 @@ namespace Si_RTS_AI.Mil
         static float _nextAt;
         static int _placedThisRound;
 
-        static readonly string[] SPIRES = { "Thorn Spire", "Hive Spire" };
-        static readonly Dictionary<string, ConstructionData> _cds =
+        // HIVE BEFORE THORN. DrMuck: "Hive spires are much better than thorn
+        // spires; thorn spires are very inaccurate and only help against a tank
+        // push on a FOB, built in numbers in a tight spot." So Hive leads at every
+        // site and Thorn leads only at the forward base.
+        static string[] SPIRES     = { "Hive Spire", "Thorn Spire" };
+        static string[] FOB_SPIRES = { "Thorn Spire", "Hive Spire" };
+        // Sol and Centauri: the cheap Turret first, the Heavy Turret at the forward base.
+        static string[] HUMAN_DEFENCE     = { "Turret", "Heavy Turret", "Anti-Air Rocket Turret" };
+        static string[] HUMAN_FOB_DEFENCE = { "Heavy Turret", "Turret", "Anti-Air Rocket Turret" };
+        static Team _team;
+        static string[] ListFor(bool fob) =>
+            Faction.Construction.IsHuman(_team) ? (fob ? HUMAN_FOB_DEFENCE : HUMAN_DEFENCE) : (fob ? FOB_SPIRES : SPIRES);
+        static Dictionary<string, ConstructionData> _cds =
             new Dictionary<string, ConstructionData>(StringComparer.OrdinalIgnoreCase);
 
         internal static void Configure()
@@ -117,6 +128,7 @@ namespace Si_RTS_AI.Mil
 
         internal static void Tick(Team team)
         {
+            _team = team;
             if (!Enabled || team == null) return;
             // A PLAYER IN THE ALIEN COMMANDER SEAT COMMANDS. The game disables its
             // own AI commander then, and so does this layer, exactly as vanilla
@@ -188,7 +200,7 @@ namespace Si_RTS_AI.Mil
 
                 // Cheaper first: a Thorn is 1,000 against a Hive's 1,400, and
                 // the first spire on a site is the one that matters most.
-                string name = PickType(team, site.Pos);
+                string name = PickType(team, site.Pos, site.Why == "the forward base");
                 if (name == null || !_cds.TryGetValue(name, out var cd)) continue;
 
                 int cost = 1000;
@@ -198,7 +210,7 @@ namespace Si_RTS_AI.Mil
                 // minutes of a Whispering Plains round while the economy spent
                 // to the last credit; four raiders then took a Nest with nothing
                 // beside it. One Thorn at the Nest by minute three is cheap.
-                int floor = site.Bare ? 0 : _cashFloor;
+                int floor = (site.Bare || (Objectives.UnderSiege && site.Why.StartsWith("the Nest"))) ? 0 : _cashFloor;
                 if (spendable < floor + cost) { if (site.Bare) continue; return; }   // poorer sites will not do better
 
                 float yardstick = Doctrine.TargetAt(name, minutes);
@@ -213,7 +225,7 @@ namespace Si_RTS_AI.Mil
                 if (!Execute) return;
                 try
                 {
-                    if (!Faction.AlienConstruction.TryBuildStructureByCd(team, cd, site.Pos))
+                    if (!Faction.Construction.TryBuild(team, cd, site.Pos))
                         MelonLogger.Msg($"[MIL/SPIRE] placement refused at " +
                                         $"({site.Pos.x:F0},{site.Pos.z:F0}) — construction said no");
                 }
@@ -224,7 +236,7 @@ namespace Si_RTS_AI.Mil
 
         struct Site { public bool Bare; public Vector3 Pos; public float Threat; public long Income; public string Why; }
 
-        static readonly List<(Vector3 pos, float eff, float etaS, string why)> _threatened =
+        static List<(Vector3 pos, float eff, float etaS, string why)> _threatened =
             new List<(Vector3, float, float, string)>();
 
         /// <summary>Ground with something arriving, soonest first - from the
@@ -247,6 +259,43 @@ namespace Si_RTS_AI.Mil
                 };
 
             var nest = FindNest(team);
+            // EXPOSED EXPANSIONS GET A SPIRE BEFORE THEY ARE HIT. DrMuck's replays
+            // (Badlands C2/D2, Crimson Peak C4, Monument Valley E4): expansions
+            // built toward the enemy with nothing beside them, lost with their
+            // node line. A Bio Cache nearer an enemy base than the Nest, or within
+            // a kilometre of one, is a site in its own right.
+            if (nest != Vector3.zero)
+            {
+                try
+                {
+                    var structs = team.Structures;
+                    if (structs != null)
+                        for (int i = 0; i < structs.Count; i++)
+                        {
+                            var s = structs[i];
+                            if (s?.ObjectInfo == null || s.IsDestroyed) continue;
+                            string ecoName = Faction.Construction.IsHuman(team) ? "Refinery" : "Bio Cache";
+                            if ((s.ObjectInfo.DisplayName ?? "") != ecoName) continue;
+                            bool functional = false; try { functional = s.IsFunctional; } catch { }
+                            if (!functional) continue;
+                            Vector3 p = s.transform.position;
+                            float dEnemy = Intel.NearestEnemyBaseDist(p);
+                            if (dEnemy == float.MaxValue) continue;
+                            float dNest = Vector3.Distance(p, nest);
+                            // Exposed means the enemy is close, or nearer than home
+                            // and still within two kilometres: Naraka 18:18 called a
+                            // Bio Cache 3,022 m from Sol exposed because the Nest was
+                            // farther still, and spent 33 spires on the far side.
+                            if (dEnemy > 1200f && (dEnemy > dNest || dEnemy > 2000f)) continue;
+                            yield return new Site
+                            {
+                                Pos = p, Threat = Mathf.Max(1f, Intel.EffectiveNear(p, 900f)), Income = 0,
+                                Why = $"an exposed expansion {dEnemy:F0}m from an enemy base",
+                            };
+                        }
+                }
+                finally { }
+            }
             var bearing = Intel.CorridorBearing();
             if (nest != Vector3.zero && bearing != Vector3.zero)
                 yield return new Site
@@ -288,13 +337,14 @@ namespace Si_RTS_AI.Mil
 
         /// <summary>Thorn first for cost, then Hive, so a site gets breadth
         /// before it gets depth.</summary>
-        static string PickType(Team team, Vector3 pos)
+        static string PickType(Team team, Vector3 pos, bool fob = false)
         {
-            for (int i = 0; i < SPIRES.Length; i++)
+            var order = ListFor(fob);
+            for (int i = 0; i < order.Length; i++)
             {
-                if (!_cds.ContainsKey(SPIRES[i])) continue;
-                if (CountNear(team, SPIRES[i], pos) == 0
-                    && !OrderedNear(SPIRES[i], pos)) return SPIRES[i];
+                if (!_cds.ContainsKey(order[i])) continue;
+                if (CountNear(team, order[i], pos) == 0
+                    && !OrderedNear(order[i], pos)) return order[i];
             }
             return null;
         }

@@ -343,7 +343,14 @@ namespace Si_RTS_AI.Planning
         /// </summary>
         /// <summary>Whether to propose loop closures at all. Off: see the note
         /// at the bottom of the loop scan. Repair is unaffected.</summary>
-        const bool LOOPS_ENABLED = false;
+        // LOOPS ARE BACK, FOR MAJOR BRANCHES ONLY. DrMuck's replays (2026-09-07):
+        // Crimson Peak F5-F6 and C2-B1, Monument Valley E5, Naraka E5 — whole
+        // branches lost for want of one bridge. The earlier objection stands for
+        // spurs near spawn, so a loop must protect at least MIN_PROTECT
+        // structures on its weaker side and cost at most MAX_LOOP_NODES nodes.
+        const bool LOOPS_ENABLED   = true;
+        const int  MIN_PROTECT     = 8;
+        const int  MAX_LOOP_NODES  = 4;
 
         const int MAX_CONCURRENT_LOOPS = 2;
         const int   MIN_HOPS_SAVED  = 6;
@@ -463,6 +470,7 @@ namespace Si_RTS_AI.Planning
                 // 2026-08-03 listed three wanted interconnects at 588m, 730m
                 // and 776m, all mid-branch, none of which could be proposed.
                 int protect = Mathf.Min(subtree[a], subtree[b]);
+                if (protect < MIN_PROTECT || nodes > MAX_LOOP_NODES) continue;   // a spur, or too far round
 
                 // No distance allowance any more. A bridge already pays for its
                 // length in the score below, which divides protection by the
