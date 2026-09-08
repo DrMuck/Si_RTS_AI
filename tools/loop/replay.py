@@ -136,13 +136,43 @@ def analyse(path, cost, is_structure, team_prefix="alien"):
     return out
 
 
+def report(out, prefix):
+    """The per-unit exchange table for one team, for a round read on its own."""
+    a = out["army"]
+    print("")
+    print(f"## {prefix}  ({out['replay']})")
+    print(f"army: killed {a['cash_killed']} lost {a['cash_lost']} exchange {a['exchange']} "
+          f"| clumping {a['clumping']} idle {a['idle_share']}")
+    rows = sorted(out["units"].items(), key=lambda kv: -kv[1]["cash_lost"])
+    if not rows:
+        print("  no military units")
+        return
+    print(f"  {'unit':<20}{'built':>6}{'died':>6}{'kills':>7}{'killed$':>10}{'lost$':>10}{'exch':>7}{'life_s':>8}")
+    for name, p in rows:
+        kills = p["kills_units"] + p["kills_structures"]
+        exch = "-" if p["exchange"] is None else f"{p['exchange']:.2f}"
+        life = "-" if p["median_life_s"] is None else str(p["median_life_s"])
+        print(f"  {name:<20}{p['built']:>6}{p['deaths']:>6}{kills:>7}{p['cash_killed']:>10}"
+              f"{p['cash_lost']:>10}{exch:>7}{life:>8}")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--in", dest="inp", default=os.path.join(HERE, "..", "..", "analysis", "loop", "rounds.jsonl"))
     ap.add_argument("--replays", default=REPLAYS_DEFAULT)
     ap.add_argument("--only", default=None, help="substring of a round name to process")
+    ap.add_argument("--replay", default=None,
+                    help="one .srpl to read on its own (or 'newest'); prints the table, writes no jsonl")
+    ap.add_argument("--teams", default="sol,cent", help="team prefixes for --replay, comma separated")
     args = ap.parse_args()
     cost, is_structure = load_costs()
+    if args.replay:
+        path = args.replay
+        if path == "newest":
+            path = max(glob.glob(os.path.join(args.replays, "*.srpl")), key=os.path.getmtime)
+        for prefix in [t.strip() for t in args.teams.split(",") if t.strip()]:
+            report(analyse(path, cost, is_structure, team_prefix=prefix), prefix)
+        return
     rows = [json.loads(l) for l in open(args.inp, encoding="utf-8") if l.strip()]
     n = 0
     for rec in rows:
