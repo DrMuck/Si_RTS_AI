@@ -138,7 +138,7 @@ def extract(path, events):
     if siege_on is not None:
         siege_s += last_t - siege_on
     rec["duration_s"] = last_t
-    rec["complete"] = any("END ROUND SUMMARY" in l for l in lines)
+    rec["complete"] = any("END ROUND SUMMARY" in l for l in lines) or any("ForceEndRound" in l for l in lines[-200:])
     rec["timeline"] = [samples[k] for k in sorted(samples)]
     rec["objectives"] = {"done": dict(obj_done), "failed": dict(obj_failed)}
     rec["forces"] = {"withdrawals": withdrawals, "first_killhq_s": first_killhq, "hq_gone_s": hq_gone,
