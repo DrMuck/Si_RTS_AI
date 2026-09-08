@@ -52,6 +52,17 @@ namespace Si_RTS_AI.Mil
         internal static Team Current => _current;
         internal static bool Enabled = true;
 
+        // Switches and limits set from config or the console apply to every team;
+        // they must not be reset to their compile-time value for a new team.
+        static readonly HashSet<string> KNOBS = new HashSet<string> { "Enabled", "Execute", "MaxScouts", "Enforce" };
+        static bool IsKnob(string name)
+        {
+            if (KNOBS.Contains(name)) return true;
+            // auto-property backing field: <Name>k__BackingField
+            if (name.Length > 2 && name[0] == '<') { int e = name.IndexOf('>'); if (e > 1 && KNOBS.Contains(name.Substring(1, e - 1))) return true; }
+            return false;
+        }
+
         static void Init()
         {
             if (_ready) return;
@@ -62,6 +73,7 @@ namespace Si_RTS_AI.Mil
                 {
                     if (f.IsLiteral) continue;                                   // const
                     if (f.GetCustomAttribute<ThreadStaticAttribute>() != null) continue;
+                    if (IsKnob(f.Name)) continue;                                // config, same for every team
                     list.Add(f);
                 }
             }
