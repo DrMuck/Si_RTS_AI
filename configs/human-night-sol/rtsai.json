@@ -261,7 +261,7 @@
       "nestByMin": 8
     }
   },
-  "endRoundAfterMinutes": 60,
+  "endRoundAfterMinutes": 45,
   "serverFpsCap": 0,
   "siteAnchorCheckS": 0.5,
   "perfTimers": true,
