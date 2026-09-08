@@ -50,6 +50,24 @@ namespace Si_RTS_AI.Mil
         static FieldInfo _heldField, _scoutField;
 
         internal static Team Current => _current;
+        /// <summary>"[Sol] " while more than one team is under the mod, else "" (log lines stay as they were).</summary>
+        internal static string Tag
+        {
+            get
+            {
+                if (_snap.Count <= 1 || _current == null) return "";
+                if (_tagFor != _current) { _tagFor = _current; _tag = "[" + Short(_current.name) + "] "; }
+                return _tag;
+            }
+        }
+        static Team _tagFor; static string _tag = "";
+        static string Short(string n)
+        {
+            n = n ?? "";
+            if (n.StartsWith("Team_")) n = n.Substring(5);
+            if (n.StartsWith("Human_")) n = n.Substring(6);
+            return n;
+        }
         internal static bool Enabled = true;
 
         // Switches and limits set from config or the console apply to every team;
