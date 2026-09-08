@@ -388,11 +388,15 @@ namespace Si_RTS_AI
                     }
                     long tThreat = perceiver ? TimedMs(() => { Perception.ThreatMap.Observe(team);
                                                                 Perception.ThreatMap.Tick(team); }) : 0;
-                    // OURS MEANS THE ALIEN'S. Rebuild used to run for every team in
-                    // turn under a 2s throttle, so whichever team ticked first
-                    // defined "our" ground — Sol, on this rig. Every ControlGain
-                    // reader was measuring the wrong side.
-                    long tControl = tn.Contains("Alien")
+                    // OURS MEANS THIS TEAM'S. Rebuild once ran for every team in turn
+                    // over ONE shared map, so whichever ticked first defined "our"
+                    // ground and every ControlGain reader measured the wrong side; the
+                    // fix then was to run it for the alien alone. That reintroduced the
+                    // same error from the other end as soon as a human team was also
+                    // under the mod: its Intel.ControlGain and Utilisation.MapHeld read
+                    // the alien's ground. ControlMap is swapped per team by MilContext
+                    // now, so every perceiver rebuilds its own.
+                    long tControl = perceiver
                         ? TimedMs(() => Perception.ControlMap.Rebuild(team)) : 0;
                     Planning.NodeManager.Tick(team);
                     tEcoRate     = TimedMs(() => Perception.EcoRateSampler.Tick(team));

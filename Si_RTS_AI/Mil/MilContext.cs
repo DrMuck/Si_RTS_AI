@@ -34,6 +34,11 @@ namespace Si_RTS_AI.Mil
             typeof(Perception.ThreatMap), typeof(Perception.QueenStatus), typeof(Perception.Utilisation),
             typeof(Perception.Reach), typeof(Perception.BcIncome),
             typeof(Planning.ScoutPlanner), typeof(Human.HarvesterManager),
+            // ControlMap holds _ours/_theirs/_heldCells for ONE team. It was rebuilt
+            // only for the alien ("OURS MEANS THE ALIEN'S"), so in a mod-vs-mod round
+            // the human team's Intel.ControlGain and Utilisation.MapHeld read the
+            // alien's ground. Per-team storage makes rebuilding it per team correct.
+            typeof(Perception.ControlMap),
         };
 
         static FieldInfo[] _fields;
