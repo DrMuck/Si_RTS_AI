@@ -95,15 +95,15 @@ namespace Si_RTS_AI.Mil
         // spires; thorn spires are very inaccurate and only help against a tank
         // push on a FOB, built in numbers in a tight spot." So Hive leads at every
         // site and Thorn leads only at the forward base.
-        static readonly string[] SPIRES     = { "Hive Spire", "Thorn Spire" };
-        static readonly string[] FOB_SPIRES = { "Thorn Spire", "Hive Spire" };
+        static string[] SPIRES     = { "Hive Spire", "Thorn Spire" };
+        static string[] FOB_SPIRES = { "Thorn Spire", "Hive Spire" };
         // Sol and Centauri: the cheap Turret first, the Heavy Turret at the forward base.
-        static readonly string[] HUMAN_DEFENCE     = { "Turret", "Heavy Turret", "Anti-Air Rocket Turret" };
-        static readonly string[] HUMAN_FOB_DEFENCE = { "Heavy Turret", "Turret", "Anti-Air Rocket Turret" };
+        static string[] HUMAN_DEFENCE     = { "Turret", "Heavy Turret", "Anti-Air Rocket Turret" };
+        static string[] HUMAN_FOB_DEFENCE = { "Heavy Turret", "Turret", "Anti-Air Rocket Turret" };
         static Team _team;
         static string[] ListFor(bool fob) =>
             Faction.Construction.IsHuman(_team) ? (fob ? HUMAN_FOB_DEFENCE : HUMAN_DEFENCE) : (fob ? FOB_SPIRES : SPIRES);
-        static readonly Dictionary<string, ConstructionData> _cds =
+        static Dictionary<string, ConstructionData> _cds =
             new Dictionary<string, ConstructionData>(StringComparer.OrdinalIgnoreCase);
 
         internal static void Configure()
@@ -236,7 +236,7 @@ namespace Si_RTS_AI.Mil
 
         struct Site { public bool Bare; public Vector3 Pos; public float Threat; public long Income; public string Why; }
 
-        static readonly List<(Vector3 pos, float eff, float etaS, string why)> _threatened =
+        static List<(Vector3 pos, float eff, float etaS, string why)> _threatened =
             new List<(Vector3, float, float, string)>();
 
         /// <summary>Ground with something arriving, soonest first - from the

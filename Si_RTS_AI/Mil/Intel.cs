@@ -137,15 +137,15 @@ namespace Si_RTS_AI.Mil
         }
 
         // ---- state ----------------------------------------------------------
-        static readonly List<Track> _tracks = new List<Track>(32);
-        static readonly Dictionary<string, KnownStructure> _known =
+        static List<Track> _tracks = new List<Track>(32);
+        static Dictionary<string, KnownStructure> _known =
             new Dictionary<string, KnownStructure>(128);
-        static readonly List<Base> _bases = new List<Base>(8);
-        static readonly Dictionary<string, (float at, int count)> _baseCountHist =
+        static List<Base> _bases = new List<Base>(8);
+        static Dictionary<string, (float at, int count)> _baseCountHist =
             new Dictionary<string, (float, int)>();
-        static readonly List<(Vector3 pos, string team)> _harvesters = new List<(Vector3, string)>();
+        static List<(Vector3 pos, string team)> _harvesters = new List<(Vector3, string)>();
         static float[] _corridor = new float[0];
-        static readonly float[] _sector = new float[8];
+        static float[] _sector = new float[8];
         static float _lastStampAt, _lastDecayAt, _lastReportAt;
         static int _nextTrackId;
         static Team _self;
@@ -222,8 +222,8 @@ namespace Si_RTS_AI.Mil
         // ---- units -> clusters -> tracks --------------------------------------
 
         struct Seen { public Unit U; public Vector3 P; public string Name; public int Cost; public bool Piloted; public float Speed; public float Reach; }
-        static readonly List<Seen> _seen = new List<Seen>(128);
-        static readonly List<List<int>> _clusters = new List<List<int>>(16);
+        static List<Seen> _seen = new List<Seen>(128);
+        static List<List<int>> _clusters = new List<List<int>>(16);
 
         static void ObserveUnits(Team enemy, LayerB vis, float now, float dt)
         {
@@ -589,8 +589,8 @@ namespace Si_RTS_AI.Mil
         }
 
         const float TEAM_PEAK_HALF_S = 300f;
-        static readonly List<string> _enemyAlive = new List<string>();
-        static readonly Dictionary<string, (float eff, float at)> _teamPeak = new Dictionary<string, (float, float)>();
+        static List<string> _enemyAlive = new List<string>();
+        static Dictionary<string, (float eff, float at)> _teamPeak = new Dictionary<string, (float, float)>();
 
         internal static Track NearestTrack(Vector3 p, float maxM)
         {

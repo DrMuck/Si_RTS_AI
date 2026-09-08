@@ -27,9 +27,9 @@ namespace Si_RTS_AI.Perception
         const float CACHE_S  = 30f;
         const float MASKS_S  = 10f;
 
-        static readonly Dictionary<long, (bool ok, float at)> _cache = new Dictionary<long, (bool, float)>();
-        static readonly List<GraphMask> _masks = new List<GraphMask>();
-        static readonly List<string> _maskNames = new List<string>();
+        static Dictionary<long, (bool ok, float at)> _cache = new Dictionary<long, (bool, float)>();
+        static List<GraphMask> _masks = new List<GraphMask>();
+        static List<string> _maskNames = new List<string>();
         static float _masksAt = -999f;
         static int _warned;
         internal static int Refusals;

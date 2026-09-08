@@ -49,21 +49,21 @@ namespace Si_RTS_AI.Mil
         const float FOB_RADIUS_M = 400f;
         const float SITE_REFRESH_S = 20f;
 
-        static readonly HashSet<string> WorkerNames =
+        static HashSet<string> WorkerNames =
             new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Shrimp", "Queen" };
 
-        static readonly HashSet<Structure> _claimed = new HashSet<Structure>();
+        static HashSet<Structure> _claimed = new HashSet<Structure>();
         internal static bool IsClaimed(Structure s) => s != null && _claimed.Count > 0 && _claimed.Contains(s);
 
         // producer types we can build, discovered from options
-        static readonly Dictionary<string, ConstructionData> _producerCds =
+        static Dictionary<string, ConstructionData> _producerCds =
             new Dictionary<string, ConstructionData>(StringComparer.OrdinalIgnoreCase);
-        static readonly Dictionary<string, int>   _want = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        static readonly Dictionary<string, float> _saturatedSince = new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
-        static readonly Dictionary<string, bool>  _typeBusy = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
-        static readonly Dictionary<string, float> _requestedAt = new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
-        static readonly Dictionary<string, string> _pickLogged = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        static readonly HashSet<string> _offerLogged = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        static Dictionary<string, int>   _want = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        static Dictionary<string, float> _saturatedSince = new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
+        static Dictionary<string, bool>  _typeBusy = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+        static Dictionary<string, float> _requestedAt = new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
+        static Dictionary<string, string> _pickLogged = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        static HashSet<string> _offerLogged = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         static float _lastTickAt, _lastLogAt, _lastPlaceAt, _lastSiteAt;
         static int _busy, _total;
@@ -73,7 +73,7 @@ namespace Si_RTS_AI.Mil
         internal static int BusyProducerCount => _busy;
 
         // demand by pool, in effective cash
-        static readonly float[] _demand = new float[4];   // Fast, Swarm, Line, Heavy
+        static float[] _demand = new float[4];   // Fast, Swarm, Line, Heavy
         static float _demandAny;
 
         internal static Vector3 ForwardBase { get; private set; }
@@ -531,7 +531,7 @@ namespace Si_RTS_AI.Mil
         /// balance dump's production tree via UnitStats: a Greater Cyst offers
         /// Behemoths. Falls back to the name containing "Spawning" when the dump
         /// is absent.</summary>
-        static readonly string[] HUMAN_PRODUCERS = { "Barracks", "Light Factory", "Heavy Factory", "Ultra Heavy Factory", "Air Factory" };
+        static string[] HUMAN_PRODUCERS = { "Barracks", "Light Factory", "Heavy Factory", "Ultra Heavy Factory", "Air Factory" };
         static bool ProducesCombat(ConstructionData cd)
         {
             string n = cd.ObjectInfo?.DisplayName ?? "";
@@ -637,7 +637,7 @@ namespace Si_RTS_AI.Mil
 
         // ---- producers: where -----------------------------------------------------
 
-        static readonly List<(Vector3 pos, float weight)> _fights = new List<(Vector3, float)>();
+        static List<(Vector3 pos, float weight)> _fights = new List<(Vector3, float)>();
 
         static void PlanSites(Team team)
         {

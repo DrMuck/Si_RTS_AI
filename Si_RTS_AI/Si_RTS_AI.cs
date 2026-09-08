@@ -8,7 +8,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 
-[assembly: MelonInfo(typeof(Si_RTS_AI.Si_RTS_AI), "Si_RTS_AI", "0.92.66", "DrMuck")]
+[assembly: MelonInfo(typeof(Si_RTS_AI.Si_RTS_AI), "Si_RTS_AI", "0.92.67", "DrMuck")]
 [assembly: MelonGame("Bohemia Interactive", "Silica")]
 
 namespace Si_RTS_AI
@@ -318,6 +318,9 @@ namespace Si_RTS_AI
                     if (team == null) continue;
 
                     string tn = team.name ?? "";
+                    // ONE STATE PER TEAM: the military layer's statics are swapped to
+                    // this team's before anything below reads or writes them.
+                    Mil.MilContext.Use(team);
                     long tLayer = 0, tBcMetrics = 0, tShrimpState = 0, tEcoRate = 0, tPlan = 0, tMil = 0;
                     if (tn.Contains("Alien"))
                     {
@@ -659,6 +662,7 @@ namespace Si_RTS_AI
             Perception.ServerPatches.ResetForNewRound();
             Mil.Objectives.ResetForNewRound();
             Mil.Forces.ResetForNewRound();
+            Mil.MilContext.ResetForNewRound();
             Mil.ProductionV3.ResetForNewRound();
             Perception.UnitValues.ResetForNewRound();
             Perception.ShrimpStateSampler.ResetForNewRound();

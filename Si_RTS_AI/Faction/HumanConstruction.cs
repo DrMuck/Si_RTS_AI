@@ -136,7 +136,9 @@ namespace Si_RTS_AI.Faction
             // planner was still running underneath us.
             if (SuppressHumanAI.Enabled) return false;
 
-            // We own this tick.
+            // We own this tick: install this team's military state first (the
+            // game's Think runs outside the mod's team loop).
+            Mil.MilContext.Use(team);
             _tickCounter++;
 
             EnsureOwnHqName(team);

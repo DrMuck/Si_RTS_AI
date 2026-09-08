@@ -49,7 +49,7 @@ namespace Si_RTS_AI.Perception
 
         /// <summary>How often enemy positions are re-stamped. See Observe.</summary>
         const float STAMP_S       = 0.25f;
-        static readonly Dictionary<string, float> _lastStampAt = new Dictionary<string, float>(4);
+        static Dictionary<string, float> _lastStampAt = new Dictionary<string, float>(4);
         const float REPORT_S      = 20f;
         const int   HVT_REPORTED  = 3;
 
@@ -111,8 +111,8 @@ namespace Si_RTS_AI.Perception
         // replay writer speaks. They answer different questions and are worth
         // seeing side by side: PRESSURE is where it is dangerous to stand, which
         // spreads with weapon range; VALUE is where their army actually is.
-        static readonly LayerI _pressureLayer = new LayerI();
-        static readonly LayerI _valueLayer = new LayerI();
+        static LayerI _pressureLayer = new LayerI();
+        static LayerI _valueLayer = new LayerI();
 
         /// <summary>Danger per cell — attack rating summed over weapon reach and
         /// decayed. Scaled to whole numbers for the layer format.</summary>
@@ -147,8 +147,8 @@ namespace Si_RTS_AI.Perception
         // Cash-weighted rather than counted, for the same reason the counter
         // table is priced in cash: twenty Militia are not a bigger problem than
         // one Dreadnought merely because there are twenty of them.
-        static readonly Dictionary<string, float> _mixNow = new Dictionary<string, float>();
-        static readonly Dictionary<string, float> _mix = new Dictionary<string, float>();
+        static Dictionary<string, float> _mixNow = new Dictionary<string, float>();
+        static Dictionary<string, float> _mix = new Dictionary<string, float>();
 
         /// <summary>Enemy cash on the map by class — Infantry, Light, Heavy,
         /// UltraHeavy, Air. Empty when we can see nothing, which callers must
@@ -170,7 +170,7 @@ namespace Si_RTS_AI.Perception
         }
 
         struct Hvt { public string Name; public Vector3 Pos; public int Cost; public string Team; }
-        static readonly List<Hvt> _hvt = new List<Hvt>(32);
+        static List<Hvt> _hvt = new List<Hvt>(32);
 
         /// <summary>Total threat currently on the map, as one number. The enemy
         /// army estimate the push trigger compares against — poor, and the only
@@ -199,7 +199,7 @@ namespace Si_RTS_AI.Perception
             public float   LastSeenAt;
         }
 
-        static readonly Dictionary<string, Known> _known = new Dictionary<string, Known>(64);
+        static Dictionary<string, Known> _known = new Dictionary<string, Known>(64);
 
         internal static int KnownCount => _known.Count;
 
@@ -243,7 +243,7 @@ namespace Si_RTS_AI.Perception
             public readonly List<Known> Members = new List<Known>();
         }
 
-        static readonly List<Base> _bases = new List<Base>(8);
+        static List<Base> _bases = new List<Base>(8);
         static float _lastClusterAt;
 
         /// <summary>Enemy bases as we currently believe them. Rebuilt on a slow
@@ -343,7 +343,7 @@ namespace Si_RTS_AI.Perception
         /// the fog test is not the suspect.
         /// </summary>
         static float _lastDiscoveryLogAt;
-        static readonly string NL = System.Environment.NewLine;
+        static string NL = System.Environment.NewLine;
 
         internal static void ReportDiscoveries(Vector3 homePos)
         {

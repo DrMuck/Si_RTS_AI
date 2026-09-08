@@ -29,8 +29,8 @@ namespace Si_RTS_AI.Human
         const int   LOG_CAP      = 60;
 
         sealed class Slot { public ResourceArea Area; public Unit Harvester; public float Since; public float LastOrderAt; }
-        static readonly Dictionary<int, Slot> _bySpot = new Dictionary<int, Slot>();       // area instance id -> slot
-        static readonly Dictionary<int, int>  _byHarvester = new Dictionary<int, int>();   // harvester instance id -> area id
+        static Dictionary<int, Slot> _bySpot = new Dictionary<int, Slot>();       // area instance id -> slot
+        static Dictionary<int, int>  _byHarvester = new Dictionary<int, int>();   // harvester instance id -> area id
         static float _lastTickAt, _lastSummaryAt;
         static int _assignments, _moves, _logged;
         internal static int Assignments => _assignments;

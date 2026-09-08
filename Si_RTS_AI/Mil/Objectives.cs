@@ -95,9 +95,9 @@ namespace Si_RTS_AI.Mil
             public float LastProgressAt;
         }
 
-        internal static readonly List<Objective> Portfolio = new List<Objective>(16);
-        static readonly Dictionary<string, Objective> _byKey = new Dictionary<string, Objective>();
-        static readonly Dictionary<string, float> _holdUntil = new Dictionary<string, float>();
+        internal static List<Objective> Portfolio = new List<Objective>(16);
+        static Dictionary<string, Objective> _byKey = new Dictionary<string, Objective>();
+        static Dictionary<string, float> _holdUntil = new Dictionary<string, float>();
 
         /// <summary>
         /// WHAT A BASE ACTUALLY ANSWERED WITH. The kernel prices a base against
@@ -107,7 +107,7 @@ namespace Si_RTS_AI.Mil
         /// target is remembered for that base and every later price starts from
         /// it. Half-life ten minutes: a base can be reinforced or stripped.
         /// </summary>
-        static readonly Dictionary<int, (float eff, float at)> _baseAnswer = new Dictionary<int, (float, float)>();
+        static Dictionary<int, (float eff, float at)> _baseAnswer = new Dictionary<int, (float, float)>();
         const float ANSWER_HALF_LIFE_S = 600f;
 
         static float AnsweredWith(Intel.Base b)
@@ -115,8 +115,8 @@ namespace Si_RTS_AI.Mil
             if (b == null || !_baseAnswer.TryGetValue(b.Id, out var a)) return 0f;
             return a.eff * Mathf.Pow(0.5f, (Time.time - a.at) / ANSWER_HALF_LIFE_S);
         }
-        static readonly List<Intel.Arrival> _arr = new List<Intel.Arrival>(8);
-        static readonly List<Intel.Base> _stale = new List<Intel.Base>(4);
+        static List<Intel.Arrival> _arr = new List<Intel.Arrival>(8);
+        static List<Intel.Base> _stale = new List<Intel.Base>(4);
 
         const float REFRESH_S     = 15f;
         const float CHECK_S       = 2f;
@@ -417,7 +417,7 @@ namespace Si_RTS_AI.Mil
         }
 
         const float FORECAST_CONFIRM_S = 20f;
-        static readonly Dictionary<string, float> _forecastSince = new Dictionary<string, float>();
+        static Dictionary<string, float> _forecastSince = new Dictionary<string, float>();
 
         static float SumArrivals(List<Intel.Arrival> arr, out float firstEta)
         {

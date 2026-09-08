@@ -62,7 +62,9 @@ namespace Si_RTS_AI.Mil
             string f = n.IndexOf("Sol", StringComparison.OrdinalIgnoreCase) >= 0 ? "Sol"
                      : n.IndexOf("Cent", StringComparison.OrdinalIgnoreCase) >= 0 ? "Centauri" : "Alien";
             if (f == _faction) return;
-            _faction = f; _ours.Clear(); _oursTotal = 0; _oursSupport = 0;
+            // Counts are not wiped on a faction switch: the military context swaps
+            // this class's fields per team, so each team keeps its own tally.
+            _faction = f;
             _targetShare = _targetByFaction.TryGetValue(f, out var t) ? t : new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
         }
 

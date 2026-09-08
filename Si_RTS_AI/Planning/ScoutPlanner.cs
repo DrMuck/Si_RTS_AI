@@ -60,11 +60,11 @@ namespace Si_RTS_AI.Planning
         // Units we are willing to conscript — the tier-0 chassis the round
         // starts with. Both are cheap and fast, and neither is worth much in a
         // fight this early.
-        static readonly HashSet<string> ALIEN_SCOUTS =
+        static HashSet<string> ALIEN_SCOUTS =
             new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Crab", "Squid" };
         // Sol and Centauri: the Scout is the chassis the round starts with and the
         // Barracks makes it; the Light Quad is the fast one.
-        static readonly HashSet<string> HUMAN_SCOUTS =
+        static HashSet<string> HUMAN_SCOUTS =
             new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Scout", "Light Quad" };
         static HashSet<string> SCOUT_UNIT_NAMES = ALIEN_SCOUTS;
 
@@ -94,7 +94,7 @@ namespace Si_RTS_AI.Planning
         // rings clipped to nothing on one side while the far side of the map,
         // 5000m+ away, sat outside the largest ring entirely. As fractions the
         // outermost waypoint IS the border, in every direction, on every map.
-        static readonly float[] RING_FRACTIONS = { 0.3f, 0.55f, 0.78f, 0.95f };
+        static float[] RING_FRACTIONS = { 0.3f, 0.55f, 0.78f, 0.95f };
         // Don't bother walking a ray that barely leaves the base.
         const float MIN_RAY_M = 300f;
         // If an undiscovered biotics patch sits near the geometric waypoint,
@@ -171,7 +171,7 @@ namespace Si_RTS_AI.Planning
         /// because the scout revealed it on the way in.
         /// </summary>
         struct Grave { public Vector3 Pos; public float At; public int Arm; }
-        static readonly List<Grave> _graves = new List<Grave>(8);
+        static List<Grave> _graves = new List<Grave>(8);
 
         /// <summary>
         /// WHERE OUR SCOUTS KEEP DYING IS WHERE THEY LIVE.
@@ -237,13 +237,13 @@ namespace Si_RTS_AI.Planning
             return n;
         }
 
-        static readonly List<Scout> _scouts = new List<Scout>();
-        static readonly HashSet<Unit> _scoutSet = new HashSet<Unit>();
+        static List<Scout> _scouts = new List<Scout>();
+        static HashSet<Unit> _scoutSet = new HashSet<Unit>();
         // Units we handed back to vanilla. Without this the roster churned:
         // release -> Recruit picks the same unit up 2s later -> its arm has
         // nothing left -> release again, forever. The v0.7.63 round logged
         // 4773 [SCOUT] lines, almost all of them that loop.
-        static readonly HashSet<Unit> _released = new HashSet<Unit>();
+        static HashSet<Unit> _released = new HashSet<Unit>();
         static float _lastTickAt, _lastDiagAt;
 
         internal static int WaypointsReached;
@@ -253,7 +253,7 @@ namespace Si_RTS_AI.Planning
         internal static bool IsScout(Unit u)
         {
             if (u == null) return false;
-            try { return _scoutSet.Contains(u); } catch { return false; }
+            try { return Mil.MilContext.AnyScout(u); } catch { return false; }
         }
 
         // Set while WE issue a scout move, so our own OnMoveOrder prefix lets it
@@ -915,7 +915,7 @@ namespace Si_RTS_AI.Planning
         [HarmonyPatch(typeof(AIGroup), nameof(AIGroup.OnAttackOrder))]
         static class Patch_AIGroup_OnAttackOrder_Scout
         {
-            static readonly List<Unit> _scratch = new List<Unit>(4);
+            static List<Unit> _scratch = new List<Unit>(4);
 
             static void Prefix(AIGroup __instance)
             {

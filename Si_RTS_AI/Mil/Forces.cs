@@ -65,7 +65,7 @@ namespace Si_RTS_AI.Mil
             public string Name => Obj == null ? "reserve" : $"{Obj.Kind}#{Obj.Id}/{Id}";
         }
 
-        internal static readonly List<Force> Active = new List<Force>(8);
+        internal static List<Force> Active = new List<Force>(8);
         static Force _reserve;
         static float _lastTickAt, _lastLogAt;
         static int _nextId;
@@ -168,7 +168,7 @@ namespace Si_RTS_AI.Mil
 
         // ---- rosters ----------------------------------------------------------
 
-        static readonly HashSet<Unit> _held = new HashSet<Unit>();
+        static HashSet<Unit> _held = new HashSet<Unit>();
 
         static List<Unit> FreeCombatUnits(Team team)
         {
@@ -479,8 +479,8 @@ namespace Si_RTS_AI.Mil
 
         static Vector3 _reservePoint;
         static float _lastReserveMoveAt, _reserveFallBackUntil;
-        static readonly List<(Vector3 pos, float weight)> _assets = new List<(Vector3, float)>();
-        static readonly List<Vector3> _candidates = new List<Vector3>();
+        static List<(Vector3 pos, float weight)> _assets = new List<(Vector3, float)>();
+        static List<Vector3> _candidates = new List<Vector3>();
 
         static void Reserve(List<Unit> free, float now)
         {
@@ -849,7 +849,7 @@ namespace Si_RTS_AI.Mil
         // ---- orders ----------------------------------------------------------------
 
         [ThreadStatic] internal static bool PlannerOverride;
-        static readonly List<BaseGameObject> _scratch = new List<BaseGameObject>(64);
+        static List<BaseGameObject> _scratch = new List<BaseGameObject>(64);
 
         static void Execute(float now)
         {
@@ -1183,7 +1183,7 @@ namespace Si_RTS_AI.Mil
         {
             if (u == null || !MilConfig.Enabled || !MilConfig.Execute) return false;
             try { if (ScoutPlanner.IsScout(u)) return false; } catch { }
-            return _held.Contains(u);
+            return MilContext.AnyHeld(u);
         }
 
         /// <summary>

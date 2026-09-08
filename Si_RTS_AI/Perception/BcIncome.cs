@@ -54,7 +54,7 @@ namespace Si_RTS_AI.Perception
 
         // Bio Caches do not move, so position rounded to the metre is a stable
         // identity across samples and across the game's own list reordering.
-        static readonly Dictionary<long, Entry> _bcs = new Dictionary<long, Entry>();
+        static Dictionary<long, Entry> _bcs = new Dictionary<long, Entry>();
         static long _attributed;
         static float _lastCheckAt;
         static bool _probed;
