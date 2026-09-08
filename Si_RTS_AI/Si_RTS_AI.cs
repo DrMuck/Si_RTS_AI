@@ -8,7 +8,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 
-[assembly: MelonInfo(typeof(Si_RTS_AI.Si_RTS_AI), "Si_RTS_AI", "0.92.67", "DrMuck")]
+[assembly: MelonInfo(typeof(Si_RTS_AI.Si_RTS_AI), "Si_RTS_AI", "0.92.68", "DrMuck")]
 [assembly: MelonGame("Bohemia Interactive", "Silica")]
 
 namespace Si_RTS_AI
@@ -335,6 +335,7 @@ namespace Si_RTS_AI
                         tBcMetrics = TimedMs(() => Perception.BcMetrics.TickHuman(team));
                     }
                     tShrimpState = TimedMs(() => Perception.ShrimpStateSampler.Tick(team));
+                    try { Perception.CommanderLog.SampleCash(team); } catch { }
                     // OUTSIDE the FactionControl / military.enabled gate, and
                     // deliberately: the doctrine comparison is most needed on
                     // exactly the rounds where the military layer is off, which
@@ -349,8 +350,11 @@ namespace Si_RTS_AI
                     // team on, that human team perceives.
                     bool alienOn = Faction.FactionControl.AlienEnabled;
                     bool humanOn = Faction.FactionControl.SolEnabled || Faction.FactionControl.CentauriEnabled;
+                    // Since v0.92.67 the military state is per team (MilContext), so
+                    // every enabled team perceives for itself; the alien also
+                    // perceives when nobody is enabled (shadow/eco soaks).
                     bool perceiver = tn.Contains("Alien") ? (alienOn || !humanOn)
-                                                          : (!alienOn && Faction.Construction.IsHuman(team) && Faction.FactionControl.IsEnabled(team));
+                                                          : (Faction.Construction.IsHuman(team) && Faction.FactionControl.IsEnabled(team));
                     if (perceiver)
                     {
                         if (tn.Contains("Alien")) try { Mil.Shadow.Tick(team); }

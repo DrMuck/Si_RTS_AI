@@ -60,11 +60,18 @@ namespace Si_RTS_AI.Faction
                 int queueDepth = 0;
                 try { queueDepth = s.ProductionQueue?.Count ?? 0; } catch { }
                 if (queueDepth >= 1) { Skipped++; continue; }
+                // ONLY THE NEXT TIER. Trying every tier each pass fired Mark I..VIII
+                // every 15 s (about 120 UnmetPrerequisite lines per tier per round,
+                // 2026-09-08): tiers at or below the team's tier are done, tiers
+                // above the next one are refused by the game.
+                int have = 0; try { have = team.TechnologyTier; } catch { }
                 for (int k = 0; k < tiers.Count; k++)
                 {
                     var cd = tiers[k];
                     if (!opts.Contains(cd)) continue;
                     int tier = -1; try { tier = cd.TechnologyTier; } catch { }
+                    if (tier <= have) continue;
+                    if (tier > have + 1) break;
                     if (tier > TECH_TARGET_TIER) break;
                     int cost = 0; try { cost = cd.ResourceCost; } catch { }
                     if (cost > 0 && team.TotalResources < cost) break;

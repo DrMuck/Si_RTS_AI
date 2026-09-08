@@ -25,7 +25,7 @@ namespace Si_RTS_AI.Perception
         const float TAG_TTL_S = 5f;
         internal static int Lines;
 
-        internal static void ResetForNewRound() { _tags.Clear(); Lines = 0; }
+        internal static void ResetForNewRound() { _tags.Clear(); _cashAt.Clear(); Lines = 0; }
 
         static float RoundSeconds()
         {
@@ -54,6 +54,26 @@ namespace Si_RTS_AI.Perception
             catch { }
             _tags[key] = new Tag { Text = text, At = now };
             return text;
+        }
+
+        // CASH OVER TIME, EVERY TEAM. "[CASH] t=.. team=.. by=player|ai cash=.. units=.. structures=.."
+        // every CASH_EVERY_S, so a player's round can be compared to the AI's on
+        // the same axis (income use, sitting on cash) without the eco planner.
+        const float CASH_EVERY_S = 30f;
+        static readonly Dictionary<int, float> _cashAt = new Dictionary<int, float>();
+        internal static void SampleCash(Team team)
+        {
+            if (team == null) return;
+            float now = UnityEngine.Time.time;
+            int id = team.GetInstanceID();
+            if (_cashAt.TryGetValue(id, out float at) && now - at < CASH_EVERY_S) return;
+            _cashAt[id] = now;
+            bool playerCmd = false; try { playerCmd = team.GetHasPlayerCommander(); } catch { }
+            string who = playerCmd ? CommanderTag(team) : "";
+            int units = 0, structures = 0;
+            try { units = team.Units?.Count ?? 0; } catch { }
+            try { structures = team.Structures?.Count ?? 0; } catch { }
+            Si_RTS_AI.AppendToRound($"[CASH] t={RoundSeconds():F0} team={team.name} by={(playerCmd ? "player" : "ai")}{(who.Length > 0 ? " " + who : "")} cash={team.TotalResources} units={units} structures={structures}");
         }
 
         [HarmonyPatch(typeof(Structure), nameof(Structure.Construct),
