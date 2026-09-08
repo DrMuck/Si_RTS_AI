@@ -22,9 +22,15 @@ PARK="$SERVER/Mods/~disabled"
 
 say() { echo "[$(date +%F' '%T)] $*" | tee -a "$LOG"; }
 
+# ONLY THE DEDICATED SERVER. The server and the game client are both Silica.exe,
+# so a bare "taskkill //IM Silica.exe" closes DrMuck's client mid-game.
+SERVER_EXE='E:\Steam\steamapps\common\Silica Dedicated Server\Silica.exe'
+server_pids() {
+  powershell -NoProfile -Command "(Get-Process -Name Silica -ErrorAction SilentlyContinue | Where-Object { \$_.Path -eq '$SERVER_EXE' }).Id" 2>/dev/null | tr -d '\r' | grep -E '^[0-9]+$'
+}
 stop_server() {
-  taskkill //IM Silica.exe //F >/dev/null 2>&1
-  for i in $(seq 1 20); do tasklist //FI "IMAGENAME eq Silica.exe" | grep -q Silica.exe || break; sleep 2; done
+  for pid in $(server_pids); do taskkill //PID "$pid" //F >/dev/null 2>&1; done
+  for i in $(seq 1 20); do [ -z "$(server_pids)" ] && break; sleep 2; done
   sleep 4
 }
 
