@@ -83,7 +83,7 @@ namespace Si_RTS_AI.Mil
         internal static void ResetForNewRound()
         {
             _claimed.Clear(); _producerCds.Clear(); _want.Clear(); _saturatedSince.Clear();
-            _discoveryLoggedAt.Clear();
+            _discoveryLoggedAt.Clear(); _discoveryHealthy.Clear();
             _typeBusy.Clear(); _requestedAt.Clear(); _pickLogged.Clear(); _offerLogged.Clear();
             CompositionTarget.ResetForNewRound();
             _lastTickAt = _lastLogAt = _lastPlaceAt = _lastSiteAt = 0f;
@@ -516,6 +516,7 @@ namespace Si_RTS_AI.Mil
         }
 
         static readonly Dictionary<int, float> _discoveryLoggedAt = new Dictionary<int, float>();
+        static readonly HashSet<int> _discoveryHealthy = new HashSet<int>();
 
         static void DiscoverProducerCds(Team team)
         {
@@ -542,8 +543,14 @@ namespace Si_RTS_AI.Mil
                 int did = team.GetInstanceID();
                 float dnow = Time.time;
                 _discoveryLoggedAt.TryGetValue(did, out float dlast);
-                if (dlast <= 0f || dnow - dlast >= 60f)
+                // Quiet once the team knows its producers; keeps repeating only while
+                // something is wrong, which is when this line is worth reading. A
+                // faction that discovers nothing is the shape of the MilContext
+                // array-blanking bug (see the Array.Copy note in MilContext.Fresh).
+                bool healthy = _producerCds.Count > 0;
+                if (dlast <= 0f || (!healthy && dnow - dlast >= 60f) || (healthy && dlast > 0f && !_discoveryHealthy.Contains(did)))
                 {
+                    if (healthy) _discoveryHealthy.Add(did);
                     _discoveryLoggedAt[did] = dnow;
                     int structOpts = 0;
                     try
