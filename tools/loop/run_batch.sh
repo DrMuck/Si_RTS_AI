@@ -14,9 +14,18 @@ SRC="$ROOT/configs/$CFG"
 DLL=$(ls -t "$ROOT/Si_RTS_AI/bin/Release"/Si_RTS_AI.dll | head -1)
 [ -d "$SRC" ] || { echo "no config $SRC"; exit 1; }
 say() { echo "[$(date +%F' '%T)] $*"; }
+# ONLY THE DEDICATED SERVER. The server and the game client are both Silica.exe,
+# so "taskkill //IM Silica.exe" closed DrMuck's client in the middle of his game
+# (2026-09-08). Match on the executable path instead, and wait on that pid alone -
+# the old wait loop also watched every Silica.exe, so a running client made it sit
+# out its full forty seconds on every batch.
+SERVER_EXE='E:\Steam\steamapps\common\Silica Dedicated Server\Silica.exe'
+server_pids() {
+  powershell -NoProfile -Command "(Get-Process -Name Silica -ErrorAction SilentlyContinue | Where-Object { \$_.Path -eq '$SERVER_EXE' }).Id" 2>/dev/null | tr -d '\r' | grep -E '^[0-9]+$'
+}
 stop_server() {
-  taskkill //IM Silica.exe //F >/dev/null 2>&1
-  for i in $(seq 1 20); do tasklist //FI "IMAGENAME eq Silica.exe" | grep -q Silica.exe || break; sleep 2; done
+  for pid in $(server_pids); do taskkill //PID "$pid" //F >/dev/null 2>&1; done
+  for i in $(seq 1 20); do [ -z "$(server_pids)" ] && break; sleep 2; done
   sleep 4
 }
 completed() { grep -l "END ROUND SUMMARY" "$RTSA"/round-*.log 2>/dev/null | grep -vE "Loading|Intro|MainMenu" | wc -l; }
