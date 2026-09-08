@@ -77,10 +77,27 @@ namespace Si_RTS_AI.Faction
             catch (Exception ex) { MelonLogger.Warning("[CASH/GUARD] threw: " + ex.Message); }
         }
 
-        [HarmonyPatch(typeof(MP_Strategy), "SpawnBaseStructures")]
-        static class Patch_SpawnBaseStructures
+        // Beta 0.9.47 (Steam build 25179400, 2026-09-08 14:58) grants the starting
+        // cash in SpawnStructuresAndStartingResources; 0.9.46 had only
+        // SpawnBaseStructures. Patch whichever exists, by name, so a missing
+        // method is a log line and not a patch failure.
+        static void PostfixSpawn() => Apply("after base spawn");
+        internal static void Install(HarmonyLib.Harmony harmony)
         {
-            static void Postfix() => Apply("after base spawn");
+            int n = 0;
+            foreach (var name in new[] { "SpawnStructuresAndStartingResources", "SpawnBaseStructures" })
+            {
+                try
+                {
+                    var m = AccessTools.Method(typeof(MP_Strategy), name);
+                    if (m == null) { MelonLogger.Msg($"[CASH/GUARD] MP_Strategy.{name} not present on this build"); continue; }
+                    harmony.Patch(m, postfix: new HarmonyMethod(typeof(StartingResourcesGuard), nameof(PostfixSpawn)));
+                    n++;
+                    MelonLogger.Msg($"[CASH/GUARD] postfix on MP_Strategy.{name}");
+                }
+                catch (Exception ex) { MelonLogger.Warning($"[CASH/GUARD] patching {name} threw: {ex.Message}"); }
+            }
+            if (n == 0) MelonLogger.Warning("[CASH/GUARD] no spawn method found — starting cash not guarded");
         }
     }
 }
