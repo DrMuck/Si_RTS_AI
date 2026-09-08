@@ -83,6 +83,7 @@ namespace Si_RTS_AI.Mil
         internal static void ResetForNewRound()
         {
             _claimed.Clear(); _producerCds.Clear(); _want.Clear(); _saturatedSince.Clear();
+            _discoveryLoggedAt.Clear();
             _typeBusy.Clear(); _requestedAt.Clear(); _pickLogged.Clear(); _offerLogged.Clear();
             CompositionTarget.ResetForNewRound();
             _lastTickAt = _lastLogAt = _lastPlaceAt = _lastSiteAt = 0f;
@@ -514,6 +515,8 @@ namespace Si_RTS_AI.Mil
             MilLog.Msg($"[MIL/PROD] producer type available: {n} (cost {opt.ResourceCost})");
         }
 
+        static readonly Dictionary<int, float> _discoveryLoggedAt = new Dictionary<int, float>();
+
         static void DiscoverProducerCds(Team team)
         {
             try
@@ -531,6 +534,40 @@ namespace Si_RTS_AI.Mil
                 if (buildable != null)
                     for (int i = 0; i < buildable.Count; i++)
                         ConsiderProducer(buildable[i]);
+
+                // WHY A TEAM FINDS NOTHING. Sol discovered all five producer types
+                // and Centauri, with the same buildings, discovered none at all
+                // (NarakaCity 2026-09-08 23:37) - so say what each team was
+                // actually offered, once, rather than inferring it from silence.
+                int did = team.GetInstanceID();
+                float dnow = Time.time;
+                _discoveryLoggedAt.TryGetValue(did, out float dlast);
+                if (dlast <= 0f || dnow - dlast >= 60f)
+                {
+                    _discoveryLoggedAt[did] = dnow;
+                    int structOpts = 0;
+                    try
+                    {
+                        var st = team.Structures;
+                        if (st != null) for (int i = 0; i < st.Count; i++) structOpts += st[i]?.ConstructionOptions?.Count ?? 0;
+                    }
+                    catch { }
+                    MilLog.Msg($"[MIL/PROD] discovery for {team.name}: buildable={(buildable == null ? "null" : buildable.Count.ToString())} " +
+                               $"structureOptions={structOpts} known={_producerCds.Count} ctx={Mil.MilContext.Current?.name ?? "none"}");
+                    // Centauri saw the same thirteen options as Sol and took none of
+                    // them (NarakaCity 2026-09-09 00:12). Say what each one was and
+                    // which test threw it out.
+                    if (_producerCds.Count == 0 && buildable != null)
+                        for (int i = 0; i < buildable.Count; i++)
+                        {
+                            var o = buildable[i];
+                            string nm = "?"; bool st = false;
+                            try { nm = o?.ObjectInfo?.DisplayName ?? "<null ObjectInfo>"; } catch { }
+                            try { st = o != null && o.IsStructure; } catch { }
+                            bool pc = false; try { pc = o != null && ProducesCombat(o); } catch { }
+                            MilLog.Msg($"[MIL/PROD]   option {i}: '{nm}' isStructure={st} producesCombat={pc}");
+                        }
+                }
 
                 var structs = team.Structures;
                 if (structs == null) return;

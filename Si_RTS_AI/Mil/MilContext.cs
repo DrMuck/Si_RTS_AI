@@ -207,7 +207,25 @@ namespace Si_RTS_AI.Mil
                 try
                 {
                     var ft = f.FieldType;
-                    if (p is Array arr) v = Array.CreateInstance(ft.GetElementType(), arr.Length);
+                    // AN ARRAY IS COPIED, NOT BLANKED. This allocated an empty array
+                    // of the right length, which is right for a scratch buffer and
+                    // silently wrong for a static table. ProductionV3.HUMAN_PRODUCERS
+                    // holds { "Barracks", "Light Factory", "Heavy Factory",
+                    // "Ultra Heavy Factory", "Air Factory" }: the first team to take
+                    // the stage kept the real names and every team after it got five
+                    // nulls, so ProducesCombat answered false for its own factories.
+                    // NarakaCity 2026-09-09 00:17 caught it exactly - Sol discovered
+                    // all five producer types and Centauri, offered the identical
+                    // thirteen options, discovered none:
+                    //   [Centauri] option 3: 'Barracks' isStructure=True producesCombat=False
+                    // _pristine is captured after the round reset, so a computed
+                    // buffer is zeroed there anyway and copying it is right for both.
+                    if (p is Array arr)
+                    {
+                        var copy = Array.CreateInstance(ft.GetElementType(), arr.Length);
+                        Array.Copy(arr, copy, arr.Length);
+                        v = copy;
+                    }
                     else if (p is IDictionary dict) v = NewCollection(p.GetType(), dict);
                     else if (p is IEnumerable && !(p is string)) v = NewCollection(p.GetType(), p);
                     else if (p != null && !ft.IsValueType && !(p is string) && !(p is Delegate) && !(p is Team) && !(p is UnityEngine.Object))
