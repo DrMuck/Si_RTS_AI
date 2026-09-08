@@ -75,6 +75,35 @@ namespace Si_RTS_AI.Faction
         static readonly Dictionary<Team, string> _ownHqNameByTeam = new Dictionary<Team, string>();
 
         static readonly Dictionary<Vector3, int> _pendingRef      = new Dictionary<Vector3, int>();
+
+        // A PATCH THE SEARCH CANNOT SERVE IS DROPPED, NOT RETRIED FOREVER.
+        // Naraka 2026-09-08 16:30: 337 of 343 refinery attempts were one patch,
+        // (1365,-663). The search landed 320-412 m away every time, the quality
+        // gate (260 m) rejected it, the reject cleared _pendingRef, and the next
+        // tick fired at the identical patch again — for 29 minutes, while the
+        // economy sat at six refineries. The gate is right: REFINERY_SERVE_RADIUS
+        // is 300 m, so a refinery 320 m out would not serve that field anyway.
+        // The bug is retrying a question already answered. After
+        // REFINERY_MAX_REJECTS answers the patch is left alone for the round and
+        // recorded as unserved — it wants a Headquarters nearer to it, which is a
+        // question for HQ siting, not for another placement search.
+        const int REFINERY_MAX_REJECTS = 3;
+        static readonly Dictionary<Vector3, int> _refRejectsByPatch = new Dictionary<Vector3, int>();
+        static readonly HashSet<Vector3> _refUnservedPatches = new HashSet<Vector3>();
+
+        /// <summary>Counts a rejected placement for a patch; drops the patch once it has answered the same way too often.</summary>
+        static void NoteRefineryReject(Team team, Vector3 patch, string reason)
+        {
+            RefFailures++;
+            _pendingRef.Remove(patch);
+            _refRejectsByPatch.TryGetValue(patch, out int n);
+            n++;
+            _refRejectsByPatch[patch] = n;
+            if (n == REFINERY_MAX_REJECTS && _refUnservedPatches.Add(patch))
+                Si_RTS_AI.AppendToRound(
+                    $"[H1] team={team?.name} unserved=Refinery patchAt=({patch.x:F0},{patch.z:F0}) " +
+                    $"after={n} rejects lastReason={reason} - needs a Headquarters nearer than the search can reach");
+        }
         static readonly Dictionary<Vector3, int> _pendingHq       = new Dictionary<Vector3, int>();
         // Fire-count-per-argmax-cell for HQ, so we back off after N failures at the
         // same target cell (see v0.7.41 backoff in FireHqExpansion).
@@ -531,6 +560,7 @@ namespace Si_RTS_AI.Faction
                 if (HasStructureTypeNear(team, "Refinery", balteriumPos, REFINERY_SERVE_RADIUS)) continue;
                 if (LandedRefineryNear(balteriumPos, REFINERY_SERVE_RADIUS)) continue;
                 if (_pendingRef.ContainsKey(balteriumPos)) continue;
+                if (_refUnservedPatches.Contains(balteriumPos)) continue;   // answered already, this round
 
                 // ONLY SPOTS INSIDE THE REFINERY'S OWN REACH OF A HEADQUARTERS.
                 // The HQ mask is the HQ-to-HQ range, so refineries chained out
@@ -602,8 +632,7 @@ namespace Si_RTS_AI.Faction
                             float dxq = gotPos.x - firedFor.x, dzq = gotPos.z - firedFor.z;
                             if (dxq * dxq + dzq * dzq > REFINERY_PLACEMENT_QUALITY_RADIUS * REFINERY_PLACEMENT_QUALITY_RADIUS)
                             {
-                                RefFailures++;
-                                _pendingRef.Remove(firedFor);
+                                NoteRefineryReject(team, firedFor, "too-far");
                                 Si_RTS_AI.AppendToRound(
                                     $"[H1] team={team.name} reject=Refinery-too-far patchAt=({firedFor.x:F0},{firedFor.z:F0}) " +
                                     $"landedAt=({gotPos.x:F0},{gotPos.z:F0}) dist={Mathf.Sqrt(dxq*dxq+dzq*dzq):F0}m");
@@ -616,8 +645,7 @@ namespace Si_RTS_AI.Faction
                             if (HasStructureTypeNear(team, "Refinery", gotPos, REFINERY_MIN_DIST_BETWEEN)
                                 || LandedRefineryNear(gotPos, REFINERY_MIN_DIST_BETWEEN))
                             {
-                                RefFailures++;
-                                _pendingRef.Remove(firedFor);
+                                NoteRefineryReject(team, firedFor, "too-close-to-other");
                                 Si_RTS_AI.AppendToRound(
                                     $"[H1] team={team.name} reject=Refinery-too-close-to-other patchAt=({firedFor.x:F0},{firedFor.z:F0}) " +
                                     $"landedAt=({gotPos.x:F0},{gotPos.z:F0})");
@@ -638,8 +666,7 @@ namespace Si_RTS_AI.Faction
                                 try { rampOpen = Perception.Reach.CanReach(Pathfinding.GraphMask.everything, rampPoint, firedFor); } catch { }
                                 if (!rampOpen)
                                 {
-                                    RefFailures++;
-                                    _pendingRef.Remove(firedFor);
+                                    NoteRefineryReject(team, firedFor, "ramp-cut-off");
                                     Si_RTS_AI.AppendToRound(
                                         $"[H1] team={team.name} reject=Refinery-ramp-cut-off patchAt=({firedFor.x:F0},{firedFor.z:F0}) " +
                                         $"landedAt=({gotPos.x:F0},{gotPos.z:F0}) yaw={yawB:F0}");
@@ -697,7 +724,7 @@ namespace Si_RTS_AI.Faction
                                 $"[H1] team={team.name} constructed=Refinery atBalterium=({firedFor.x:F0},{firedFor.z:F0}) " +
                                 $"landedAt=({winningPos.x:F0},{winningPos.z:F0}) yaw={winningYaw:F0} result={res}");
                         },
-                        (cData, ct, cs) => { RefFailures++; _pendingRef.Remove(firedFor); },
+                        (cData, ct, cs) => { NoteRefineryReject(team, firedFor, "search-failed"); },
                         false, true, wantRot);
                 }
                 catch (Exception ex) { MelonLogger.Warning("[RTSA/Human] refinery placement threw: " + ex.Message); }
@@ -1096,6 +1123,8 @@ namespace Si_RTS_AI.Faction
             _ownHqNameByTeam.Clear();
             SiloAttempts = SiloSuccesses = SiloFailures = 0;
             RefAttempts = RefSuccesses = RefFailures = 0;
+            _refRejectsByPatch.Clear();
+            _refUnservedPatches.Clear();
             HqAttempts = HqSuccesses = HqFailures = 0;
             BarracksAttempts = BarracksSuccesses = BarracksFailures = 0;
             _landedRef.Clear();
@@ -1107,6 +1136,9 @@ namespace Si_RTS_AI.Faction
             if (RefAttempts == 0 && HqAttempts == 0 && BarracksAttempts == 0 && ResearchAttempts == 0 && SiloAttempts == 0) return "";
             return "--- Human construction (Refinery + HQ + Barracks + Research + Silo) ---\n" +
                    $"  Refinery fires: attempts={RefAttempts} success={RefSuccesses} fail={RefFailures}\n" +
+                   (_refUnservedPatches.Count > 0
+                        ? $"  Refinery patches dropped as unserved (want an HQ nearer): {_refUnservedPatches.Count}\n"
+                        : "") +
                    $"  HQ fires:       attempts={HqAttempts}  success={HqSuccesses}  fail={HqFailures}\n" +
                    $"  Barracks fires: attempts={BarracksAttempts} success={BarracksSuccesses} fail={BarracksFailures}\n" +
                    $"  Research fires: attempts={ResearchAttempts} success={ResearchSuccesses} fail={ResearchFailures}\n" +
