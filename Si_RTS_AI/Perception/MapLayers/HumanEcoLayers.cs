@@ -50,27 +50,27 @@ namespace Si_RTS_AI.Perception.MapLayers
 
         public const int BALTERIUM_MARK = 1;
 
-        static readonly LayerB _balterium         = new LayerB();
+        static LayerB _balterium         = new LayerB();
         // Refinery-reach mask (HQs dilated by REFINERY_HQ_RADIUS). Refineries can be
         // placed anywhere inside this.
-        static readonly LayerB _hqMask            = new LayerB();
+        static LayerB _hqMask            = new LayerB();
         // Minimum HQ-to-HQ separation mask (HQs dilated by MIN_HQ_HQ_SEPARATION_M).
         // A NEW HQ must land OUTSIDE this so its refinery coverage disk doesn't
         // overlap with the existing HQ's refinery coverage. Bigger than _hqMask.
-        static readonly LayerB _hqMinSepMask      = new LayerB();
+        static LayerB _hqMinSepMask      = new LayerB();
         // HQ-to-HQ mask (HQs dilated by HQ_TO_HQ_RADIUS). NEW HQs can only be placed
         // inside this — every new HQ must chain-link to an existing one within this
         // tighter radius.
-        static readonly LayerB _hqBuildableMask   = new LayerB();
-        static readonly LayerI _pressure          = new LayerI();
-        static readonly LayerI _balteriumWeighted = new LayerI();
-        static readonly LayerI _ecoHqExpansionValue = new LayerI();
+        static LayerB _hqBuildableMask   = new LayerB();
+        static LayerI _pressure          = new LayerI();
+        static LayerI _balteriumWeighted = new LayerI();
+        static LayerI _ecoHqExpansionValue = new LayerI();
         // Distance (in cells) from each cell to the nearest existing HQ. Used to
         // weight EcoHqExpansionValue toward FAR cells — otherwise ArgMax keeps
         // picking the closest high-balterium cell and expansion HQs pile near the
         // starter HQ.
-        static readonly LayerI _distanceToHq      = new LayerI();
-        static readonly List<ResourceArea> _scratch = new List<ResourceArea>(16);
+        static LayerI _distanceToHq      = new LayerI();
+        static List<ResourceArea> _scratch = new List<ResourceArea>(16);
 
         static bool _balteriumDirty         = true;
         static bool _hqMaskDirty            = true;
@@ -196,6 +196,30 @@ namespace Si_RTS_AI.Perception.MapLayers
             _balteriumWeightedDirty = true;
             _ecoHqExpansionDirty = true;
         }
+        /// <summary>
+        /// FRESH LAYERS FOR A TEAM TAKING THE STAGE.
+        ///
+        /// MilContext installs a team's state and then calls ResetForNewRound on
+        /// every class it swaps, so this is where a second human team stops
+        /// sharing the first one's grids. OnRoundReset only marks them dirty,
+        /// which is right for a new round on the same team and wrong for a new
+        /// team: the accessors hand back these very objects, so Sol and Centauri
+        /// under the mod at once would read each other's masks.
+        /// </summary>
+        public static void ResetForNewRound()
+        {
+            _balterium = new LayerB();
+            _hqMask = new LayerB();
+            _hqMinSepMask = new LayerB();
+            _hqBuildableMask = new LayerB();
+            _pressure = new LayerI();
+            _balteriumWeighted = new LayerI();
+            _ecoHqExpansionValue = new LayerI();
+            _distanceToHq = new LayerI();
+            _scratch = new List<ResourceArea>(16);
+            OnRoundReset();
+        }
+
         public static void OnRoundReset()
         {
             _balteriumDirty = _hqMaskDirty = _hqMinSepMaskDirty = _hqBuildableMaskDirty = _pressureDirty = true;

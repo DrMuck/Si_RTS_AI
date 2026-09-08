@@ -39,6 +39,14 @@ namespace Si_RTS_AI.Mil
             // the human team's Intel.ControlGain and Utilisation.MapHeld read the
             // alien's ground. Per-team storage makes rebuilding it per team correct.
             typeof(Perception.ControlMap),
+            // HumanEcoLayers keeps ONE set of grids and a _lastTeam guard that
+            // invalidates them whenever the team changes. That is coherent for one
+            // human team and wrong for two: the accessors return these very objects,
+            // so a caller holding a mask across a team switch reads the other team's
+            // ground, and every switch costs a full eight-layer rebuild. Per-team
+            // storage removes both. Sol-vs-Alien never hit it - the alien side does
+            // not call these - but Sol and Centauri both under the mod does.
+            typeof(Perception.MapLayers.HumanEcoLayers),
         };
 
         static FieldInfo[] _fields;
@@ -77,7 +85,15 @@ namespace Si_RTS_AI.Mil
 
         // Switches and limits set from config or the console apply to every team;
         // they must not be reset to their compile-time value for a new team.
-        static readonly HashSet<string> KNOBS = new HashSet<string> { "Enabled", "Execute", "MaxScouts", "Enforce" };
+        static readonly HashSet<string> KNOBS = new HashSet<string>
+        {
+            "Enabled", "Execute", "MaxScouts", "Enforce",
+            // HumanEcoLayers derives these three from ConstructionData once per scene
+            // (RefreshRuntimeRadii). They describe the game, not a team, and a team
+            // that never ran the refresh would otherwise fall back to the
+            // compile-time defaults.
+            "HQ_TO_HQ_RADIUS", "REFINERY_HQ_RADIUS", "PRODUCTION_HQ_RADIUS",
+        };
         static bool IsKnob(string name)
         {
             if (KNOBS.Contains(name)) return true;
