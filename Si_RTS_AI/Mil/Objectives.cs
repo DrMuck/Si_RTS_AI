@@ -61,6 +61,12 @@ namespace Si_RTS_AI.Mil
             public Kind     Kind;
             public string   Key = "";          // stable identity across refreshes
             public Vector3  Where;
+            /// <summary>Where the defenders actually stand. For a defensive objective this
+            /// sits out toward the threat instead of on top of the thing being defended;
+            /// Where stays the asset, so radius and engagement tests are unchanged.</summary>
+            public Vector3  StandAt;
+            /// <summary>StandAt when one was computed, else the asset itself. Never zero.</summary>
+            public Vector3  StandPoint => StandAt == Vector3.zero ? Where : StandAt;
             public float    Radius = 300f;
             public float    RequiredEff;       // effective cash the force must hold
             public float    CeilingEff;        // past this the surplus belongs elsewhere
@@ -225,6 +231,62 @@ namespace Si_RTS_AI.Mil
 
         // ---- refresh -----------------------------------------------------------
 
+        /// <summary>How far out of the asset the guard line sits, as a share of the radius.</summary>
+        const float GUARD_FRACTION = 0.7f;
+        /// <summary>Tracks nearer than this to the asset decide which way the guard faces.</summary>
+        const float GUARD_LOOK_M   = 1400f;
+
+        /// <summary>
+        /// Where a force defending this objective should stand. Offensive objectives
+        /// stand on their target; a defensive one stands between the asset and the
+        /// threat, at GUARD_FRACTION of its radius. Direction comes from the enemy
+        /// tracks near the asset, and failing that from the nearest enemy base, so a
+        /// quiet expansion still faces the side the enemy lives on.
+        /// </summary>
+        static Vector3 StandPointFor(Objective o)
+        {
+            if (o == null) return Vector3.zero;
+            if (o.Offensive || (o.Kind != Kind.DefendQueen && o.Kind != Kind.DefendEco && o.Kind != Kind.DefendProduction))
+                return o.Where;
+            try
+            {
+                Vector3 acc = Vector3.zero; float wsum = 0f;
+                var tracks = Intel.Tracks;
+                if (tracks != null)
+                    for (int i = 0; i < tracks.Count; i++)
+                    {
+                        var t = tracks[i];
+                        if (t == null || t.Effective <= 0f) continue;
+                        Vector3 d = t.Pos - o.Where; d.y = 0f;
+                        float dist = d.magnitude;
+                        if (dist < 1f || dist > GUARD_LOOK_M) continue;
+                        acc += d / dist * t.Effective; wsum += t.Effective;
+                    }
+                if (wsum <= 0f)
+                {
+                    var bases = Intel.Bases;
+                    float best = float.MaxValue; Vector3 bd = Vector3.zero;
+                    if (bases != null)
+                        for (int i = 0; i < bases.Count; i++)
+                        {
+                            var b = bases[i];
+                            if (b == null) continue;
+                            Vector3 d = b.Centre - o.Where; d.y = 0f;
+                            float dist = d.magnitude;
+                            if (dist < 1f || dist >= best) continue;
+                            best = dist; bd = d / dist;
+                        }
+                    if (bd == Vector3.zero) return o.Where;
+                    acc = bd; wsum = 1f;
+                }
+                Vector3 dir = acc / wsum;
+                if (dir.sqrMagnitude < 0.01f) return o.Where;
+                dir.Normalize();
+                return o.Where + dir * (o.Radius * GUARD_FRACTION);
+            }
+            catch { return o.Where; }
+        }
+
         static void Refresh(Team team, float now)
         {
             var fresh = new List<Objective>(16);
@@ -232,6 +294,16 @@ namespace Si_RTS_AI.Mil
             ProposeIntercepts(now, fresh);
             if (MilConfig.Offence) ProposeOffence(now, fresh);
             if (MilConfig.ReconEnabled) ProposeRecon(now, fresh);
+
+            // STAND AT THE EDGE, FACING THE THREAT. DrMuck watching the replays:
+            // "many units are gathered inside the expansions but not at the edge of
+            // the expansion, what would help for a better defence our outwards
+            // expansions." Every defensive objective pointed its force at the centre
+            // of the thing it was defending, so the defenders sat on top of the
+            // buildings and met the raid after it had already arrived. The guard
+            // point moves them out toward where the trouble comes from, which is the
+            // difference between intercepting a raid and watching it land.
+            for (int i = 0; i < fresh.Count; i++) fresh[i].StandAt = StandPointFor(fresh[i]);
 
             // Merge: an existing ACTIVE objective keeps its identity and force;
             // its price is re-read from the fresh proposal. Proposed ones are
@@ -250,7 +322,7 @@ namespace Si_RTS_AI.Mil
                     old.RequiredEff = f.RequiredEff; old.CeilingEff = f.CeilingEff;
                     old.DefenceEff = f.DefenceEff; old.Gain = f.Gain; old.ExpectedLoss = f.ExpectedLoss;
                     old.PWin = f.PWin; old.Rank = f.Rank; old.Score = f.Score; old.Note = f.Note;
-                    old.Where = f.Where; old.BaseRef = f.BaseRef ?? old.BaseRef; old.TrackRef = f.TrackRef ?? old.TrackRef;
+                    old.Where = f.Where; old.StandAt = f.StandAt; old.BaseRef = f.BaseRef ?? old.BaseRef; old.TrackRef = f.TrackRef ?? old.TrackRef;
                     old.StructRef = f.StructRef ?? old.StructRef;
                     if (!float.IsInfinity(f.DeadlineAt)) old.DeadlineAt = f.DeadlineAt;
                     next.Add(old);

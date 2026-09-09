@@ -609,7 +609,7 @@ namespace Si_RTS_AI.Mil
                     Withdrawals++;
                     string why = $"the price rose: {Kernel.Describe(committedEff, o.DefenceEff)}" +
                                  (committedEff > force.Eff ? $" (all waves; this one {force.Eff:F0})" : "");
-                    force.Rally = Fields.RallyFor(Centroid(force), o.Where, MilConfig.StandoffM * 2f, force.Flying);
+                    force.Rally = Fields.RallyFor(Centroid(force), o.StandPoint, MilConfig.StandoffM * 2f, force.Flying);
                     SetPhase(force, State.Withdrawing, now, why);
                     Objectives.NoteWithdrawn(o, why, now);
                     continue;
@@ -620,7 +620,7 @@ namespace Si_RTS_AI.Mil
                         if (force.Units.Count > 0 && (force.Eff >= o.RequiredEff || (force.Eff >= o.RequiredEff * 0.5f && AssignedTo(o) > force.Eff)))
                         {
                             force.StartPos = Centroid(force);
-                            force.Rally = Fields.RallyFor(force.StartPos, o.Where, MilConfig.StandoffM, force.Flying);
+                            force.Rally = Fields.RallyFor(force.StartPos, o.StandPoint, MilConfig.StandoffM, force.Flying);
                             SetPhase(force, State.Staging, now,
                                      $"{force.Units.Count} units {force.Eff:F0}/{o.RequiredEff:F0} eff, rally ({force.Rally.x:F0},{force.Rally.z:F0})");
                         }
@@ -737,7 +737,7 @@ namespace Si_RTS_AI.Mil
         static void Withdraw(Force force, Objectives.Objective o, float now, string why)
         {
             Withdrawals++;
-            force.Rally = Fields.RallyFor(Centroid(force), o.Where, MilConfig.StandoffM * 2f, force.Flying);
+            force.Rally = Fields.RallyFor(Centroid(force), o.StandPoint, MilConfig.StandoffM * 2f, force.Flying);
             SetPhase(force, State.Withdrawing, now, why);
             Objectives.NoteWithdrawn(o, why, now);
         }
@@ -882,8 +882,8 @@ namespace Si_RTS_AI.Mil
                         // moves only if the objective itself moved a long way.
                         if (force.Units.Count >= 2)
                         {
-                            if (force.Gather == Vector3.zero || BigJump(force, Fields.RallyFor(force.Gather, o.Where, MilConfig.StandoffM * 1.5f, force.Flying)))
-                                force.Gather = Fields.RallyFor(Centroid(force), o.Where, MilConfig.StandoffM * 1.5f, force.Flying);
+                            if (force.Gather == Vector3.zero || BigJump(force, Fields.RallyFor(force.Gather, o.StandPoint, MilConfig.StandoffM * 1.5f, force.Flying)))
+                                force.Gather = Fields.RallyFor(Centroid(force), o.StandPoint, MilConfig.StandoffM * 1.5f, force.Flying);
                             if (Moved(force, force.Gather) || Stalled(force, now)) MoveFormation(force, force.Gather, now);
                         }
                         break;
@@ -896,7 +896,7 @@ namespace Si_RTS_AI.Mil
                         bool may = MayReorder(force, now);
                         if (!o.Attack)
                         {
-                            if ((Moved(force, o.Where) && (may || BigJump(force, o.Where))) || Stalled(force, now)) MoveFormation(force, o.Where, now);
+                            if ((Moved(force, o.StandPoint) && (may || BigJump(force, o.StandPoint))) || Stalled(force, now)) MoveFormation(force, o.StandPoint, now);
                             break;
                         }
                         // HOLD GROUND. A defence force that has reached its site gets
@@ -909,7 +909,7 @@ namespace Si_RTS_AI.Mil
                                       (Centroid(force) - o.Where).sqrMagnitude < (o.Radius + ENGAGE_RADIUS_M) * (o.Radius + ENGAGE_RADIUS_M);
                         if (atSite)
                         {
-                            if ((Moved(force, o.Where) && (may || BigJump(force, o.Where))) || Stalled(force, now)) AttackMove(force, o.Where, now);
+                            if ((Moved(force, o.StandPoint) && (may || BigJump(force, o.StandPoint))) || Stalled(force, now)) AttackMove(force, o.StandPoint, now);
                             break;
                         }
                         var target = TargetOf(o);
