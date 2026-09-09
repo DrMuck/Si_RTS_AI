@@ -50,7 +50,11 @@ namespace Si_RTS_AI.Mil
         const float SITE_REFRESH_S = 20f;
 
         static HashSet<string> WorkerNames =
-            new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Shrimp", "Queen", "Harvester" };
+            // NOT "Harvester". This set is also consulted on the queue path, and the
+            // Ultra Heavy Factory is the ONLY structure that offers a Harvester -
+            // adding it here would remove the sole way a human team can ever replace
+            // one. Harvesters are kept out of the ARMY in Forces instead.
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Shrimp", "Queen" };
 
         static HashSet<Structure> _claimed = new HashSet<Structure>();
         internal static bool IsClaimed(Structure s) => s != null && _claimed.Count > 0 && _claimed.Contains(s);
