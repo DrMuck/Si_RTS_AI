@@ -187,7 +187,17 @@ namespace Si_RTS_AI.Mil
                     var u = units[i];
                     if (u == null || u.ObjectInfo == null || u.IsDestroyed) continue;
                     string n = u.ObjectInfo.DisplayName ?? "";
+                    // WORKERS ARE NOT SOLDIERS, IN EITHER FACTION. This named the
+                    // alien's two and nothing else, so Sol and Centauri Harvesters
+                    // were recruited like line units: 778 military move orders went
+                    // to Harvesters in one NarakaCity round (2026-09-09 01:34), which
+                    // is DrMuck's flat human eco curve - a harvester walking to an
+                    // objective is a harvester not harvesting. UnitType.Harvester
+                    // catches both factions and anything a balance mod adds.
                     if (n == "Shrimp" || n == "Queen") continue;
+                    bool worker = false;
+                    try { worker = u.ObjectInfo.UnitType == UnitType.Harvester; } catch { }
+                    if (worker) continue;
                     if (_held.Contains(u)) continue;
                     bool scout = false;
                     try { scout = ScoutPlanner.IsScout(u); } catch { }

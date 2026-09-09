@@ -50,7 +50,7 @@ namespace Si_RTS_AI.Mil
         const float SITE_REFRESH_S = 20f;
 
         static HashSet<string> WorkerNames =
-            new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Shrimp", "Queen" };
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Shrimp", "Queen", "Harvester" };
 
         static HashSet<Structure> _claimed = new HashSet<Structure>();
         internal static bool IsClaimed(Structure s) => s != null && _claimed.Count > 0 && _claimed.Contains(s);
