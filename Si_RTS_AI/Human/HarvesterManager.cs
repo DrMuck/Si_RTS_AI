@@ -210,7 +210,31 @@ namespace Si_RTS_AI.Human
             {
                 _lastSummaryAt = now;
                 int shared = 0; foreach (var kv in _byHarvester) { int c = 0; foreach (var kv2 in _byHarvester) if (kv2.Value == kv.Value) c++; if (c > 1) shared++; }
-                Si_RTS_AI.AppendToRound($"[HARV] t={RoundS():F0} harvesters {harvesters.Count} spots {spots.Count} paired {_bySpot.Count} sharing {shared} orders {_moves}");
+                // A REFINERY WITH NOTHING LEFT INSIDE ITS OWN COVERAGE.
+                // DrMuck: "if the lonely refinery does not store any more balterium
+                // it could be sold to make space for new buildings." Silica has no
+                // sell - there is no Sell/Demolish/Refund anywhere in SilicaCore - so
+                // this cannot be acted on inside the mod. Count them instead, so we
+                // learn whether a genuinely dead refinery is common enough to be worth
+                // asking the developers for, rather than guessing. A refinery whose
+                // OWN patch is exhausted is usually still useful: it receives from any
+                // patch within REFINERY_COVERAGE_M, which is why the harvester scoring
+                // above prefers a covered spot over a trek.
+                int dead = 0; var deadAt = new List<Vector3>(4);
+                for (int r = 0; r < refineries.Count; r++)
+                {
+                    bool live = false;
+                    for (int sp = 0; sp < spots.Count; sp++)
+                    {
+                        var a = spots[sp];
+                        if (a == null || a.IsEmpty) continue;
+                        if (Dist2D(refineries[r], a.SignalCenter) <= REFINERY_COVERAGE_M) { live = true; break; }
+                    }
+                    if (!live) { dead++; if (deadAt.Count < 4) deadAt.Add(refineries[r]); }
+                }
+                string deadTxt = dead == 0 ? "" : $" | dead refineries {dead}/{refineries.Count}" +
+                    (deadAt.Count > 0 ? " at " + string.Join(" ", deadAt.ConvertAll(v => $"({v.x:F0},{v.z:F0})")) : "");
+                Si_RTS_AI.AppendToRound($"[HARV] t={RoundS():F0} harvesters {harvesters.Count} spots {spots.Count} paired {_bySpot.Count} sharing {shared} orders {_moves}{deadTxt}");
             }
         }
 
