@@ -25,6 +25,11 @@ namespace Si_RTS_AI.Human
     {
         const float TICK_S       = 5f;
         const float NEAR_REF_M   = 250f;     // a spot this close to a refinery is "the refinery's spot"
+        // A refinery only works balterium within its own coverage; past that a
+        // harvester has nowhere to deliver. Sharing a covered patch (3000) must be
+        // cheaper than walking to an uncovered one, or harvesters wander and die.
+        const float REFINERY_COVERAGE_M = 400f;
+        const float UNSERVED_PENALTY    = 4000f;
         const float REORDER_S    = 20f;      // do not repeat the same order more often than this
         const int   LOG_CAP      = 60;
 
@@ -136,8 +141,30 @@ namespace Si_RTS_AI.Human
                     float dHarv = Dist2D(hp, c);
                     float dRef = float.MaxValue;
                     for (int r = 0; r < refineries.Count; r++) dRef = Mathf.Min(dRef, Dist2D(refineries[r], c));
-                    // a refinery's own spot first, then the nearest unassigned, then far spots; sharing costs a lot
-                    float score = dHarv + (dRef <= NEAR_REF_M ? 0f : 600f) + Mathf.Min(dRef, 2000f) * 0.5f + (taken ? 3000f : 0f);
+                    // A HARVESTER NEEDS A REFINERY TO DELIVER TO. DrMuck: "a refinery
+                    // comes with a harvester, so that can be used also for a harvester
+                    // production near a balterium patch" - the pairing is refinery to
+                    // patch, and a spot beyond a refinery's own coverage has nothing to
+                    // deposit into.
+                    //
+                    // The old weights had it backwards: sharing a served spot cost
+                    // +3000 while walking to an UNSERVED spot cost at most +1600, so a
+                    // harvester crossed the map rather than double up at home. Naraka
+                    // 2026-09-09 10:23: assignments at (-2054,-1846) and (2893,-1684),
+                    // eleven "harvester gone" releases against twelve "mined out", and
+                    // Centauri lost five of nine harvesters while losing one refinery.
+                    // It is also DrMuck's G7 case - a refinery with balterium beside it
+                    // whose harvester had been sent somewhere else entirely.
+                    //
+                    // So: unserved ground costs more than sharing. Doubling up on a
+                    // covered patch still earns; a lone trip across the map earns
+                    // nothing and usually ends with a dead harvester.
+                    bool served = dRef <= REFINERY_COVERAGE_M;
+                    float score = dHarv
+                                + (dRef <= NEAR_REF_M ? 0f : 600f)
+                                + Mathf.Min(dRef, 2000f) * 0.5f
+                                + (taken ? 3000f : 0f)
+                                + (served ? 0f : UNSERVED_PENALTY);
                     if (score < bestScore) { bestScore = score; best = a; bestShared = taken; }
                 }
                 if (best == null) continue;
