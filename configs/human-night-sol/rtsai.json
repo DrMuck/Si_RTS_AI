@@ -263,7 +263,6 @@
   },
   "endRoundAfterMinutes": 45,
   "serverFpsCap": 0,
-  "siteAnchorCheckS": 0.5,
   "perfTimers": true,
   "perfProbes": "",
   "layerSnapshots": true
