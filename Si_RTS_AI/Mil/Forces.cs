@@ -330,7 +330,21 @@ namespace Si_RTS_AI.Mil
                 float ceiling = Mathf.Max(o.RequiredEff, o.CeilingEff);
                 if (wave) ceiling = Mathf.Max(o.RequiredEff, o.CeilingEff - AssignedTo(o));
                 float have = force?.Eff ?? 0f;
-                if (!wave && have >= o.RequiredEff) continue;
+                // COMMIT EVERYTHING AT FORMATION, NOT ONLY IN LATER WAVES. A force
+                // stopped taking units the moment it met RequiredEff, and the
+                // ceiling - the whole spare army - was consulted only for a second
+                // wave, which needs the first to have left Staging. KillHQ#157 on
+                // NarakaCity (2026-09-13 17:19) formed with four units at a 3,000
+                // price, was never reinforced while the army grew from 8k to 143k,
+                // and never left Staging. A defence still fills to its price; an
+                // offensive fills to its ceiling, minus the home guard.
+                float fillTo = o.RequiredEff;
+                if (o.Offensive && o.Kind != Objectives.Kind.Recon && !wave)
+                {
+                    float spareForOffence = Objectives.ArmyEff - Mathf.Min(MilConfig.HomeFloorCash, Objectives.ArmyEff * 0.5f);
+                    fillTo = Mathf.Clamp(ceiling, o.RequiredEff, Mathf.Max(o.RequiredEff, spareForOffence));
+                }
+                if (!wave && have >= fillTo) continue;
 
                 // ALL OR NOTHING. A force is raised only when the free pool can
                 // pay the whole price now; otherwise the units stay in the
@@ -357,8 +371,18 @@ namespace Si_RTS_AI.Mil
                     // eff and only 38488 is free" — the recalled force did not close
                     // the gap either, so the defence was not raised and the raid was
                     // merely cancelled, to be raised again two minutes later.
+                    // ONLY A THREAT THAT IS HERE PULLS A PUSH HOME. DefendEco and
+                    // DefendProduction exist only from a forecast of tracks arriving,
+                    // and the forecast is often wrong: three of the four defensive
+                    // objectives that ended before DrMuck took over on NarakaCity
+                    // (2026-09-13 17:19) ended "nothing arrived, or it left" - yet
+                    // one of them, DefendEco#302, had already pre-empted the only
+                    // KillHQ of the round at t=1018s and sent its force back. The
+                    // Queen and an Intercept (a track already inside our ground) may
+                    // still recall a push; a prediction may not.
+                    bool realThreat = o.Kind == Objectives.Kind.DefendQueen || o.Kind == Objectives.Kind.Intercept;
                     float preemptable = 0f;
-                    if (avail < o.RequiredEff && o.Rank <= 1 && !o.Offensive && imminent)
+                    if (avail < o.RequiredEff && o.Rank <= 1 && !o.Offensive && imminent && realThreat)
                         for (int pf = 0; pf < Active.Count; pf++)
                         {
                             var other = Active[pf];
@@ -366,7 +390,7 @@ namespace Si_RTS_AI.Mil
                             if (other.Phase == State.Engaged || other.Phase == State.Withdrawing) continue;
                             preemptable += other.Eff;
                         }
-                    if (avail < o.RequiredEff && o.Rank <= 1 && !o.Offensive && imminent && avail + preemptable >= o.RequiredEff)
+                    if (avail < o.RequiredEff && o.Rank <= 1 && !o.Offensive && imminent && realThreat && avail + preemptable >= o.RequiredEff)
                     {
                         for (int pf = Active.Count - 1; pf >= 0 && avail < o.RequiredEff; pf--)
                         {
@@ -394,10 +418,9 @@ namespace Si_RTS_AI.Mil
 
                 // Take preferred pool first, nearest to the objective, until the price is met.
                 int taken = 0;
-                for (int pass = 0; pass < 2 && have < o.RequiredEff; pass++)
+                for (int pass = 0; pass < 2 && have < fillTo; pass++)
                 {
-                    for (int k = free.Count - 1; k >= 0 && have < o.RequiredEff; k--) { }
-                    while (have < o.RequiredEff && free.Count > 0)
+                    while (have < fillTo && free.Count > 0)
                     {
                         int idx = Nearest(free, o.Where, pass == 0 ? o.PoolPref : Objectives.Pool.Any);
                         if (idx < 0) break;

@@ -305,10 +305,19 @@ namespace Si_RTS_AI.Mil
             // difference between intercepting a raid and watching it land.
             for (int i = 0; i < fresh.Count; i++) fresh[i].StandAt = StandPointFor(fresh[i]);
 
-            // Merge: an existing ACTIVE objective keeps its identity and force;
-            // its price is re-read from the fresh proposal. Proposed ones are
-            // simply replaced. Active ones the refresh no longer proposes are
-            // left to their expectation check.
+            // Merge: an objective already in the portfolio keeps its identity and
+            // its force, whether ACTIVE or still proposed; only its price and
+            // position are re-read from the fresh proposal. Active ones the refresh
+            // no longer proposes are left to their expectation check.
+            //
+            // A PROPOSAL IS A DECISION THAT IS STILL BEING PAID FOR, NOT A NEW
+            // IDEA EVERY TICK. Proposed objectives used to be replaced outright, so
+            // a KillHQ that was "building toward" its price was a brand-new object
+            // every refresh - 67 distinct KillHQ ids in one NarakaCity round
+            // (2026-09-13 17:19), 224 offensive proposals for four offensive forces
+            // - and a force still Forming on the old object was orphaned before it
+            // could stage. DrMuck, taking the aliens over by hand: "offensive
+            // orders should be rather maintained and not changed too often."
             var seen = new HashSet<string>();
             var next = new List<Objective>(16);
             for (int i = 0; i < fresh.Count; i++)
@@ -316,7 +325,7 @@ namespace Si_RTS_AI.Mil
                 var f = fresh[i];
                 if (_holdUntil.TryGetValue(f.Key, out float until) && now < until) continue;
                 if (!seen.Add(f.Key)) continue;
-                if (_byKey.TryGetValue(f.Key, out var old) && old.Status == Status.Active)
+                if (_byKey.TryGetValue(f.Key, out var old) && (old.Status == Status.Active || old.Status == Status.Proposed))
                 {
                     if (old.Kind == Kind.DefendQueen) { old.AssignedEff = f.AssignedEff; old.AssignedUnits = f.AssignedUnits; }
                     old.RequiredEff = f.RequiredEff; old.CeilingEff = f.CeilingEff;
