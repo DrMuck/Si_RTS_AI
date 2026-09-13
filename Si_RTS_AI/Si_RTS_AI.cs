@@ -128,6 +128,7 @@ namespace Si_RTS_AI
 
         public override void OnUpdate()
         {
+            FlushRoundLog();
             // FPS EMA — sampled every main-thread frame. TelemetryServer
             // reads _serverFps from any thread; it's a plain float write so
             // torn reads produce visible garbage very rarely, and the chart
@@ -1124,11 +1125,58 @@ namespace Si_RTS_AI
         static readonly SpawnTally        _unteamedSpawns  = new SpawnTally();
         static readonly PlayerActionTally _unteamedActions = new PlayerActionTally();
 
+        // ONE OPEN FILE, FLUSHED ONCE A SECOND - NOT AN OPEN PER LINE.
+        // File.AppendAllText opened, wrote and closed the round log for every
+        // line, on the game thread. A NarakaCity round on the public server
+        // (2026-09-13 14:30) wrote 323,814 lines that way - 143k of them [P31]
+        // samples and 135k unit orders - which is a third of a million file opens
+        // inside Harmony postfixes on the game's own code paths, where the mod's
+        // budget meter cannot see them. The same session recorded 6,325 frame
+        // spikes over 200 ms. DrMuck: "maybe it tanks a bit the server
+        // performance." Lines now go to a StreamWriter that stays open for the
+        // round and is flushed from the tick, so a line costs a memory copy and
+        // the disk sees one write per second.
+        static StreamWriter _roundWriter;
+        static string _roundWriterPath = "";
+        static float _roundFlushAt;
+        const float ROUND_FLUSH_S = 1f;
+
         internal static void AppendToRound(string line)
         {
             if (string.IsNullOrEmpty(_roundLogPath)) return;
-            try { File.AppendAllText(_roundLogPath, line + Environment.NewLine); }
+            try
+            {
+                if (_roundWriter == null || !string.Equals(_roundWriterPath, _roundLogPath, StringComparison.Ordinal))
+                {
+                    CloseRoundLog();
+                    _roundWriter = new StreamWriter(_roundLogPath, append: true, System.Text.Encoding.UTF8, 1 << 16) { AutoFlush = false };
+                    _roundWriterPath = _roundLogPath;
+                }
+                _roundWriter.WriteLine(line);
+            }
             catch (Exception ex) { MelonLogger.Warning($"[RTSA] round-log write failed: {ex.Message}"); }
         }
+
+        /// <summary>Called from the tick: pushes the buffered round log to disk about once a second.</summary>
+        internal static void FlushRoundLog(bool force = false)
+        {
+            try
+            {
+                if (_roundWriter == null) return;
+                float now = UnityEngine.Time.realtimeSinceStartup;
+                if (!force && now - _roundFlushAt < ROUND_FLUSH_S) return;
+                _roundFlushAt = now;
+                _roundWriter.Flush();
+            }
+            catch (Exception ex) { MelonLogger.Warning($"[RTSA] round-log flush failed: {ex.Message}"); }
+        }
+
+        static void CloseRoundLog()
+        {
+            try { _roundWriter?.Flush(); _roundWriter?.Dispose(); } catch { }
+            _roundWriter = null; _roundWriterPath = "";
+        }
+
+        public override void OnApplicationQuit() { CloseRoundLog(); }
     }
 }

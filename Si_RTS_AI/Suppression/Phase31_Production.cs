@@ -30,6 +30,8 @@ namespace Si_RTS_AI.Suppression
     {
         // Per-team override flag. Not in a persistent config yet — MVP.
         internal static readonly Dictionary<Team, bool> OverrideByTeam = new Dictionary<Team, bool>();
+        /// <summary>Write one [P31] line per stock production decision. Off by default: the tally in the round summary is the useful output, the per-sample lines were 44% of a 29 MB round log.</summary>
+        internal static bool SampleLog = false;
 
         // Per-team counters so we can summarize agreements/differences.
         internal class DecisionTally
@@ -68,6 +70,20 @@ namespace Si_RTS_AI.Suppression
                     string teamName = team.name ?? "";
                     if (!teamName.Contains("Sol") && !teamName.Contains("Alien")) return;
 
+                    // OBSERVE ONLY WHEN SOMEONE IS LOOKING. This postfix ran on every
+                    // stock production decision - 143,643 times in one public
+                    // NarakaCity round (2026-09-13 14:30) - rebuilding a team state and
+                    // running the composition planner each time, then writing a line,
+                    // for an override that was off for every team all round. With
+                    // the override off and the sample log off there is nothing to do
+                    // but count, and the tally already lives in the round summary.
+                    bool overrideOn = OverrideByTeam.TryGetValue(team, out bool ov) && ov;
+                    if (!overrideOn && !SampleLog)
+                    {
+                        GetTally(team).SamplesObserved++;
+                        return;
+                    }
+
                     var stockPickName = SafeDisplayName(__result);
 
                     // Build a lightweight TeamState from what we know so far.
@@ -98,13 +114,13 @@ namespace Si_RTS_AI.Suppression
                     else tally.Differed++;
 
                     // Observation log (goes to round file via main mod's AppendToRound).
-                    Si_RTS_AI.AppendToRound(
+                    if (SampleLog) Si_RTS_AI.AppendToRound(
                         $"[P31] team={teamName} preset={SafePresetName(preset)} " +
                         $"stock={stockPickName ?? "-"} ours={(ourPickName ?? "-")} " +
                         $"agree={agree} rationale={(ourRationale ?? "-")}");
 
                     // Override, if enabled for this team and our pick is buildable.
-                    if (oursIsBuildable && !agree && OverrideByTeam.TryGetValue(team, out bool overrideOn) && overrideOn)
+                    if (oursIsBuildable && !agree && overrideOn)
                     {
                         var replacement = FindBuildOptionByName(ourPickName!, buildOptions);
                         if (replacement != null)
