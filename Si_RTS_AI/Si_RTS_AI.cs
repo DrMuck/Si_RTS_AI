@@ -81,6 +81,8 @@ namespace Si_RTS_AI
 
         public override void OnUpdate()
         {
+            // The frame cap is a server setting and follows the config even with the mod off.
+            Perception.TimeScaleControl.TickFpsCap();
             if (!ModSwitches.Enabled) return;
 
             RoundLog.Flush();

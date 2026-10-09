@@ -109,7 +109,7 @@ reload`), so it applies to the next round.
 | `harness.configId` | baseline | live | Tag written to every benchmark row. Overwritten per arm by the rig. |
 | `harness.shrimpStateSampler` | false | live | Log every shrimp's position once a second (4 GB per night). |
 | `timeScale` | 1 | live | Simulation speed (0.1..8). The achieved rate is reported; a short box makes a different game. |
-| `serverFpsCap` | 0 | live | `Application.targetFrameRate` (0 = leave the game's own). |
+| `serverFpsCap` | 0 | live | `Application.targetFrameRate` (0 = the game's own, which is unlimited on a dedicated server). Applies EVEN WITH THE MOD OFF - it is a server setting, so put it in `off` too. |
 | `perfTimers` | true | start | Time the game's physics / ordered-update loops for the `[RTSA/PERF] budget` line. Patched at mod start. |
 | `perfProbes` | "" | start | Extra empty-prefix probes, `Type:Method,...`, for the perf monitor. |
 | `layerSnapshots` | true | live | Write layer replay frames to disk. |

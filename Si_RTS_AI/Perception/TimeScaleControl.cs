@@ -26,16 +26,12 @@ namespace Si_RTS_AI.Perception
         static float _applied = 1f;
         static int   _origTargetFps = int.MinValue;
 
-        /// <summary>Mod switched off: hand the clock and the frame cap back to the game.</summary>
+        /// <summary>Mod switched off: hand the clock back to the game. The fps cap
+        /// stays with the config (see TickFpsCap).</summary>
         internal static void Restore()
         {
             try
             {
-                if (_origTargetFps != int.MinValue && Application.targetFrameRate != _origTargetFps)
-                {
-                    Application.targetFrameRate = _origTargetFps;
-                    MelonLogger.Msg($"[RTSA/TIME] serverFpsCap removed (targetFrameRate back to {_origTargetFps})");
-                }
                 if (!Mathf.Approximately(Time.timeScale, 1f))
                 {
                     Time.timeScale = 1f;
@@ -60,13 +56,19 @@ namespace Si_RTS_AI.Perception
             _warned = false;
         }
 
-        internal static void Tick()
+        /// <summary>
+        /// A DEDICATED SERVER WITH NO CAP SPINS FRAMES. The August rounds ran at
+        /// a 144 cap; after the 0.9.46 refresh the same box reads 3,000 fps at
+        /// round start and 90 by minute twenty-five. `serverFpsCap` in the active
+        /// config pins Application.targetFrameRate so the CPU goes to the
+        /// simulation; 0 hands the game's own setting back.
+        ///
+        /// SERVER HEALTH, NOT AI BEHAVIOUR: this runs whether the mod is on or
+        /// off (DrMuck 2026-10-09: the cap vanished with the "off" config, because
+        /// the game's own value is unlimited). Only the config decides it.
+        /// </summary>
+        internal static void TickFpsCap()
         {
-            // A DEDICATED SERVER WITH NO CAP SPINS FRAMES. The August rounds ran at
-            // a 144 cap; after the 0.9.46 refresh the same box reads 3,000 fps at
-            // round start and 90 by minute twenty-five. `serverFpsCap` in
-            // rtsai.json (0 = leave the game's own setting) pins
-            // Application.targetFrameRate so the CPU goes to the simulation.
             int cap = Config.RtsaiConfig.Int("serverFpsCap", 0);
             if (cap > 0 && Application.targetFrameRate != cap)
             {
@@ -74,6 +76,15 @@ namespace Si_RTS_AI.Perception
                 Application.targetFrameRate = cap;
                 MelonLogger.Msg($"[RTSA/TIME] serverFpsCap={cap} applied (Application.targetFrameRate)");
             }
+            else if (cap <= 0 && _origTargetFps != int.MinValue && Application.targetFrameRate != _origTargetFps)
+            {
+                Application.targetFrameRate = _origTargetFps;
+                MelonLogger.Msg($"[RTSA/TIME] serverFpsCap=0: targetFrameRate back to the game's own {_origTargetFps}");
+            }
+        }
+
+        internal static void Tick()
+        {
             float want = Mathf.Clamp(Config.RtsaiConfig.Float("timeScale", 1f), 0.1f, 8f);
 
             if (_fixedDeltaAt1 < 0f) _fixedDeltaAt1 = Time.fixedDeltaTime;

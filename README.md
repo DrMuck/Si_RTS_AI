@@ -92,8 +92,10 @@ UnitBalance whenever the caller is not inside the RTS AI menu.
 
 **The master switch is total.** With `enabled: false` (or `/rtsai off`) no
 Harmony prefix runs its body, no tick does work, no round log or jsonl is
-written, the telemetry listener is down, and `timeScale` / `serverFpsCap` are
-handed back to the game. Before 0.94 "off" only meant the alien faction flag.
+written, the telemetry listener is down, and `timeScale` is handed back to the
+game. `serverFpsCap` is the one exception: it is a server setting and follows
+the active config even when the mod is off. Before 0.94 "off" only meant the
+alien faction flag.
 
 ## Reading a round
 

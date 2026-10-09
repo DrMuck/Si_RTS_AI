@@ -13,7 +13,8 @@ namespace Si_RTS_AI.Config
     ///
     /// Enabled is the MASTER. Off means the mod does nothing at all: no Harmony
     /// prefix runs its body, no tick does work, no file is written, the
-    /// telemetry listener is down, time scale and fps cap are left alone. The
+    /// telemetry listener is down, the time scale is left alone. The one
+    /// exception is serverFpsCap, a server setting that follows the config. The
     /// transition is handled by Si_RTS_AI.ApplyEnabled so held units are
     /// released and the round log closed.
     /// </summary>

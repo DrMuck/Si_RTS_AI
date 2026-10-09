@@ -204,10 +204,13 @@ PRESETS = {
 
     "off": ([
         "MOD OFF. Nothing runs: no planners, no Harmony patch acts, no round log, no",
-        "telemetry, no time scale or fps cap. Vanilla commands every team. Select this",
-        "to park the mod without removing the DLL; /rtsai on overrides it from chat.",
+        "telemetry, no time scale. Vanilla commands every team. Select this to park the",
+        "mod without removing the DLL; /rtsai on overrides it from chat.",
+        "serverFpsCap still applies - it is a server setting, not AI behaviour - so a",
+        "parked mod keeps the box from spinning frames. Set it to taste.",
     ], {
         "enabled": False,
+        "serverFpsCap": 144,
     }),
 }
 
