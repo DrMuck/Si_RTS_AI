@@ -126,10 +126,10 @@ PRESETS = {
         "nobody holds the alien commander seat, exactly as vanilla's AI would. A player",
         "who takes the seat gets the whole team: every planner stands down.",
         "No harness, no forced round end. Admins: /rtsai (menu), /rtsai off, /rtsai on.",
-        "fps cap 144, layer snapshots off, no profiling - the performance settings of",
-        "the 2026-09-05 Saturday rounds.",
+        "Layer snapshots off, no profiling - the performance settings of the 2026-09-05",
+        "Saturday rounds. The frame cap is the game's own MaxFPS (GameSettings.xml).",
     ], {
-        "serverFpsCap": 144, "layerSnapshots": False,
+        "layerSnapshots": False,
     }),
 
     "coop-eco": ([
@@ -206,11 +206,10 @@ PRESETS = {
         "MOD OFF. Nothing runs: no planners, no Harmony patch acts, no round log, no",
         "telemetry, no time scale. Vanilla commands every team. Select this to park the",
         "mod without removing the DLL; /rtsai on overrides it from chat.",
-        "serverFpsCap still applies - it is a server setting, not AI behaviour - so a",
-        "parked mod keeps the box from spinning frames. Set it to taste.",
+        "serverFpsCap is a TEST knob (fps-drop correlation runs). 0 here, so the",
+        "game's own MaxFPS (GameSettings.xml / console 'MaxFPS <n>') decides.",
     ], {
         "enabled": False,
-        "serverFpsCap": 144,
     }),
 }
 

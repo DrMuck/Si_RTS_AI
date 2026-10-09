@@ -5,8 +5,8 @@
     "nobody holds the alien commander seat, exactly as vanilla's AI would. A player",
     "who takes the seat gets the whole team: every planner stands down.",
     "No harness, no forced round end. Admins: /rtsai (menu), /rtsai off, /rtsai on.",
-    "fps cap 144, layer snapshots off, no profiling - the performance settings of",
-    "the 2026-09-05 Saturday rounds."
+    "Layer snapshots off, no profiling - the performance settings of the 2026-09-05",
+    "Saturday rounds. The frame cap is the game's own MaxFPS (GameSettings.xml)."
   ],
   "enabled": true,
   "commanderLog": true,
@@ -46,7 +46,7 @@
     "configId": "v0.94"
   },
   "telemetryPort": 8765,
-  "serverFpsCap": 144,
+  "serverFpsCap": 0,
   "perfTimers": false,
   "perfProbes": "",
   "layerSnapshots": false,

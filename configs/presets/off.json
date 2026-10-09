@@ -4,8 +4,8 @@
     "MOD OFF. Nothing runs: no planners, no Harmony patch acts, no round log, no",
     "telemetry, no time scale. Vanilla commands every team. Select this to park the",
     "mod without removing the DLL; /rtsai on overrides it from chat.",
-    "serverFpsCap still applies - it is a server setting, not AI behaviour - so a",
-    "parked mod keeps the box from spinning frames. Set it to taste."
+    "serverFpsCap is a TEST knob (fps-drop correlation runs). 0 here, so the",
+    "game's own MaxFPS (GameSettings.xml / console 'MaxFPS <n>') decides."
   ],
   "enabled": false,
   "commanderLog": true,
@@ -45,7 +45,7 @@
     "configId": "v0.94"
   },
   "telemetryPort": 8765,
-  "serverFpsCap": 144,
+  "serverFpsCap": 0,
   "perfTimers": false,
   "perfProbes": "",
   "layerSnapshots": true,
