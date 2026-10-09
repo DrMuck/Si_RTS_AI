@@ -143,7 +143,7 @@ namespace Si_RTS_AI.Faction
 
         static void Tick(Team? team)
         {
-            if (team == null) return;
+            if (team == null || !Config.ModSwitches.Enabled) return;
             string tn = team.name ?? "";
             bool isHuman = (tn.Contains("Sol") || tn.Contains("Centauri") || tn.Contains("Cent")) && !tn.Contains("Alien");
             if (!isHuman) return;

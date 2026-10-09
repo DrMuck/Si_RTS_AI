@@ -1,3 +1,4 @@
+using Si_RTS_AI.Config;
 using MelonLoader;
 
 namespace Si_RTS_AI.Planning

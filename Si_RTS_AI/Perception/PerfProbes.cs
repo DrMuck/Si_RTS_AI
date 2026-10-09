@@ -48,14 +48,14 @@ namespace Si_RTS_AI.Perception
             if (harmony == null) return;
             var attached = new List<string>();
 
-            if (Planning.RtsaiConfig.Bool("perfTimers", true))
+            if (Config.RtsaiConfig.Bool("perfTimers", true))
             {
                 Timed(harmony, "GameManager", "SimulatePhysics", nameof(PhysPre), nameof(PhysPost), attached);
                 Timed(harmony, "OrderedUpdateManager", "CallFixedUpdate", nameof(FixedPre), nameof(FixedPost), attached);
                 Timed(harmony, "OrderedUpdateManager", "Update", nameof(UpdPre), nameof(UpdPost), attached);
             }
 
-            string list = Planning.RtsaiConfig.Str("perfProbes", "");
+            string list = Config.RtsaiConfig.Str("perfProbes", "");
             foreach (var raw in list.Split(','))
             {
                 var spec = raw.Trim();
@@ -119,12 +119,12 @@ namespace Si_RTS_AI.Perception
 
         static void EmptyPrefix() { }
 
-        static void PhysPre()  { _swPhys.Restart(); }
-        static void PhysPost() { _swPhys.Stop(); PhysicsMs += _swPhys.Elapsed.TotalMilliseconds; }
-        static void FixedPre() { FixedStepsThisFrame++; FixedStepsTotal++; _swFixed.Restart(); }
-        static void FixedPost(){ _swFixed.Stop(); FixedMs += _swFixed.Elapsed.TotalMilliseconds; }
-        static void UpdPre()   { _swUpd.Restart(); }
-        static void UpdPost()  { _swUpd.Stop(); OrderedUpdateMs += _swUpd.Elapsed.TotalMilliseconds; }
+        static void PhysPre()  { if (!Config.ModSwitches.Enabled) return; _swPhys.Restart(); }
+        static void PhysPost() { if (!Config.ModSwitches.Enabled) return; _swPhys.Stop(); PhysicsMs += _swPhys.Elapsed.TotalMilliseconds; }
+        static void FixedPre() { if (!Config.ModSwitches.Enabled) return; FixedStepsThisFrame++; FixedStepsTotal++; _swFixed.Restart(); }
+        static void FixedPost(){ if (!Config.ModSwitches.Enabled) return; _swFixed.Stop(); FixedMs += _swFixed.Elapsed.TotalMilliseconds; }
+        static void UpdPre()   { if (!Config.ModSwitches.Enabled) return; _swUpd.Restart(); }
+        static void UpdPost()  { if (!Config.ModSwitches.Enabled) return; _swUpd.Stop(); OrderedUpdateMs += _swUpd.Elapsed.TotalMilliseconds; }
 
         /// <summary>Call once per frame from the main loop.</summary>
         internal static void OnFrame()

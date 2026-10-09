@@ -273,7 +273,7 @@ namespace Si_RTS_AI.Perception
                 sb.Append(",\"v\":2");
                 sb.Append('}');
 
-                string dir = Path.Combine("UserData", "RTSA");
+                string dir = Config.Paths.LogDir;
                 Directory.CreateDirectory(dir);
                 File.AppendAllText(Path.Combine(dir, "combat.jsonl"), sb.ToString() + "\n");
 

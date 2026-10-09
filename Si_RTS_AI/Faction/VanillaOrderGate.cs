@@ -48,7 +48,7 @@ namespace Si_RTS_AI.Faction
         static Team _thinkingTeam;
 
         internal static bool Enabled =>
-            Planning.RtsaiConfig.Bool("coopBlockVanillaUnitOrders", false);
+            Config.RtsaiConfig.Bool("coopBlockVanillaUnitOrders", false);
 
         static int _blockedMove, _blockedAttack;
         static float _lastReportAt;
@@ -79,7 +79,7 @@ namespace Si_RTS_AI.Faction
             return Construction.IsHuman(t) && FactionControl.IsEnabled(t);
         }
 
-        static bool ShouldBlock(Team t) => Enabled && _inAiTick && Protected(t) && FactionControl.IsEnabled(t);
+        static bool ShouldBlock(Team t) => Config.ModSwitches.Enabled && Enabled && _inAiTick && Protected(t) && FactionControl.IsEnabled(t);
 
         internal static void Report()
         {

@@ -166,6 +166,7 @@ namespace Si_RTS_AI.Faction
         {
             var team = h?.Commander?.Team;
             if (team == null) return true;
+            if (!Config.ModSwitches.Enabled) return true;
             if (!(team.name ?? "").Contains("Alien")) return true;
             // Master switch — if our Alien AI is disabled, let stock run.
             if (!FactionControl.IsEnabled(team)) return true;

@@ -211,6 +211,7 @@ namespace Si_RTS_AI.Faction
         {
             var team = h?.Commander?.Team;
             if (team == null) return true;
+            if (!Config.ModSwitches.Enabled) return true;
 
             // Sol OR Centauri, but NOT Alien (Alien has its own file).
             string tn = team.name ?? "";

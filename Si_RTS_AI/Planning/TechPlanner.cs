@@ -195,7 +195,7 @@ namespace Si_RTS_AI.Planning
             if (_csvWriter != null) return;
             try
             {
-                string dir = System.IO.Path.Combine("UserData", "RTSA");
+                string dir = global::Si_RTS_AI.Config.Paths.LogDir;
                 System.IO.Directory.CreateDirectory(dir);
                 string ts = System.DateTime.Now.ToString("yyyyMMdd_HHmmss");
                 _csvPath = System.IO.Path.Combine(dir, $"cashflow_{ts}.csv");

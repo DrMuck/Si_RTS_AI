@@ -4,31 +4,33 @@ using System;
 using System.IO;
 using System.Linq;
 
-namespace Si_RTS_AI.Planning
+namespace Si_RTS_AI.Config
 {
     /// <summary>
-    /// UserData/rtsai.json — settings that can be changed WHILE THE SERVER RUNS.
+    /// THE ACTIVE CONFIGURATION, AS A KEY/VALUE READER.
     ///
-    /// MelonPreferences rewrites its file from memory on shutdown, so an edit
-    /// made during a session is silently reverted; every configuration change so
-    /// far has meant stopping the server. That cost this project a whole night
-    /// once — an unset A/B cycle that could not be corrected without a restart,
-    /// so 25 rounds ran the same configuration.
+    /// One json file under UserData/RTSAI/configs/ is active at a time (see
+    /// ConfigStore). This class reads it and nothing else: every setting in the
+    /// mod — switches, harness, economy, military — comes through Int/Float/
+    /// Bool/Str here, with the default in the call. There are no
+    /// MelonPreferences entries any more: MelonLoader rewrites that file from
+    /// memory on shutdown, so an edit made during a session was silently
+    /// reverted, which cost whole nights of soak rounds.
     ///
-    /// This file is READ, never written. It is re-read at the start of every
-    /// round, so editing it mid-session takes effect on the next map load
-    /// without touching the process. Anything absent falls back to the
-    /// MelonPreferences value, so it stays optional: no file, no change.
-    ///
-    /// Kept deliberately small. It is for settings worth changing between
-    /// rounds, not a mirror of every constant in the mod.
+    /// The file is READ, never written. It is re-read at the start of every
+    /// round (and when the chat menu selects another config), so editing it
+    /// takes effect on the next map load with the server still up. Keys may be
+    /// dotted: "military.enabled" reads { "military": { "enabled": true } }.
     /// </summary>
     internal static class RtsaiConfig
     {
-        const string PATH = "UserData/rtsai.json";
-
         static JObject _root;
+        static string _loadedPath = "";
         static DateTime _lastWrite;
+
+        /// <summary>Path of the file the current values came from ("" = none).</summary>
+        internal static string LoadedPath => _loadedPath;
+        internal static bool HasFile => _root != null;
 
         /// <summary>How a bridge is judged to be worth building.</summary>
         internal enum BridgeMode
@@ -39,42 +41,45 @@ namespace Si_RTS_AI.Planning
             Loop,
             /// <summary>Value = shortening of the road HOME to the Nest, the
             /// v0.25 rule. Prefers short cuts near the base and will not build a
-            /// loop between two equally distant branches — kept because it is a
-            /// genuinely different objective, not merely an older attempt: when
-            /// the network is one long line, the road home IS the thing worth
-            /// shortening.</summary>
+            /// loop between two equally distant branches.</summary>
             Shortcut,
             /// <summary>Plan them, build none.</summary>
             Off,
         }
 
-        internal static void Reload()
+        /// <summary>Re-read the active config if its path or timestamp changed.</summary>
+        internal static void Reload(bool force = false)
         {
+            string path = ConfigStore.ActiveConfigPath;
             try
             {
-                if (!File.Exists(PATH))
+                if (string.IsNullOrEmpty(path) || !File.Exists(path))
                 {
-                    if (_root != null) MelonLogger.Msg("[RTSAI/JSON] rtsai.json removed — preferences apply");
-                    _root = null;
+                    if (_root != null) MelonLogger.Warning($"[RTSAI/CONFIG] active config '{path}' is gone — defaults apply");
+                    _root = null; _loadedPath = "";
                     return;
                 }
-                var stamp = File.GetLastWriteTimeUtc(PATH);
-                if (_root != null && stamp == _lastWrite) return;
+                var stamp = File.GetLastWriteTimeUtc(path);
+                bool samePath = string.Equals(path, _loadedPath, StringComparison.OrdinalIgnoreCase);
+                if (!force && _root != null && samePath && stamp == _lastWrite) return;
                 _lastWrite = stamp;
-                _root = JObject.Parse(File.ReadAllText(PATH));
-                MelonLogger.Msg($"[RTSAI/JSON] loaded {PATH}: " +
-                                $"bridgeMode={BridgeModeOrDefault(BridgeMode.Loop)} " +
-                                $"(keys: {string.Join(",", _root.Properties().Select(p => p.Name))})");
+                _root = JObject.Parse(File.ReadAllText(path));
+                _loadedPath = path;
+                MelonLogger.Msg($"[RTSAI/CONFIG] loaded {path}: enabled={Bool("enabled", true)} " +
+                                $"factions(alien={Bool("factions.alien", true)} sol={Bool("factions.sol", false)} cent={Bool("factions.centauri", false)}) " +
+                                $"testMode={Bool("testMode", false)} military.enabled={Bool("military.enabled", false)} " +
+                                $"(keys: {string.Join(",", _root.Properties().Select(p => p.Name).Where(n => !n.StartsWith("_")))})");
             }
             catch (Exception ex)
             {
                 // A malformed file must not take the round with it — say so and
-                // carry on with preferences.
-                MelonLogger.Warning($"[RTSAI/JSON] {PATH} could not be read ({ex.Message}) — " +
-                                    "preferences apply unchanged");
-                _root = null;
+                // carry on with whatever was loaded before, or defaults.
+                MelonLogger.Warning($"[RTSAI/CONFIG] {path} could not be read ({ex.Message}) — " +
+                                    (_root != null ? "previous values stay in effect" : "defaults apply"));
             }
         }
+
+        // ---- A/B rig ownership ---------------------------------------------
 
         /// <summary>Set by the A/B rig when an arm names a bridge rule. An arm
         /// outranks the file: during a soak the rig is the thing deciding, and a
@@ -84,11 +89,10 @@ namespace Si_RTS_AI.Planning
 
         /// <summary>True once the A/B rig has applied an arm this round. The two
         /// experiment knobs the rig owns — worker cap and producer density —
-        /// ignore the file while it is set, so an edit made to steer a live
-        /// server cannot quietly rewrite one arm of a running comparison. The
-        /// warning below says which keys were skipped rather than skipping them
-        /// in silence.</summary>
+        /// ignore the file while it is set.</summary>
         internal static bool ArmActive;
+        internal static int? ArmWorkerCapPerBioCache;
+        internal static int? ArmProducerPerSites;
 
         static bool _warnedArmClash;
 
@@ -96,13 +100,15 @@ namespace Si_RTS_AI.Planning
         internal static int IntUnlessArm(string key, int fallback)
         {
             if (!ArmActive) return Int(key, fallback);
-            if (_root?[key] != null && !_warnedArmClash)
+            if (Node(key) != null && !_warnedArmClash)
             {
                 _warnedArmClash = true;
-                MelonLogger.Warning($"[RTSAI/JSON] '{key}' in rtsai.json is ignored while the " +
+                MelonLogger.Warning($"[RTSAI/CONFIG] '{key}' in the config is ignored while the " +
                                     "A/B rig is driving arms — the arm sets it. " +
-                                    "HeadlessTest_ConfigCycle=off to hand control back.");
+                                    "Set configCycle to \"off\" to hand control back.");
             }
+            if (key == "workerCapPerBioCache" && ArmWorkerCapPerBioCache.HasValue) return ArmWorkerCapPerBioCache.Value;
+            if (key == "producerPerSites"     && ArmProducerPerSites.HasValue)     return ArmProducerPerSites.Value;
             return fallback;
         }
 
@@ -117,21 +123,15 @@ namespace Si_RTS_AI.Planning
                 case "shortcut": return BridgeMode.Shortcut;
                 case "off":      return BridgeMode.Off;
                 default:
-                    MelonLogger.Warning($"[RTSAI/JSON] bridgeMode='{s}' not recognised " +
+                    MelonLogger.Warning($"[RTSAI/CONFIG] bridgeMode='{s}' not recognised " +
                                         "(loop|shortcut|off) — using " + fallback);
                     return fallback;
             }
         }
 
-        /// <summary>
-        /// Resolves a key, which may be dotted: "military.enabled" reads
-        /// { "military": { "enabled": true } }. Flat keys are unaffected, so
-        /// every existing caller keeps working.
-        ///
-        /// Sections exist because the military layer adds a dozen knobs and a
-        /// dozen more top-level keys would make the file unreadable — the one
-        /// thing this file has to stay is readable at 2am between rounds.
-        /// </summary>
+        // ---- readers ---------------------------------------------------------
+
+        /// <summary>Resolves a key, which may be dotted. Flat keys are unaffected.</summary>
         static JToken Node(string key)
         {
             if (_root == null || string.IsNullOrEmpty(key)) return null;
@@ -144,6 +144,8 @@ namespace Si_RTS_AI.Planning
             }
             return t;
         }
+
+        internal static bool Has(string key) => Node(key) != null;
 
         internal static int Int(string key, int fallback)
         {

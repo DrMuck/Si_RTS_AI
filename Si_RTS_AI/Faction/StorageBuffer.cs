@@ -125,11 +125,11 @@ namespace Si_RTS_AI.Faction
 
         internal static void Tick(Team team, Vector3 nestPos, ConstructionData bcCd, float roundT)
         {
-            int want = Planning.RtsaiConfig.Int("storageBufferCaches", 0);
+            int want = Config.RtsaiConfig.Int("storageBufferCaches", 0);
             if (want <= 0 || team == null || bcCd == null) return;
             if (nestPos == Vector3.zero) return;
 
-            float atMin = Planning.RtsaiConfig.Float("storageBufferAtMinute", 10f);
+            float atMin = Config.RtsaiConfig.Float("storageBufferAtMinute", 10f);
             if (roundT < atMin * 60f) return;
 
             _placed.TryGetValue(team, out int done);
@@ -140,7 +140,7 @@ namespace Si_RTS_AI.Faction
             // the base, so it is never contested ground.
             if (!_haveCentre)
             {
-                float off = Planning.RtsaiConfig.Float("storageBufferOffsetM", 150f);
+                float off = Config.RtsaiConfig.Float("storageBufferOffsetM", 150f);
                 _centre = new Vector3(nestPos.x, nestPos.y, nestPos.z - off);
                 _haveCentre = true;
             }

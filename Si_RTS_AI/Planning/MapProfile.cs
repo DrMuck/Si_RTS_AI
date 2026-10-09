@@ -313,7 +313,7 @@ namespace Si_RTS_AI.Planning
         {
             try
             {
-                string path = Path.Combine("UserData", "RTSA", "mapprofiles", MapName + ".json");
+                string path = Path.Combine(Config.Paths.LogDir, "mapprofiles", MapName + ".json");
                 if (!File.Exists(path)) return;
                 string txt = File.ReadAllText(path);
                 MaxChainDepthM      = ReadFloat(txt, "maxChainDepthM",      MaxChainDepthM);

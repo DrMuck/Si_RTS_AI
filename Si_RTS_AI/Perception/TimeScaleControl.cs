@@ -24,6 +24,28 @@ namespace Si_RTS_AI.Perception
     {
         static float _fixedDeltaAt1 = -1f;
         static float _applied = 1f;
+        static int   _origTargetFps = int.MinValue;
+
+        /// <summary>Mod switched off: hand the clock and the frame cap back to the game.</summary>
+        internal static void Restore()
+        {
+            try
+            {
+                if (_origTargetFps != int.MinValue && Application.targetFrameRate != _origTargetFps)
+                {
+                    Application.targetFrameRate = _origTargetFps;
+                    MelonLogger.Msg($"[RTSA/TIME] serverFpsCap removed (targetFrameRate back to {_origTargetFps})");
+                }
+                if (!Mathf.Approximately(Time.timeScale, 1f))
+                {
+                    Time.timeScale = 1f;
+                    if (_fixedDeltaAt1 > 0f) Time.fixedDeltaTime = _fixedDeltaAt1;
+                    _applied = 1f;
+                    MelonLogger.Msg("[RTSA/TIME] timeScale back to 1");
+                }
+            }
+            catch { }
+        }
 
         // Achieved-rate meter: game seconds against wall seconds.
         static float _lastGameT;
@@ -45,13 +67,14 @@ namespace Si_RTS_AI.Perception
             // round start and 90 by minute twenty-five. `serverFpsCap` in
             // rtsai.json (0 = leave the game's own setting) pins
             // Application.targetFrameRate so the CPU goes to the simulation.
-            int cap = Planning.RtsaiConfig.Int("serverFpsCap", 0);
+            int cap = Config.RtsaiConfig.Int("serverFpsCap", 0);
             if (cap > 0 && Application.targetFrameRate != cap)
             {
+                if (_origTargetFps == int.MinValue) _origTargetFps = Application.targetFrameRate;
                 Application.targetFrameRate = cap;
                 MelonLogger.Msg($"[RTSA/TIME] serverFpsCap={cap} applied (Application.targetFrameRate)");
             }
-            float want = Mathf.Clamp(Planning.RtsaiConfig.Float("timeScale", 1f), 0.1f, 8f);
+            float want = Mathf.Clamp(Config.RtsaiConfig.Float("timeScale", 1f), 0.1f, 8f);
 
             if (_fixedDeltaAt1 < 0f) _fixedDeltaAt1 = Time.fixedDeltaTime;
 

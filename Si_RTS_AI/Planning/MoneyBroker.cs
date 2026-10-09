@@ -174,7 +174,7 @@ namespace Si_RTS_AI.Planning
                 MelonLogger.Warning("[BROKER] Tick threw: " + ex.Message);
             }
             long ms = (System.Diagnostics.Stopwatch.GetTimestamp() - ts) * 1000L / System.Diagnostics.Stopwatch.Frequency;
-            Si_RTS_AI.RecentModWork.AddBroker(ms);
+            Core.RecentModWork.AddBroker(ms);
         }
     }
 

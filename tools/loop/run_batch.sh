@@ -1,8 +1,11 @@
 #!/bin/bash
 # Run N headless rounds of a config, then extract -> stats -> (optionally) propose.
 #   bash tools/loop/run_batch.sh <config-name> <rounds> [--propose] [--notes file.md]
-# The config lives in configs/<name>/ (MelonPreferences.cfg, rtsai.json, optional
-# commander_compositions.csv). The newest built Si_RTS_AI.dll is installed first.
+# The config is a preset name from configs/presets/<name>.json (installed as the
+# server's active config via tools/select_config.py). If a legacy folder
+# configs/<name>/ also exists, its MelonPreferences.cfg is copied too - only the
+# [Silica] section matters there now (VersusAutoSelectMode). The newest built
+# Si_RTS_AI.dll is installed first.
 set -u
 CFG="$1"; N="${2:-5}"; shift 2
 PROPOSE=0; NOTES=""
@@ -12,7 +15,7 @@ SERVER="E:/Steam/steamapps/common/Silica Dedicated Server"
 RTSA="$SERVER/UserData/RTSA"
 SRC="$ROOT/configs/$CFG"
 DLL=$(ls -t "$ROOT/Si_RTS_AI/bin/Release"/Si_RTS_AI.dll | head -1)
-[ -d "$SRC" ] || { echo "no config $SRC"; exit 1; }
+[ -f "$ROOT/configs/presets/$CFG.json" ] || [ -f "$SERVER/UserData/RTSAI/configs/$CFG.json" ] || { echo "no preset configs/presets/$CFG.json"; exit 1; }
 say() { echo "[$(date +%F' '%T)] $*"; }
 # ONLY THE DEDICATED SERVER. The server and the game client are both Silica.exe,
 # so "taskkill //IM Silica.exe" closed DrMuck's client in the middle of his game
@@ -32,9 +35,9 @@ completed() { grep -l "END ROUND SUMMARY" "$RTSA"/round-*.log 2>/dev/null | grep
 
 say "== batch $CFG x$N with $(basename "$DLL")"
 stop_server
-cp "$SRC/MelonPreferences.cfg" "$SERVER/UserData/MelonPreferences.cfg"
-cp "$SRC/rtsai.json" "$SERVER/UserData/rtsai.json"
-[ -f "$SRC/commander_compositions.csv" ] && cp "$SRC/commander_compositions.csv" "$SERVER/UserData/commander_compositions.csv"
+[ -f "$SRC/MelonPreferences.cfg" ] && cp "$SRC/MelonPreferences.cfg" "$SERVER/UserData/MelonPreferences.cfg"
+python "$ROOT/tools/select_config.py" "$CFG" || exit 1
+[ -f "$SRC/commander_compositions.csv" ] && cp "$SRC/commander_compositions.csv" "$SERVER/UserData/RTSAI/commander_compositions.csv"
 cp "$DLL" "$SERVER/Mods/Si_RTS_AI.dll"
 before=$(completed)
 powershell -NoProfile -Command "Start-Process -FilePath 'E:\Steam\steamapps\common\Silica Dedicated Server\Silica.exe' -ArgumentList '--melonloader.disablestartscreen' -WorkingDirectory 'E:\Steam\steamapps\common\Silica Dedicated Server'" >/dev/null 2>&1

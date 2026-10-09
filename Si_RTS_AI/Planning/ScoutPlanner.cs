@@ -281,7 +281,14 @@ namespace Si_RTS_AI.Planning
             // A PLAYER IN THE ALIEN COMMANDER SEAT COMMANDS. The game disables its
             // own AI commander then, and so does this layer, exactly as vanilla
             // would: it must never spend a player's cash or move a player's units.
-            try { if (!Silica.AI.AIManager.IsCommanderEnabled(team)) return; } catch { }
+            // scoutAssistWithHumanCommander keeps the scouts sweeping for a human
+            // commander (co-op): they are Crabs/Squids the planner builds itself.
+            try
+            {
+                if (!Silica.AI.AIManager.IsCommanderEnabled(team) &&
+                    !Config.RtsaiConfig.Bool("scoutAssistWithHumanCommander", false)) return;
+            }
+            catch { }
             if (!Enabled || team == null) return;
             bool human = Faction.Construction.IsHuman(team) && Faction.FactionControl.IsEnabled(team);
             if (!(team.name ?? "").Contains("Alien") && !human) return;
@@ -878,7 +885,7 @@ namespace Si_RTS_AI.Planning
         static class Patch_Unit_OnMoveOrder_Scout
         {
             static bool Prefix(Unit __instance)
-            {
+            { if (!Config.ModSwitches.Enabled) return true;
                 bool __result = false;
                 try
                 {
@@ -889,7 +896,7 @@ namespace Si_RTS_AI.Planning
         static class Patch_Unit_OnMoveOrder_Scout
         {
             static bool Prefix(AIOrderProcessor __instance, OrderDefinition definition, ref bool __result)
-            {
+            { if (!Config.ModSwitches.Enabled) return true;
                 try
                 {
                     if (!OrderCompat.IsMoveOrder(definition)) return true;
@@ -918,7 +925,7 @@ namespace Si_RTS_AI.Planning
             static List<Unit> _scratch = new List<Unit>(4);
 
             static void Prefix(AIGroup __instance)
-            {
+            { if (!Config.ModSwitches.Enabled) return;
                 try
                 {
                     if (__instance == null || _scoutSet.Count == 0) return;

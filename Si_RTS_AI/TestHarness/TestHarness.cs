@@ -1,4 +1,5 @@
 using HarmonyLib;
+using Si_RTS_AI.Config;
 using MelonLoader;
 using Silica.AI;
 using System;
@@ -12,7 +13,8 @@ namespace Si_RTS_AI.TestHarnessNs
     /// Headless test harness — lets us drive a Silica dedicated server through a full
     /// round with zero human players so we can regression-test the AI slice in CI/soak.
     ///
-    /// All behavior gated behind MelonPreferences category "HeadlessTest":
+    /// All behaviour is gated on testMode in the active config (Config.ModSwitches);
+    /// the harness keys live under "harness" there. Historical key names:
     ///   HeadlessTest_Enable                (bool, default false)  master switch
     ///   HeadlessTest_AutoOverrideRtsai     (bool, default true)   flip Phase31 override on for every AI-commanded team on scene load
     ///   HeadlessTest_PreventEmptyEndround  (bool, default true)   Harmony-patch GameMode.set_NoPlayersTime to keep NoPlayersTime pinned at 0 (stock ends the round when empty for 300s)
@@ -28,56 +30,15 @@ namespace Si_RTS_AI.TestHarnessNs
     /// </summary>
     internal static class TestHarness
     {
-        const string CAT = "HeadlessTest";
-
         // How long ForceAssignAICommanders will retry before giving up (per scene).
         // Keep this small — if TeamSetups aren't populated within 10s, something upstream
         // is wrong and we're better off logging the failure than looping forever.
         const float FORCE_ASSIGN_TIMEOUT_S = 10f;
 
-        // Pref entries — populated in Init(); nullable-annotated so we can guard against
-        // Init not having run (defensive; wiring guarantees it does).
-        static MelonPreferences_Category? _cat;
-        // Removed 2026-07-09 as duplicates of TestMode/EnemyBroke:
-        //   _enable          → replaced by _testMode
-        //   _suppressHumanAI → replaced by _enemyBroke
-        static MelonPreferences_Entry<bool>? _autoOverride;
-        static MelonPreferences_Entry<bool>? _preventEmptyEndround;
-        static MelonPreferences_Entry<int>?  _endRoundAfterMinutes;
-        static MelonPreferences_Entry<bool>? _autoStartRound;
-        static MelonPreferences_Entry<int>?  _autoStartTimeoutSeconds;
-        static MelonPreferences_Entry<bool>? _forceAssignAICommanders;
-        static MelonPreferences_Entry<bool>? _fakeTeamJoin;
-        static MelonPreferences_Entry<bool>? _suppressCombat;
-        // User 2026-07-09 (beta branch): clearer names.
-        // TestMode replaces HeadlessTest_Enable (whether the harness runs at all).
-        // EnemyBroke replaces HeadlessTest_SuppressHumanAI (whether Human teams
-        // get their cash zeroed + starter units purged for alien-eco-only soak).
-        // Both default false — normal gameplay. If either is unset in the .cfg,
-        // fall back to the older HeadlessTest_* key for backwards compat.
-        static MelonPreferences_Entry<bool>? _testMode;
-        static MelonPreferences_Entry<bool>? _enemyBroke;
-        static MelonPreferences_Entry<bool>? _autoResourceDrain;
-        // Per-faction master switch — user 2026-07-09. Alien default true,
-        // humans default false → out of the box, our mod only manages Alien.
-        static MelonPreferences_Entry<bool>? _rtsaiAlien;
-        static MelonPreferences_Entry<bool>? _rtsaiSol;
-        static MelonPreferences_Entry<bool>? _rtsaiCentauri;
-        static MelonPreferences_Entry<bool>?  _scoutEnabled;
-        static MelonPreferences_Entry<int>?   _scoutMaxUnits;
-        static MelonPreferences_Entry<bool>?  _openerExecute;
-        static MelonPreferences_Entry<int>?  _telemetryPort;
-        static MelonPreferences_Entry<string>? _mapRotation;
-        static MelonPreferences_Entry<string>? _configCycle;
-        static MelonPreferences_Entry<bool>?   _shrimpStates;
-        static MelonPreferences_Entry<int>?    _roundsPerMap;
+        // Every setting comes from Config.ModSwitches (the active json config).
         static int _roundsOnThisMap;
         static string _currentMapName = "";
         static int _armIndex;
-        static MelonPreferences_Entry<bool>?   _autoRotateMap;
-        static MelonPreferences_Entry<string>? _configId;
-        static bool _drainAnnounced;
-        static MelonPreferences_Entry<bool>?   _ecoPlannerActive;
 
         // Per-scene runtime state.
         static bool  _sceneActive;          // did OnSceneLoaded accept this scene?
@@ -119,64 +80,11 @@ namespace Si_RTS_AI.TestHarnessNs
         // ================================================================
         internal static void Init()
         {
-            try
-            {
-                _cat = MelonPreferences.CreateCategory(CAT, "Si_RTS_AI Headless Test");
-                _autoOverride         = _cat.CreateEntry("HeadlessTest_AutoOverrideRtsai",    true,  "Auto-flip Phase31 production override on for every AI-commanded team");
-                _preventEmptyEndround = _cat.CreateEntry("HeadlessTest_PreventEmptyEndround", true,  "Prevent stock's 300s no-players auto-endround by pinning NoPlayersTime at 0");
-                _endRoundAfterMinutes = _cat.CreateEntry("HeadlessTest_EndRoundAfterMinutes", 10,    "Force-end the round after this many minutes since scene load (clamped 1..120)");
-                _autoStartRound       = _cat.CreateEntry("HeadlessTest_AutoStartRound",       true,  "Headless auto-start: call SetTeamVersusMode(VersusAutoSelectMode) once per scene, then passively wait for Silica's own pre-round countdown to transition MissionState INIT->STARTED naturally. Force-flip fallback only if the natural transition times out.");
-                _autoStartTimeoutSeconds = _cat.CreateEntry("HeadlessTest_AutoStartTimeoutSeconds", 45, "Seconds to wait after SetTeamVersusMode for the natural INIT->STARTED transition before falling back to a force-flip (clamped 15..300)");
-                _forceAssignAICommanders = _cat.CreateEntry("HeadlessTest_ForceAssignAICommanders", true, "Belt-and-braces: iterate MP_Strategy.TeamSetups and ensure each active empty-commander team has an AICommander registered + enabled via AIManager.AddCommander/EnableCommander. Idempotent — the natural STARTED transition also does this via OnMissionStateChanged.");
-                _fakeTeamJoin         = _cat.CreateEntry("HeadlessTest_FakeTeamJoin",         true,  "v0.7.38: on a fully-headless server (0 clients), simulate a player picking a team AFTER SetTeamVersusMode to unblock the round-start transition. Live modding experience says a real client's team pick is the natural trigger for MissionState INIT->STARTED — this replays that server-side by synthesizing a Player via Player.AddPlayer(NetworkID, name), pushing them onto the first active human team, and calling OnPlayerJoinedBase + NetworkLayer.SendPlayerSelectTeam + AIManager.AddCommander/EnableCommander. One-shot per scene.");
-                _suppressCombat       = _cat.CreateEntry("HeadlessTest_SuppressCombat",      true,  "v0.7.53: prefix-suppress AIGroup.OnAttackOrder unconditionally. AI still forms combat groups internally but no attack orders leave the box. Lets us measure pure eco potential without combat destroying economy. Turn OFF for real gameplay.");
-                _telemetryPort        = _cat.CreateEntry("HeadlessTest_TelemetryPort",       8765,  "v0.7.56: HTTP port for the browser-based layers viewer to poll (localhost only). Set 0 to disable the listener. Endpoints: /catalog, /layer/{team}/{name}, /state.");
-                _testMode             = _cat.CreateEntry("TestMode",   false, "Enable the headless test harness. When true, bot auto-joins to start the round and the round is force-ended after N minutes. When false: normal gameplay (harness dormant).");
-                _enemyBroke           = _cat.CreateEntry("EnemyBroke", false, "Suppress human enemy AI. Only takes effect when TestMode=true. When true: Human teams (Sol/Centauri) have their cash zeroed + starter units purged every ~1s for alien-eco-only benchmarks. When false: humans play normally.");
-                _autoResourceDrain    = _cat.CreateEntry("AutoResourceDrain", false, "When true: EcoRateSampler auto-drains team cash down to 70% cap once it exceeds 75% (min floor 20k). Only useful for benchmark measurement — soak runs want continuous income growth for cumulIncome tracking. When false: cash caps normally (default for regular gameplay).");
-                _rtsaiAlien           = _cat.CreateEntry("RTSAI_Alien",     true,  "Master switch — enable Si_RTS_AI's decisions for Alien team. When false, stock game AI runs for Alien.");
-                _rtsaiSol             = _cat.CreateEntry("RTSAI_Sol",       false, "Master switch — enable Si_RTS_AI's decisions for Human Sol team. When false, stock game AI runs for Sol.");
-                _rtsaiCentauri        = _cat.CreateEntry("RTSAI_Centauri",  false, "Master switch — enable Si_RTS_AI's decisions for Human Centauri team. When false, stock game AI runs for Centauri.");
-                // The military layer is configured ENTIRELY from rtsai.json —
-                // see Planning/MilitaryConfig. It has a dozen unmeasured numbers
-                // and MelonPreferences rewrites its file from memory on shutdown,
-                // so an edit made between rounds of a played evening would be
-                // silently reverted. That is exactly the failure rtsai.json exists
-                // to prevent, and the military knobs are the ones most likely to
-                // move between one game and the next.
-                _scoutEnabled         = _cat.CreateEntry("ScoutEnabled",                  true,  "ScoutPlanner: conscript up to 2 starter Crabs as dedicated scouts and sweep a star of waypoints outward from the Nest, snapping each waypoint to the nearest undiscovered biotics patch. Reveals ground for FoW-gated BC placement. When false, Crabs stay under vanilla AI control.");
-                _scoutMaxUnits        = _cat.CreateEntry("ScoutMaxUnits",                 20,    "How many tier-0 units (Crab / Squid) ScoutPlanner fields. Each owns one arm of a uniform star from the Nest — 20 arms = one every 18 degrees. Existing units are conscripted first; the rest are built as cheap Crabs on a slow trickle.");
-                _openerExecute        = _cat.CreateEntry("OpenerExecute",                 true,  "Phase 1 OpenerPlanner drives the opening build order instead of the beam. False = shadow mode (logs its chosen opening, builds nothing). Abandons itself if a step stalls 45s.");
-                _autoRotateMap        = _cat.CreateEntry("HeadlessTest_AutoRotateMap", false,
-                    "Load the next map in HeadlessTest_MapRotation after a force-end, instead of restarting the same one. OFF by default: it calls GameLevelLoader.StartLoadLevelCoroutine, which is not a verified API here, and a bad load on a live server is worse than a repeated map. Turn on for unattended soak runs, where staying on one map defeats the point of the rotation.");
-                _mapRotation          = _cat.CreateEntry("HeadlessTest_MapRotation",         "NorthPolarCap,NarakaCity,WhisperingPlains", "Comma-separated map names to cycle through for soak testing. Logged at scene load and echoed at round end — auto-cycling isn't wired yet, so restart the server with the next map name in this list to rotate. Guards against overfitting AI tuning to a single map.");
-                _shrimpStates         = _cat.CreateEntry("HeadlessTest_ShrimpStateSampler", false,
-                    "Log every shrimp's position once a second to UserData/RTSA/shrimp_states.jsonl. Off by default — it wrote 4.2 GB over a nineteen-hour soak and no eco benchmark reads it. Turn on only when characterising migration directly.");
-                _roundsPerMap         = _cat.CreateEntry("HeadlessTest_RoundsPerMap", 6,
-                    "Rounds to play on one map before moving on. After every force-end the harness issues 'map <CURRENT MAP> mp_strategy' — the map actually loaded, not a list position — so the run stays where it is until this count is reached, then advances to the next entry in HeadlessTest_MapRotation after the current one. An A/B run needs its arms on identical ground. 0 disables map commands entirely.");
-                _configCycle          = _cat.CreateEntry("HeadlessTest_ConfigCycle", "",
-                    "A/B RIG. EMPTY MEANS THE DEFAULT ARM CYCLE, not 'no experiment' — an empty value silently ran 25 identical rounds on 2026-08-05 while looking like a configured A/B. Write 'off' to genuinely disable arms. Comma-separated arm names applied one per round, cycling. Empty = off (preferences are used as-is). Each arm sets its own knobs and overwrites HeadlessTest_ConfigId, so every benchmark row is tagged with the arm that produced it. Arms rotate rather than running in blocks, so any drift over a long soak spreads evenly across them instead of landing on whichever ran last. Known arms: adaptive, ratio2, ratio3, ratio4, ratio5 (all hold the worker cap at 10 — H1 — and differ only in producers per site); cap18 restores the stock cap for a control.");
-                _configId             = _cat.CreateEntry("HeadlessTest_ConfigId",            "baseline", "Free-form tag identifying the AI-config version this soak run represents (e.g. 'baseline', 'utility_bc_v1'). Written to each benchmark row so 'python analyze.py | group_by(configId)' can diff A/B eco.");
-                _ecoPlannerActive     = _cat.CreateEntry("HeadlessTest_EcoPlannerActive",    false,   "Rolling-horizon eco planner action-execution switch. OFF (default): planner runs in shadow mode, logging [PLAN] recommendations only. ON: planner fires the winning action via HelperMethods.SpawnAtLocation when expected_gain exceeds the min-conviction threshold. Independent of AutoOverrideRtsai — works even when a human is commanding the alien team.");
-
-                RefreshCache();
-                // Keep the cache in sync if an admin edits the file mid-session.
-                MelonPreferences.OnPreferencesLoaded.Subscribe((_) => RefreshCache());
-
-                MelonLogger.Msg($"[RTSA/HT] TestHarness prefs registered under category '{CAT}'. Enable={_cachedEnable} AutoOverride={_autoOverride.Value} PreventEmpty={_cachedPreventEmptyEndround} EndAfter={_endRoundAfterMinutes.Value}min AutoStart={_autoStartRound.Value} AutoStartTimeout={ClampTimeoutSeconds(_autoStartTimeoutSeconds.Value)}s ForceAssignAI={_forceAssignAICommanders.Value} FakeTeamJoin={_fakeTeamJoin.Value} TelemetryPort={_telemetryPort.Value}");
-
-                // Start telemetry HTTP listener whenever a port is configured.
-                // Decoupled from TestMode 2026-07-09 — the LayersViewer is
-                // independent observability that runs during normal gameplay
-                // too. Set TelemetryPort=0 in the .cfg to disable.
-                int port = _telemetryPort?.Value ?? 0;
-                if (port > 0 && port < 65536)
-                    global::Si_RTS_AI.Perception.TelemetryServer.Start(port);
-            }
-            catch (Exception ex)
-            {
-                MelonLogger.Warning($"[RTSA/HT] TestHarness.Init failed: {ex}");
-            }
+            RefreshCache();
+            MelonLogger.Msg($"[RTSA/HT] TestHarness ready. testMode={_cachedEnable} AutoOverride={ModSwitches.AutoOverrideProduction} " +
+                            $"PreventEmpty={_cachedPreventEmptyEndround} EndAfter={ModSwitches.EndRoundAfterMinutes}min AutoStart={ModSwitches.AutoStartRound} " +
+                            $"AutoStartTimeout={ClampTimeoutSeconds(ModSwitches.AutoStartTimeoutSeconds)}s ForceAssignAI={ModSwitches.ForceAssignAICommanders} " +
+                            $"FakeTeamJoin={ModSwitches.FakeTeamJoin}");
         }
 
         static void RefreshCache()
@@ -186,54 +94,11 @@ namespace Si_RTS_AI.TestHarnessNs
             // testMode gates the whole harness: auto-join, the forced round end,
             // map cycling, combat suppression, the broke-enemy hack. Leaving it
             // on while a human plays means the round dies mid-match and the
-            // aliens never shoot back. In rtsai.json so the box can be turned
-            // from soak to playable between rounds.
-            bool testModeOn = Planning.RtsaiConfig.Bool("testMode", _testMode?.Value ?? false);
-            _cachedEnable                = testModeOn;
-            _cachedPreventEmptyEndround  = _preventEmptyEndround?.Value ?? false;
-            // Push suppress-combat flag to the Harmony-patch reader.
-            global::Si_RTS_AI.Faction.SuppressCombat.Enabled =
-                testModeOn && Planning.RtsaiConfig.Bool("suppressCombat", _suppressCombat?.Value ?? false);
-            // EnemyBroke only takes effect while TestMode is on — outside
-            // test mode we always leave humans alone regardless of pref.
-            bool enemyBroke = _enemyBroke?.Value ?? false;
-            global::Si_RTS_AI.Faction.SuppressHumanAI.Enabled = testModeOn && enemyBroke;
-            // AutoResourceDrain toggles the EcoRateSampler's saturation drain.
-            // Independent of TestMode — a soak measurement without the harness
-            // may still want the drain to keep income measurable past cap.
-            //
-            // rtsai.json wins, because this one DESTROYS MONEY and the only way
-            // to see it is a sawtooth in the cash trace. On 2026-08-06 it took
-            // 315k out of a 988k round — a third of everything earned — while
-            // the preference default said false and the stored cfg said true.
-            // A switch with that much authority must be changeable without a
-            // restart and must announce itself.
-            bool drain = Planning.RtsaiConfig.Bool("autoResourceDrain",
-                                                   _autoResourceDrain?.Value ?? false);
-            if (drain != global::Si_RTS_AI.Perception.EcoRateSampler.AutoDrainEnabled || !_drainAnnounced)
-            {
-                _drainAnnounced = true;
-                MelonLogger.Msg(drain
-                    ? "[RTSA/CONFIG] AutoResourceDrain ON — team cash is cut to 70% of capacity " +
-                      "whenever it passes 75%. cumulIncome credits what was drained, so it measures " +
-                      "EARNING POWER and not money the AI ever had to spend."
-                    : "[RTSA/CONFIG] AutoResourceDrain OFF — cash is left alone. At capacity the game " +
-                      "clamps it instead, so income simply stops accruing; cumulIncome then reads as " +
-                      "money that really existed.");
-            }
-            global::Si_RTS_AI.Perception.EcoRateSampler.AutoDrainEnabled = drain;
-            // Per-faction master switches. Alien defaults true; humans false.
-            global::Si_RTS_AI.Faction.FactionControl.AlienEnabled    = _rtsaiAlien?.Value    ?? true;
-            global::Si_RTS_AI.Faction.FactionControl.SolEnabled      = _rtsaiSol?.Value      ?? false;
-            global::Si_RTS_AI.Faction.FactionControl.CentauriEnabled = _rtsaiCentauri?.Value ?? false;
-            global::Si_RTS_AI.Planning.ScoutPlanner.Enabled    = _scoutEnabled?.Value  ?? true;
-            global::Si_RTS_AI.Planning.ScoutPlanner.MaxScouts  = _scoutMaxUnits?.Value ?? 20;
-            global::Si_RTS_AI.Planning.OpenerPlanner.ShadowOnly = !(_openerExecute?.Value ?? true);
-            // Wire the eco-planner execution switch. Independent of _enable —
-            // the planner should be able to run its execution path even in a
-            // regular game where the test harness master switch is off.
-            global::Si_RTS_AI.Planning.EcoPlanner.ExecutionEnabled =
-                _ecoPlannerActive?.Value ?? false;
+            // aliens never shoot back. The subsystem switches themselves are
+            // pushed by ModSwitches.Refresh; this only caches the two the
+            // Harmony prefix reads.
+            _cachedEnable               = ModSwitches.Enabled && ModSwitches.TestMode;
+            _cachedPreventEmptyEndround = ModSwitches.PreventEmptyEndround;
         }
 
         // ================================================================
@@ -259,7 +124,7 @@ namespace Si_RTS_AI.TestHarnessNs
             // rtsai.json first, so the cycle for a soak can be changed between
             // rounds with the server up — the preference form of this knob is
             // what cost 25 rounds on 2026-08-05.
-            string spec = Planning.RtsaiConfig.Str("configCycle", _configCycle?.Value ?? "");
+            string spec = ModSwitches.ConfigCycle ?? "";
 
             // EMPTY IS NOT "NO EXPERIMENT" — IT IS THE DEFAULT CYCLE.
             //
@@ -272,10 +137,10 @@ namespace Si_RTS_AI.TestHarnessNs
             if (string.IsNullOrWhiteSpace(spec)) spec = DEFAULT_ARMS;
             if (string.Equals(spec.Trim(), "off", StringComparison.OrdinalIgnoreCase))
             {
-                Planning.RtsaiConfig.ArmActive = false;
-                Planning.RtsaiConfig.ArmBridgeMode = null;
+                Config.RtsaiConfig.ArmActive = false;
+                Config.RtsaiConfig.ArmBridgeMode = null;
                 MelonLogger.Msg("[RTSA/HT] A/B arms disabled (ConfigCycle=off) — " +
-                                "rounds run on whatever the preferences and rtsai.json say.");
+                                "rounds run on whatever the active config says.");
                 return;
             }
 
@@ -296,7 +161,7 @@ namespace Si_RTS_AI.TestHarnessNs
             // Bridge arms hold producer density at the incumbent ratio3 and move
             // only how a loop is priced, so the two experiments never share a
             // round. See RtsaiConfig.BridgeMode.
-            Planning.RtsaiConfig.BridgeMode? bridge = null;
+            Config.RtsaiConfig.BridgeMode? bridge = null;
             switch (arm.ToLowerInvariant())
             {
                 case "adaptive": perSites = 0; break;
@@ -312,26 +177,23 @@ namespace Si_RTS_AI.TestHarnessNs
                 case "ratio3ap": perSites = 3; break;
                 case "cap18":    cap = 18; perSites = 0; break;
                 case "bridgeloop":
-                    perSites = 3; bridge = Planning.RtsaiConfig.BridgeMode.Loop; break;
+                    perSites = 3; bridge = Config.RtsaiConfig.BridgeMode.Loop; break;
                 case "bridgeshortcut":
-                    perSites = 3; bridge = Planning.RtsaiConfig.BridgeMode.Shortcut; break;
+                    perSites = 3; bridge = Config.RtsaiConfig.BridgeMode.Shortcut; break;
                 case "bridgeoff":
-                    perSites = 3; bridge = Planning.RtsaiConfig.BridgeMode.Off; break;
+                    perSites = 3; bridge = Config.RtsaiConfig.BridgeMode.Off; break;
                 default:
-                    MelonLogger.Warning($"[RTSA/HT] Unknown arm '{arm}' — leaving preferences as they are.");
+                    MelonLogger.Warning($"[RTSA/HT] Unknown arm '{arm}' — leaving the config as it is.");
                     return;
             }
 
             try
             {
-                var bp = MelonPreferences.GetCategory("Si_RTS_AI_Blueprint");
-                var capEntry = bp?.GetEntry<int>("WorkerCapPerBioCache");
-                var ratioEntry = bp?.GetEntry<int>("ProducerPerSites");
-                if (capEntry != null)   capEntry.Value   = cap;
-                if (ratioEntry != null) ratioEntry.Value = perSites;
-                if (_configId != null) _configId.Value = arm;
-                Planning.RtsaiConfig.ArmBridgeMode = bridge;
-                Planning.RtsaiConfig.ArmActive = true;
+                Config.RtsaiConfig.ArmWorkerCapPerBioCache = cap;
+                Config.RtsaiConfig.ArmProducerPerSites     = perSites;
+                ModSwitches.ConfigId = arm;
+                Config.RtsaiConfig.ArmBridgeMode = bridge;
+                Config.RtsaiConfig.ArmActive = true;
                 MelonLogger.Msg($"[RTSA/HT] A/B arm {_armIndex}: '{arm}' " +
                                 $"(WorkerCapPerBioCache={cap} ProducerPerSites={perSites}" +
                                 (bridge.HasValue ? $" bridgeMode={bridge.Value.ToString().ToLowerInvariant()}" : "") +
@@ -376,15 +238,15 @@ namespace Si_RTS_AI.TestHarnessNs
                 _currentMapName  = sceneName;
                 _roundsOnThisMap = 0;
             }
-            Perception.ShrimpStateSampler.Enabled = _shrimpStates?.Value == true;
+            Perception.ShrimpStateSampler.Enabled = ModSwitches.Enabled && ModSwitches.ShrimpStateSampler;
             ApplyNextArm();
 
             if (!_cachedEnable) return;
-            int mins    = ClampMinutes(Planning.RtsaiConfig.Int("endRoundAfterMinutes", _endRoundAfterMinutes?.Value ?? 10));
-            int autoTo  = ClampTimeoutSeconds(_autoStartTimeoutSeconds?.Value ?? 45);
+            int mins    = ClampMinutes(ModSwitches.EndRoundAfterMinutes);
+            int autoTo  = ClampTimeoutSeconds(ModSwitches.AutoStartTimeoutSeconds);
             bool supHumanAI = global::Si_RTS_AI.Faction.SuppressHumanAI.Enabled;
-            string cfgId   = _configId?.Value ?? "-";
-            MelonLogger.Msg($"[RTSA/HT] Armed for scene '{sceneName}'. Force-end in {mins} min. AutoOverride={_autoOverride?.Value == true}. PreventEmptyEndround={_cachedPreventEmptyEndround}. AutoStartRound={_autoStartRound?.Value == true} (timeout {autoTo}s). ForceAssignAICommanders={_forceAssignAICommanders?.Value == true}. FakeTeamJoin={_fakeTeamJoin?.Value == true}. SuppressHumanAI={supHumanAI} ConfigId='{cfgId}'");
+            string cfgId   = (ModSwitches.ConfigId ?? "-");
+            MelonLogger.Msg($"[RTSA/HT] Armed for scene '{sceneName}'. Force-end in {mins} min. AutoOverride={ModSwitches.AutoOverrideProduction}. PreventEmptyEndround={_cachedPreventEmptyEndround}. AutoStartRound={ModSwitches.AutoStartRound} (timeout {autoTo}s). ForceAssignAICommanders={ModSwitches.ForceAssignAICommanders}. FakeTeamJoin={ModSwitches.FakeTeamJoin}. SuppressHumanAI={supHumanAI} ConfigId='{cfgId}'");
 
             // Log the map-rotation hint. Auto-cycling isn't wired yet (Silica's
             // NextMap/StartVoteForNextMap APIs exist but need per-map wiring); this
@@ -412,7 +274,7 @@ namespace Si_RTS_AI.TestHarnessNs
         /// </summary>
         static void TryRotateMap()
         {
-            if (_autoRotateMap?.Value != true) return;
+            if (!ModSwitches.AutoRotateMap) return;
             try
             {
                 var rot = ParseMapRotation();
@@ -447,7 +309,7 @@ namespace Si_RTS_AI.TestHarnessNs
 
         static List<string> ParseMapRotation()
         {
-            var raw = _mapRotation?.Value ?? "";
+            var raw = ModSwitches.MapRotation ?? "";
             var list = new List<string>();
             foreach (var p in raw.Split(','))
             {
@@ -503,7 +365,7 @@ namespace Si_RTS_AI.TestHarnessNs
             LogNaturalStartProgress();
 
             if (!_cachedEnable) return;
-            if (!_autoStartFired && _autoStartRound?.Value == true)
+            if (!_autoStartFired && ModSwitches.AutoStartRound)
                 TryMinimalAutoStart();
 
             // Alien-eco-only soak: periodically purge human units + zero cash so
@@ -516,12 +378,12 @@ namespace Si_RTS_AI.TestHarnessNs
             // Ground truth: on a fully headless server, SetTeamVersusMode alone does NOT
             // trigger MissionState INIT->STARTED — a client's team pick does. Replay
             // that server-side by synthesizing a Player and pushing it onto a team.
-            if (!_fakeTeamJoinFired && _fakeTeamJoin?.Value == true && _autoStartFired)
+            if (!_fakeTeamJoinFired && ModSwitches.FakeTeamJoin && _autoStartFired)
                 TryFakeTeamJoin();
 
             // (1) auto-override: try each tick until at least one commander exists, then
             // flip Phase31.OverrideByTeam=true for every AI-commanded team, once.
-            if (!_autoOverrideApplied && _autoOverride?.Value == true)
+            if (!_autoOverrideApplied && ModSwitches.AutoOverrideProduction)
             {
                 try
                 {
@@ -550,17 +412,17 @@ namespace Si_RTS_AI.TestHarnessNs
             // (2) force-end after N minutes
             if (!_forceEndRoundFired)
             {
-                int mins = ClampMinutes(Planning.RtsaiConfig.Int("endRoundAfterMinutes", _endRoundAfterMinutes?.Value ?? 10));
+                int mins = ClampMinutes(ModSwitches.EndRoundAfterMinutes);
                 float thresholdSeconds = mins * 60f;
                 float elapsed = Time.time - _sceneLoadedAt;
                 if (elapsed >= thresholdSeconds)
                 {
                     _forceEndRoundFired = true;
-                    string tag = _configId?.Value ?? "";
+                    string tag = (ModSwitches.ConfigId ?? "");
                     if (string.IsNullOrWhiteSpace(tag) || tag.IndexOf("planner_active", StringComparison.OrdinalIgnoreCase) >= 0)
                         MelonLogger.Warning($"[RTSA/HT] round ends tagged configId='{tag}' — " +
                                             "that is NOT an experiment arm, so this round groups with nothing. " +
-                                            "Check HeadlessTest_ConfigCycle.");
+                                            "Check configCycle in the config.");
                     ForceEndRound(elapsed);
                     QueueNextMap();
                 }
@@ -582,7 +444,7 @@ namespace Si_RTS_AI.TestHarnessNs
         /// </summary>
         static void QueueNextMap()
         {
-            int perMap = Planning.RtsaiConfig.Int("roundsPerMap", _roundsPerMap?.Value ?? 6);
+            int perMap = ModSwitches.RoundsPerMap;
             if (perMap <= 0) return;                   // map commands disabled
 
             string next = _currentMapName;
@@ -1031,7 +893,7 @@ namespace Si_RTS_AI.TestHarnessNs
             try
             {
                 string mapName = global::Si_RTS_AI.Perception.MapLayers.LayerReplay.CurrentMap ?? "?";
-                string cfgId   = _configId?.Value ?? "-";
+                string cfgId   = (ModSwitches.ConfigId ?? "-");
                 global::Si_RTS_AI.Perception.EcoRateSampler.WriteBenchmarkLines(mapName, cfgId, elapsed);
             }
             catch (Exception ex) { MelonLogger.Warning($"[RTSA/HT] Benchmark write threw: {ex.Message}"); }
@@ -1326,7 +1188,7 @@ namespace Si_RTS_AI.TestHarnessNs
                         mp.SetTeamVersusMode(vsMode, preventSpawning: false);
                         _autoStartVsModeSet   = true;
                         _autoStartVsModeSetAt = Time.time;
-                        int timeoutS = ClampTimeoutSeconds(_autoStartTimeoutSeconds?.Value ?? 45);
+                        int timeoutS = ClampTimeoutSeconds(ModSwitches.AutoStartTimeoutSeconds);
                         float t = Time.time - _sceneLoadedAt;
                         MelonLogger.Msg(
                             $"[RTSA/HT] AutoStart: SetTeamVersusMode({vsMode}, preventSpawning:false) invoked at t+{t:F1}s. " +
@@ -1345,7 +1207,7 @@ namespace Si_RTS_AI.TestHarnessNs
                 LogGameModeTimerIfDue(mp, currentState);
 
                 // Step 3: last-resort fallback — only if the natural transition never happens.
-                int timeout = ClampTimeoutSeconds(_autoStartTimeoutSeconds?.Value ?? 45);
+                int timeout = ClampTimeoutSeconds(ModSwitches.AutoStartTimeoutSeconds);
                 float sinceModeSet = Time.time - _autoStartVsModeSetAt;
                 if (sinceModeSet >= timeout)
                 {

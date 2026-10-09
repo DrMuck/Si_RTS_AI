@@ -1,3 +1,4 @@
+using Si_RTS_AI.Config;
 using Si_RTS_AI.Planning;
 
 namespace Si_RTS_AI.Mil

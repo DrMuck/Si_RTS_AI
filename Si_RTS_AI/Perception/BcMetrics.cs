@@ -179,7 +179,7 @@ namespace Si_RTS_AI.Perception
 
             try
             {
-                string dir = Path.Combine("UserData", "RTSA");
+                string dir = Config.Paths.LogDir;
                 Directory.CreateDirectory(dir);
                 File.AppendAllText(Path.Combine(dir, "bc_metrics.jsonl"), sb.ToString() + "\n");
             }

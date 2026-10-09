@@ -22,8 +22,8 @@ namespace Si_RTS_AI.Perception
     ///   /state               → JSON: {map, roundTime, teams:[{name, cash, capacity, structures:{...}}]}
     ///   /                    → tiny status page
     ///
-    /// Wire-up: TestHarness starts/stops the listener based on a MelonPreferences
-    /// int pref HeadlessTest_TelemetryPort (default 0 = disabled). Real games leave
+    /// Wire-up: Config.ModSwitches.Refresh starts/stops the listener from the
+    /// telemetryPort key (0 = disabled); it is down whenever the mod is off. Real games leave
     /// this off — the port only opens for headless soak runs.
     ///
     /// Thread model: HttpListener callbacks run on a background thread. All reads

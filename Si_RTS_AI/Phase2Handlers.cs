@@ -95,7 +95,7 @@ namespace Si_RTS_AI
         internal static class Patch_AIConstructionHandler_Think
         {
             static void Postfix(AIConstructionHandler __instance)
-            {
+            { if (!Config.ModSwitches.Enabled) return;
                 try
                 {
                     var team = __instance?.Commander?.Team;
@@ -119,7 +119,7 @@ namespace Si_RTS_AI
         internal static class Patch_AIUnitHandler_Think
         {
             static void Postfix(AIUnitHandler __instance)
-            {
+            { if (!Config.ModSwitches.Enabled) return;
                 try
                 {
                     var team = __instance?.Commander?.Team;

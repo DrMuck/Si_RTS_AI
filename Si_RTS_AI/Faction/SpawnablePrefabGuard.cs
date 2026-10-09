@@ -37,7 +37,7 @@ namespace Si_RTS_AI.Faction
         static bool _loggedNulls;
 
         static bool Prefix(string prefabName, ref int __result)
-        {
+        { if (!Config.ModSwitches.Enabled) return true;
             __result = -1;
             try
             {

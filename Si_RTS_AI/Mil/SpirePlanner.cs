@@ -1,3 +1,4 @@
+using Si_RTS_AI.Config;
 using MelonLoader;
 using Silica;
 using Si_RTS_AI.Planning;

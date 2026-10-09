@@ -47,7 +47,7 @@ namespace Si_RTS_AI.Faction
 
         internal static void Reload()
         {
-            Enabled = Planning.RtsaiConfig.Bool("lockAlienCommander", false);
+            Enabled = Config.RtsaiConfig.Bool("lockAlienCommander", false);
         }
 
         internal static void ResetForNewRound()
@@ -95,7 +95,7 @@ namespace Si_RTS_AI.Faction
                     {
                         _lastEjected = who;
                         MelonLogger.Msg($"[ALIEN/LOCK] '{who}' took the {team.name} commander seat — " +
-                                        "returned to the AI (lockAlienCommander is on in rtsai.json).");
+                                        "returned to the AI (lockAlienCommander is on in the active config).");
                     }
                 }
             }

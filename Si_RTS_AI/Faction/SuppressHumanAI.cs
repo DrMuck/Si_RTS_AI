@@ -22,7 +22,7 @@ namespace Si_RTS_AI.Faction
     ///      if we kill the last structure, and we want the round to run its
     ///      full ForceEndAfterMinutes span for benchmark comparison.
     ///
-    /// Wired from TestHarness via the HeadlessTest_SuppressHumanAI preference.
+    /// Enabled is pushed by Config.ModSwitches.Refresh (testMode && enemyBroke).
     /// Sibling of SuppressCombat.
     /// </summary>
     internal static class SuppressHumanAI

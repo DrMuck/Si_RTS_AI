@@ -81,7 +81,7 @@ namespace Si_RTS_AI.Faction
         // cash in SpawnStructuresAndStartingResources; 0.9.46 had only
         // SpawnBaseStructures. Patch whichever exists, by name, so a missing
         // method is a log line and not a patch failure.
-        static void PostfixSpawn() => Apply("after base spawn");
+        static void PostfixSpawn() { if (!Config.ModSwitches.Enabled) return; Apply("after base spawn"); }
         internal static void Install(HarmonyLib.Harmony harmony)
         {
             int n = 0;

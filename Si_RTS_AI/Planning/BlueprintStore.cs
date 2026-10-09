@@ -47,7 +47,7 @@ namespace Si_RTS_AI.Planning
                 {
                     string map = Perception.MapLayers.GridWorld.CurrentMapName ?? "?";
                     string stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-                    _roundDir = Path.Combine("UserData", "RTSA", "blueprint",
+                    _roundDir = Path.Combine(Config.Paths.LogDir, "blueprint",
                                              $"round-{stamp}-{Safe(map)}");
                     Directory.CreateDirectory(_roundDir);
                     MelonLogger.Msg($"[BLUEPRINT] writing plans to {_roundDir}");

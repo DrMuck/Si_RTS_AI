@@ -71,14 +71,34 @@ SERVER = r"E:\Steam\steamapps\common\Silica Dedicated Server"
 MODS = os.path.join(SERVER, "Mods")
 USERDATA = os.path.join(SERVER, "UserData")
 
-# Files that decide behaviour alongside the DLL. Source is the repo copy where
-# there is one, because that is the version-controlled truth; rtsai.json has no
-# repo copy (it is the live edit) so it is taken from the server.
-CONFIGS = [
-    ("rtsai_units.json", ROOT),
-    ("mil_doctrine.json", ROOT),
-    ("rtsai.json", USERDATA),
-]
+# Files that decide behaviour alongside the DLL, as (archive name, source,
+# live path on the server). Source is the repo copy where there is one, because
+# that is the version-controlled truth; the ACTIVE CONFIG (UserData/RTSAI/
+# configs/<state.activeConfig>.json) has no repo copy when it was edited live,
+# so it is taken from the server and archived as active-config.json.
+RTSAI = os.path.join(USERDATA, "RTSAI")
+
+
+def active_config_name():
+    try:
+        with open(os.path.join(RTSAI, "state.json"), encoding="utf-8") as fh:
+            return json.load(fh).get("activeConfig") or ""
+    except (OSError, ValueError):
+        return ""
+
+
+def config_files():
+    active = active_config_name()
+    active_path = os.path.join(RTSAI, "configs", active + ".json") if active else ""
+    return [
+        ("rtsai_units.json",   os.path.join(ROOT, "rtsai_units.json"),   os.path.join(RTSAI, "rtsai_units.json")),
+        ("mil_doctrine.json",  os.path.join(ROOT, "mil_doctrine.json"),  os.path.join(RTSAI, "mil_doctrine.json")),
+        ("state.json",         os.path.join(RTSAI, "state.json"),        os.path.join(RTSAI, "state.json")),
+        ("active-config.json", active_path,                              active_path),
+    ]
+
+
+CONFIGS = config_files()
 
 VERSION_RE = re.compile(r"\bv(\d+\.\d+(?:\.\d+)?)\b")
 
@@ -187,9 +207,8 @@ def cut(args):
     cfg_dir = os.path.join(ARCHIVE, f"cfg_{version}")
     os.makedirs(cfg_dir, exist_ok=True)
     saved = {}
-    for name, src_dir in CONFIGS:
-        src = os.path.join(src_dir, name)
-        if os.path.exists(src):
+    for name, src, _live in config_files():
+        if src and os.path.exists(src):
             shutil.copy2(src, os.path.join(cfg_dir, name))
             saved[name] = sha(src)
         else:
@@ -247,9 +266,26 @@ def deploy_files(dll, cfg_dir, version, retire_missing=False):
         print(f"      python tools/release.py --to {version}")
         return
     n = retired = 0
-    for name, _ in CONFIGS:
+    for name, _src, live in config_files():
         src = os.path.join(cfg_dir, name)
-        live = os.path.join(USERDATA, name)
+        if name == "active-config.json" and os.path.exists(src):
+            # Restore the archived config beside the others and point state.json at it,
+            # so the live edit of that era is what runs - not whatever is active now.
+            live = os.path.join(RTSAI, "configs", f"restored-{version}.json")
+            os.makedirs(os.path.dirname(live), exist_ok=True)
+            shutil.copy2(src, live)
+            st_path = os.path.join(RTSAI, "state.json")
+            try:
+                with open(st_path, encoding="utf-8") as fh: st = json.load(fh)
+            except (OSError, ValueError): st = {}
+            st["activeConfig"] = f"restored-{version}"
+            with open(st_path, "w", encoding="utf-8") as fh: json.dump(st, fh, indent=2)
+            n += 1
+            continue
+        if name == "state.json":
+            continue   # handled with the active config above
+        if not live:
+            continue
         if os.path.exists(src):
             shutil.copy2(src, live)
             n += 1

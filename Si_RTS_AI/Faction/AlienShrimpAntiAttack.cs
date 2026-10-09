@@ -91,7 +91,7 @@ namespace Si_RTS_AI.Faction
             static readonly List<Unit> _scratch = new List<Unit>(8);
 
             static void Prefix(AIGroup __instance)
-            {
+            { if (!Config.ModSwitches.Enabled) return;
                 try
                 {
                     if (__instance == null) return;
@@ -147,7 +147,7 @@ namespace Si_RTS_AI.Faction
         static class Patch_Unit_OnMoveOrder
         {
             static bool Prefix(Unit __instance)
-            {
+            { if (!Config.ModSwitches.Enabled) return true;
                 bool __result = false;
                 try
                 {
@@ -158,7 +158,7 @@ namespace Si_RTS_AI.Faction
         static class Patch_Unit_OnMoveOrder
         {
             static bool Prefix(AIOrderProcessor __instance, OrderDefinition definition, ref bool __result)
-            {
+            { if (!Config.ModSwitches.Enabled) return true;
                 try
                 {
                     if (!OrderCompat.IsMoveOrder(definition)) return true;

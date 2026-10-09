@@ -116,7 +116,7 @@ namespace Si_RTS_AI.Faction
         /// Live from rtsai.json as cystQueueMax.
         /// </summary>
         static int CystQueueMax
-            => Math.Max(1, Planning.RtsaiConfig.Int("cystQueueMax", CYST_QUEUE_MAX_DEFAULT));
+            => Math.Max(1, Config.RtsaiConfig.Int("cystQueueMax", CYST_QUEUE_MAX_DEFAULT));
 
         // Called every AI tick. Cache _shrimpCd lazily.
         static ConstructionData? _shrimpCd;
@@ -131,7 +131,7 @@ namespace Si_RTS_AI.Faction
             try { Run(team); }
             catch (Exception ex) { MelonLogger.Warning("[RTSA/P32] Shrimp producer threw: " + ex.Message); }
             long ms = (System.Diagnostics.Stopwatch.GetTimestamp() - ts) * 1000L / System.Diagnostics.Stopwatch.Frequency;
-            Si_RTS_AI.RecentModWork.AddShrimpProducer(ms, Queued - qBefore);
+            Core.RecentModWork.AddShrimpProducer(ms, Queued - qBefore);
         }
 
         // Per-BC accounting entry. Reference type so we can mutate the
@@ -572,14 +572,14 @@ namespace Si_RTS_AI.Faction
         /// for capacity elsewhere the relocator can reach? rtsai.json,
         /// live-reloaded, default off.</summary>
         static bool RemoteSupplyEnabled
-            => Planning.RtsaiConfig.Bool("remoteSupplyEnabled", false);
+            => Config.RtsaiConfig.Bool("remoteSupplyEnabled", false);
 
         /// <summary>How far, in seconds of walking, free capacity may be and
         /// still count as demand. 60s at 9 m/s is about 540m -- past the
         /// 377-446m the nearest free slots measured at, and short enough that
         /// the shrimp still works for most of the horizon.</summary>
         static float RemoteSupplyMaxWalkS
-            => Planning.RtsaiConfig.Float("remoteSupplyMaxWalkS", 60f);
+            => Config.RtsaiConfig.Float("remoteSupplyMaxWalkS", 60f);
 
         /// <summary>Is there free worker capacity within the walk budget, and
         /// can the relocator actually be moving shrimps toward it? Bounded per
@@ -591,7 +591,7 @@ namespace Si_RTS_AI.Faction
             {
                 float reachM = Planning.EcoSimulator.SHRIMP_SPEED * Math.Max(1f, maxWalkS);
                 float reachSq = reachM * reachM;
-                int perDest = Math.Max(1, Planning.RtsaiConfig.Int("pileUpMaxPerPatch", 10));
+                int perDest = Math.Max(1, Config.RtsaiConfig.Int("pileUpMaxPerPatch", 10));
                 var from = bcs[selfIdx].Pos;
 
                 for (int i = 0; i < bcs.Count; i++)
@@ -632,7 +632,7 @@ namespace Si_RTS_AI.Faction
                 // So scan the whole team and report how FAR the nearest free
                 // capacity is, rather than pretending anything past 270m does
                 // not exist.
-                int perDest = Math.Max(1, Planning.RtsaiConfig.Int("pileUpMaxPerPatch", 10));
+                int perDest = Math.Max(1, Config.RtsaiConfig.Int("pileUpMaxPerPatch", 10));
                 var from = bcs[selfIdx].Pos;
 
                 int raw = 0, transit = 0; float nearestFreeSq = float.MaxValue;

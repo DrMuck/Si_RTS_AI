@@ -924,7 +924,7 @@ namespace Si_RTS_AI.Mil
                   .Append("\"engaged\":").Append(o.ForceEngaged ? "true" : "false").Append(',')
                   .Append("\"outcome\":\"").Append(Esc(o.Outcome)).Append("\",")
                   .Append("\"note\":\"").Append(Esc(o.Note)).Append("\"}");
-                string dir = Path.Combine("UserData", "RTSA");
+                string dir = Config.Paths.LogDir;
                 Directory.CreateDirectory(dir);
                 File.AppendAllText(Path.Combine(dir, "objectives.jsonl"), sb + "\n");
             }

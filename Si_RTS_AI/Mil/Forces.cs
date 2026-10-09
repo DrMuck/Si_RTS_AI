@@ -1229,6 +1229,7 @@ namespace Si_RTS_AI.Mil
         /// the unit is held by a force and the layer is in charge of its team.</summary>
         static bool GateBlocks(Unit unit)
         {
+            if (!Config.ModSwitches.Enabled) return false;
             if (PlannerOverride) return false;
             if (unit == null || !Owns(unit)) return false;
             try

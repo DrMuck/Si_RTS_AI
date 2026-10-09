@@ -625,7 +625,7 @@ namespace Si_RTS_AI.Perception
             if (_perTeam.Count == 0) return;
             try
             {
-                string dir = Path.Combine("UserData", "RTSA");
+                string dir = Config.Paths.LogDir;
                 Directory.CreateDirectory(dir);
                 string path = Path.Combine(dir, "benchmarks.jsonl");
                 string ts = DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss");

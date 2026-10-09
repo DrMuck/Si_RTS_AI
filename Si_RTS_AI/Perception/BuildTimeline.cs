@@ -105,7 +105,7 @@ namespace Si_RTS_AI.Perception
         static class Patch_RequestConstructionSite
         {
             static void Postfix(ConstructionSite __result)
-            {
+            { if (!Config.ModSwitches.Enabled) return;
                 // Unconditional probe: this hook has produced no output at all
                 // on the dedicated server, and the two candidate explanations —
                 // never called, or called with names IsWatched rejects — need
@@ -171,7 +171,7 @@ namespace Si_RTS_AI.Perception
         static class Patch_SiteDeinitialized
         {
             static void Postfix(ConstructionSite __0, bool __1)
-            {
+            { if (!Config.ModSwitches.Enabled) return;
                 try { NoteSiteGone(__0, __1); }
                 catch (Exception ex) { MelonLogger.Warning("[BUILD] done hook threw: " + ex.Message); }
             }

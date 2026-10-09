@@ -120,7 +120,7 @@ namespace Si_RTS_AI.Perception.MapLayers
                 }
 
                 var stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-                _roundDir = Path.Combine("UserData", "RTSA", "layer-replay",
+                _roundDir = Path.Combine(Config.Paths.LogDir, "layer-replay",
                     $"round-{stamp}-{Safe(mapName)}");
                 Directory.CreateDirectory(_roundDir);
 

@@ -64,7 +64,7 @@ namespace Si_RTS_AI.Perception
             if (_writer != null) return;
             try
             {
-                string dir = Path.Combine("UserData", "RTSA");
+                string dir = Config.Paths.LogDir;
                 Directory.CreateDirectory(dir);
                 string ts = DateTime.Now.ToString("yyyyMMdd_HHmmss");
                 _path = Path.Combine(dir, $"fps_{ts}.csv");

@@ -4,8 +4,9 @@
 #   bash tools/overnight.sh <plan-file> [log-file]
 #
 # Plan file: one experiment per line, "name|config-dir|probes|optimizer|koh"
-#   config-dir : folder under configs/ holding MelonPreferences.cfg + rtsai.json
-#   probes     : on|off   -> rtsai.json perfProbes = 46-probe list | ""
+#   config-dir : preset name (configs/presets/<name>.json, installed via select_config.py);
+#                a legacy folder configs/<name>/MelonPreferences.cfg is copied too if present
+#   probes     : on|off   -> active config perfProbes = 46-probe list | ""
 #   optimizer  : on|off   -> Mods/Si_ServerOptimizer.dll present or parked
 #   koh        : on|off   -> Mods/Si_KingOfTheHill.dll present or parked
 # Each experiment: stop the server, install the config, start the server, wait
@@ -16,7 +17,9 @@
 PLAN="$1"
 LOG="${2:-$HOME/overnight.log}"
 SERVER="E:/Steam/steamapps/common/Silica Dedicated Server"
-CONFIGS="C:/Users/schwe/Projects/Si_RTS_AI/configs"
+ROOT="C:/Users/schwe/Projects/Si_RTS_AI"
+CONFIGS="$ROOT/configs"
+ACTIVE_CFG=""
 PROBES=$(cat "C:/Users/schwe/AppData/Local/Temp/claude/C--Users-schwe/5114e2a8-c2b5-4a63-b52e-36b03cf3322d/scratchpad/probes46.txt")
 PARK="$SERVER/Mods/~disabled"
 
@@ -44,7 +47,7 @@ set_mod() {  # set_mod <dll-name> on|off
 }
 
 set_probes() {  # set_probes on|off
-  python - "$1" "$PROBES" "$SERVER/UserData/rtsai.json" <<'EOF'
+  python - "$1" "$PROBES" "$SERVER/UserData/RTSAI/configs/$ACTIVE_CFG.json" <<'EOF'
 import sys, io, re, json
 want, probes, path = sys.argv[1], sys.argv[2], sys.argv[3]
 t = io.open(path, encoding="utf-8").read()
@@ -62,8 +65,9 @@ run_one() {
   local name="$1" cfg="$2" probes="$3" opt="$4" koh="$5"
   say "== $name: config=$cfg probes=$probes optimizer=$opt koh=$koh"
   stop_server
-  cp "$CONFIGS/$cfg/MelonPreferences.cfg" "$SERVER/UserData/MelonPreferences.cfg"
-  cp "$CONFIGS/$cfg/rtsai.json" "$SERVER/UserData/rtsai.json"
+  [ -f "$CONFIGS/$cfg/MelonPreferences.cfg" ] && cp "$CONFIGS/$cfg/MelonPreferences.cfg" "$SERVER/UserData/MelonPreferences.cfg"
+  python "$ROOT/tools/select_config.py" "$cfg" || return
+  ACTIVE_CFG="$cfg"
   set_probes "$probes"
   set_mod Si_ServerOptimizer.dll "$opt"
   set_mod Si_KingOfTheHill.dll "$koh"

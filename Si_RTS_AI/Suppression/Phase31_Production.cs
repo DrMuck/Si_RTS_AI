@@ -58,7 +58,7 @@ namespace Si_RTS_AI.Suppression
                 AIGroupPreset preset,
                 List<ConstructionData> buildOptions,
                 ref ConstructionData __result)
-            {
+            { if (!Config.ModSwitches.Enabled) return;
                 try
                 {
                     var team = __instance?.Commander?.Team;

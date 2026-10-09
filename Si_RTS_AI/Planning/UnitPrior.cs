@@ -45,7 +45,7 @@ namespace Si_RTS_AI.Planning
     /// </summary>
     internal static class UnitPrior
     {
-        const string PATH = "UserData/rtsai_units.json";
+        static string PATH => Config.Paths.Data("rtsai_units.json");
 
         internal class Entry
         {

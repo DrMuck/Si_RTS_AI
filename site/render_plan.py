@@ -11,7 +11,7 @@ import re
 import markdown
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SRC = os.path.join(ROOT, "MIL_V3_PLAN.md")
+SRC = os.path.join(ROOT, "docs", "military", "MIL_V3_PLAN.md")
 OUT = os.path.join(ROOT, "site", "mil-v3-plan.html")
 
 src = open(SRC, encoding="utf-8").read()

@@ -1,3 +1,4 @@
+using Si_RTS_AI.Config;
 using MelonLoader;
 using Silica;
 using Silica.AI;
@@ -729,7 +730,7 @@ namespace Si_RTS_AI.Planning
             try { Run(team); }
             catch (System.Exception ex) { MelonLogger.Warning("[SHRIMP-GRP] threw: " + ex.Message); }
             long ms = (System.Diagnostics.Stopwatch.GetTimestamp() - ts) * 1000L / System.Diagnostics.Stopwatch.Frequency;
-            Si_RTS_AI.RecentModWork.AddShrimpRelocator(ms, MigratedThisRound - movesBefore);
+            Core.RecentModWork.AddShrimpRelocator(ms, MigratedThisRound - movesBefore);
         }
 
         struct Patch { public Vector3 pos; public int remaining; }

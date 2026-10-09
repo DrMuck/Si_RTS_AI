@@ -61,7 +61,7 @@ namespace Si_RTS_AI.Mil
     /// </summary>
     internal static class Doctrine
     {
-        const string PATH = "UserData/mil_doctrine.json";
+        static string PATH => Config.Paths.Data("mil_doctrine.json");
 
         static readonly Dictionary<string, float> _value =
             new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);

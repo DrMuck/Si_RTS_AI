@@ -8,7 +8,7 @@ namespace Si_RTS_AI.Faction
     /// <summary>
     /// v0.7.53 — Combat suppression for eco-only benchmark runs.
     ///
-    /// When HeadlessTest_SuppressCombat is on (default: on for headless test runs),
+    /// When suppressCombat is on in the active config (and testMode is on),
     /// ALL AIGroup.OnAttackOrder calls are prefixed-suppressed. AI still MAKES combat
     /// decisions and forms groups, but no attack orders ever leave the box. Units
     /// don't chase enemies, don't shoot, don't scatter across the map to hunt.
@@ -16,11 +16,8 @@ namespace Si_RTS_AI.Faction
     /// This lets us measure PURE eco potential (income rate over time) without the
     /// noise of combat destroying our own economy.
     ///
-    /// The gate is a MelonPreferences flag from the existing HeadlessTest category
-    /// (registered in TestHarness). If TestHarness isn't loaded / pref isn't set,
-    /// defaults to false → no-op (safe for real games).
-    ///
-    /// Pref key: HeadlessTest_SuppressCombat (bool, default false)
+    /// Enabled is pushed by Config.ModSwitches.Refresh: testMode && suppressCombat
+    /// && the mod being on. Default false → no-op (safe for real games).
     /// </summary>
     internal static class SuppressCombat
     {

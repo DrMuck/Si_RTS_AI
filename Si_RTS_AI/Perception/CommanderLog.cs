@@ -63,7 +63,7 @@ namespace Si_RTS_AI.Perception
         static readonly Dictionary<int, float> _cashAt = new Dictionary<int, float>();
         internal static void SampleCash(Team team)
         {
-            if (team == null) return;
+            if (team == null || !Config.ModSwitches.Enabled || !Config.ModSwitches.CommanderLog) return;
             float now = UnityEngine.Time.time;
             int id = team.GetInstanceID();
             if (_cashAt.TryGetValue(id, out float at) && now - at < CASH_EVERY_S) return;
@@ -83,6 +83,7 @@ namespace Si_RTS_AI.Perception
             static void Postfix(Structure __instance, ConstructionData constructionData, Vector3 worldPosition,
                                 Quaternion worldRotation, bool isClientRequest, ProductionActionResult __result)
             {
+                if (!Config.ModSwitches.Enabled || !Config.ModSwitches.CommanderLog) return;
                 try
                 {
                     if (__instance == null || constructionData == null) return;

@@ -28,7 +28,7 @@ namespace Si_RTS_AI.Mil
     /// </summary>
     internal static class CompositionTarget
     {
-        const string PATH      = "UserData/commander_compositions.csv";
+        static string PATH => Config.Paths.Data("commander_compositions.csv");
         const float  LIFT_MAX  = 2.5f;
         const float  EASE_MIN  = 0.5f;
         const int    HEAVY_COST = 3000;
