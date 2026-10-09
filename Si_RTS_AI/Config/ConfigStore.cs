@@ -23,8 +23,9 @@ namespace Si_RTS_AI.Config
     ///
     /// First start on a server that still has the pre-0.94 layout
     /// (UserData/rtsai.json plus three MelonPreferences sections) imports both
-    /// into configs/migrated.json and activates it, so nothing changes
-    /// behaviourally until somebody picks another config.
+    /// into configs/migrated.json. Nothing is activated by itself: with no
+    /// choice recorded the mod runs "off", so a DLL drop never starts
+    /// commanding a team. An admin picks a config once; state.json remembers.
     /// </summary>
     internal static class ConfigStore
     {
@@ -149,8 +150,12 @@ namespace Si_RTS_AI.Config
                 WriteDefaultConfig();
                 all = List();
             }
+            // NOTHING CHOSEN MEANS OFF. A server that has never picked a config
+            // must not start commanding a team because a DLL was dropped in:
+            // "off" if it exists, else the generated default (also disabled).
             string pick = "";
-            foreach (var n in all) if (string.Equals(n, "public-play", StringComparison.OrdinalIgnoreCase)) pick = n;
+            foreach (var n in all) if (string.Equals(n, "off", StringComparison.OrdinalIgnoreCase)) pick = n;
+            if (pick.Length == 0) foreach (var n in all) if (string.Equals(n, "default", StringComparison.OrdinalIgnoreCase)) pick = n;
             if (pick.Length == 0 && all.Length > 0) pick = all[0];
             if (!string.IsNullOrEmpty(ActiveName))
                 MelonLogger.Warning($"[RTSAI/CONFIG] state.json names '{ActiveName}' but no such config exists — using '{pick}'");
@@ -165,10 +170,10 @@ namespace Si_RTS_AI.Config
                 var j = new JObject
                 {
                     ["_readme"] = new JArray(
-                        "Generated because UserData/RTSAI/configs/ was empty. Every key is optional;",
-                        "see configs/KEYS.md in the repo for the full list. Pick a config in game",
-                        "with /rtsai, or edit this file - it is re-read at every map load."),
-                    ["enabled"] = true,
+                        "Generated because UserData/RTSAI/configs/ was empty, with the mod OFF. Every key",
+                        "is optional; see configs/KEYS.md in the repo for the full list. Pick a config in",
+                        "game with /rtsai, or edit this file - it is re-read at every map load."),
+                    ["enabled"] = false,
                     ["factions"] = new JObject { ["alien"] = true, ["sol"] = false, ["centauri"] = false },
                     ["testMode"] = false,
                     ["commanderLog"] = true,
@@ -292,12 +297,9 @@ namespace Si_RTS_AI.Config
 
             string dest = Paths.ConfigFile("migrated");
             File.WriteAllText(dest, root.ToString());
-            LoadState();
-            bool activate = string.IsNullOrEmpty(_state.ActiveConfig) || !Exists(_state.ActiveConfig);
-            if (activate) { _state.ActiveConfig = "migrated"; SaveState(); }
-            MelonLogger.Msg($"[RTSAI/CONFIG] MIGRATED {Paths.LegacyConfig} (+{imported} preference values) -> {dest}" +
-                            (activate ? "; it is the active config. " : " (not activated: '" + _state.ActiveConfig + "' already is). ") +
-                            "The old rtsai.json is left in place and no longer read.");
+            MelonLogger.Msg($"[RTSAI/CONFIG] MIGRATED {Paths.LegacyConfig} (+{imported} preference values) -> {dest}. " +
+                            "It is NOT activated: the mod starts on 'off' until a config is chosen (/rtsai config migrated " +
+                            "restores the old behaviour). The old rtsai.json is left in place and no longer read.");
         }
 
         /// <summary>key = value pairs from the three sections this mod used to own.</summary>

@@ -246,7 +246,8 @@ namespace Si_RTS_AI.Core
         /// timestamp the mod's own work started at this frame.</summary>
         internal static void NoteFrame(float dt, long startTs)
         {
-            if (dt * 1000f >= LAG_SPIKE_MS)
+            // Scene loads are seconds long by nature; only a gameplay scene's spikes mean anything.
+            if (dt * 1000f >= LAG_SPIKE_MS && Si_RTS_AI.SceneReady)
             {
                 var recent = RecentModWork.SnapshotAndReset(dt);
                 MelonLogger.Msg($"[RTSA/LAG] spike dt={dt * 1000f:F0}ms  {recent}");

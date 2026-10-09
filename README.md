@@ -63,12 +63,14 @@ from memory on shutdown, which silently reverted every edit made while the
 server ran). The active config is re-read at every map load, so editing it
 takes effect on the next round with the server up. The first start on an old
 layout imports `UserData/rtsai.json` plus the three old preference sections into
-`configs/migrated.json` and activates it, so behaviour does not change until a
-different config is chosen.
+`configs/migrated.json` without activating it; choose it to get the old behaviour back.
 
 Presets (see `configs/README.md`): `public-play`, `coop-eco`, `coop-eco-scout`,
 `coop-ai-commander`, `headless-alien-only`, `headless-all-factions`,
 `headless-eco-only`, `off`. Every key is documented in `configs/KEYS.md`.
+
+**Nothing chosen means off.** A fresh install, or an old layout after migration, runs
+`off` until an admin picks a config once (`/rtsai config <name>`); `state.json` remembers it.
 
 Precedence for a switch: chat override (state.json) > active config > built-in
 default.
