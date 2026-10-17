@@ -76,8 +76,11 @@ namespace Si_RTS_AI.Perception
             Si_RTS_AI.AppendToRound($"[CASH] t={RoundSeconds():F0} team={team.name} by={(playerCmd ? "player" : "ai")}{(who.Length > 0 ? " " + who : "")} cash={team.TotalResources} units={units} structures={structures}");
         }
 
+        // Release 1.0.1 added a trailing `Player requester = null` to Construct;
+        // the explicit parameter list must match or Harmony's PatchAll aborts
+        // here and silently skips every attribute patch after this class.
         [HarmonyPatch(typeof(Structure), nameof(Structure.Construct),
-                      new[] { typeof(ConstructionData), typeof(Vector3), typeof(Quaternion), typeof(bool) })]
+                      new[] { typeof(ConstructionData), typeof(Vector3), typeof(Quaternion), typeof(bool), typeof(Player) })]
         static class Patch_Construct
         {
             static void Postfix(Structure __instance, ConstructionData constructionData, Vector3 worldPosition,

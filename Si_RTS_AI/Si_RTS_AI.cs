@@ -4,7 +4,7 @@ using Si_RTS_AI.Core;
 using System;
 using UnityEngine;
 
-[assembly: MelonInfo(typeof(Si_RTS_AI.Si_RTS_AI), "Si_RTS_AI", "0.94.0", "DrMuck")]
+[assembly: MelonInfo(typeof(Si_RTS_AI.Si_RTS_AI), "Si_RTS_AI", "0.94.1", "DrMuck")]
 [assembly: MelonGame("Bohemia Interactive", "Silica")]
 
 namespace Si_RTS_AI
@@ -35,7 +35,7 @@ namespace Si_RTS_AI
         public override void OnInitializeMelon()
         {
             try { System.IO.Directory.CreateDirectory(Paths.LogDir); } catch { }
-            MelonLogger.Msg($"[RTSA] Si_RTS_AI v0.94.0 loaded. Config folder: {System.IO.Path.GetFullPath(Paths.Root)}; round logs: {System.IO.Path.GetFullPath(Paths.LogDir)}");
+            MelonLogger.Msg($"[RTSA] Si_RTS_AI v0.94.1 loaded. Config folder: {System.IO.Path.GetFullPath(Paths.Root)}; round logs: {System.IO.Path.GetFullPath(Paths.LogDir)}");
 
             // WHICH FACTIONS MAY PLAY, spelled the way the game spells it.
             // [Silica]/VersusAutoSelectMode is a vanilla preference whose legal

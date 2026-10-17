@@ -253,7 +253,7 @@ namespace Si_RTS_AI.Chat
         internal static void DumpStatus(Player? caller)
         {
             var sb = new StringBuilder();
-            sb.AppendLine($"[RTSA] v0.94.0 mod {OnOff(ModSwitches.Enabled)}" +
+            sb.AppendLine($"[RTSA] v0.94.1 mod {OnOff(ModSwitches.Enabled)}" +
                           (ConfigStore.EnabledOverride.HasValue ? " (chat override)" : "") +
                           $" · config {ConfigStore.ActiveName} · testMode {ModSwitches.TestMode}");
             sb.AppendLine($"  factions: Alien={OnOff(Faction.FactionControl.AlienEnabled)} " +

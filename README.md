@@ -6,7 +6,7 @@ planner, shrimp assignment), a scout star, a military layer (objectives,
 forces, production, spires) and the observability that everything above was
 tuned against. Server-side only; clients need nothing.
 
-Version 0.94.0. Game Beta 0.9.47.
+Version 0.94.1. Game Release 1.0.1.
 
 ## Layout
 
