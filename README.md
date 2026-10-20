@@ -46,10 +46,10 @@ and can jump back to any archived version.
 
 ## Configuration
 
-Everything the mod reads lives in **`<server>\UserData\RTSAI\`**:
+Everything the mod reads lives in **`<server>\UserData\cfg\RTSAI\`**:
 
 ```
-UserData/RTSAI/
+UserData/cfg/RTSAI/
   configs/*.json          one file per configuration; exactly one is active
   state.json              written by the mod: active config + chat overrides
   rtsai_units.json        production prior

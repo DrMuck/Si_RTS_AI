@@ -1,7 +1,7 @@
 # Configuration keys
 
-One json per configuration in `<server>/UserData/RTSAI/configs/`; the active
-one is named in `UserData/RTSAI/state.json`. Every key is optional — the
+One json per configuration in `<server>/UserData/cfg/RTSAI/configs/`; the active
+one is named in `UserData/cfg/RTSAI/state.json`. Every key is optional — the
 default in the right-hand column applies when it is absent. Keys starting with
 `_` are comments. Dotted names below mean nested objects:
 `military.enabled` is `{ "military": { "enabled": true } }`.

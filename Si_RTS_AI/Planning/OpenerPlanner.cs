@@ -1401,7 +1401,7 @@ namespace Si_RTS_AI.Planning
             // no-op off cluster maps: "on NarakaCity all 107 hold 22,000, so
             // worth/distance collapses to distance and this changes nothing."
             // That reading came from headless TEST MODE, which never applies
-            // UserData\Spawns — the live map runs Si_MapBalance's 42,000 with
+            // UserData\cfg\Spawns — the live map runs Si_MapBalance's 42,000 with
             // per-patch overrides, so worth/distance does NOT collapse and the
             // ranking quietly reorders the pool on the only map that matters.
             //

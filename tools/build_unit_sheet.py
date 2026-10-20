@@ -27,8 +27,8 @@ so retuning the mod never costs you your notes.
 
     python tools/build_unit_sheet.py
 
-Source:  <server>/UserData/UnitBalance_cfg/Si_UnitBalance_Dump.json
-         <server>/UserData/UnitBalance_cfg/ProjectileData_Dump.csv
+Source:  <server>/UserData/cfg/UnitBalance/Si_UnitBalance_Dump.json
+         <server>/UserData/cfg/UnitBalance/ProjectileData_Dump.csv
 Output:  UNIT_ROLES.xlsx  (repo root)
 """
 

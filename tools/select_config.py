@@ -5,9 +5,9 @@ Make a configuration the server's active one, from outside the game.
     python tools/select_config.py <name>          # preset from configs/presets/ or an existing server config
     python tools/select_config.py --list
 
-Copies configs/presets/<name>.json to <server>/UserData/RTSAI/configs/ when the
+Copies configs/presets/<name>.json to <server>/UserData/cfg/RTSAI/configs/ when the
 repo has it (so the server always runs the committed version), then points
-UserData/RTSAI/state.json at it. The mod re-reads the active config at every
+UserData/cfg/RTSAI/state.json at it. The mod re-reads the active config at every
 map load; a running server picks it up at the next round. In game the same
 thing is /rtsai config <name>.
 """
@@ -16,7 +16,7 @@ import json, os, sys
 ROOT    = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PRESETS = os.path.join(ROOT, "configs", "presets")
 SERVER  = os.environ.get("SILICA_SERVER", r"E:\Steam\steamapps\common\Silica Dedicated Server")
-RTSAI   = os.path.join(SERVER, "UserData", "RTSAI")
+RTSAI   = os.path.join(SERVER, "UserData", "cfg", "RTSAI")
 CFGDIR  = os.path.join(RTSAI, "configs")
 STATE   = os.path.join(RTSAI, "state.json")
 

@@ -15,7 +15,7 @@ SERVER="E:/Steam/steamapps/common/Silica Dedicated Server"
 RTSA="$SERVER/UserData/RTSA"
 SRC="$ROOT/configs/$CFG"
 DLL=$(ls -t "$ROOT/Si_RTS_AI/bin/Release"/Si_RTS_AI.dll | head -1)
-[ -f "$ROOT/configs/presets/$CFG.json" ] || [ -f "$SERVER/UserData/RTSAI/configs/$CFG.json" ] || { echo "no preset configs/presets/$CFG.json"; exit 1; }
+[ -f "$ROOT/configs/presets/$CFG.json" ] || [ -f "$SERVER/UserData/cfg/RTSAI/configs/$CFG.json" ] || { echo "no preset configs/presets/$CFG.json"; exit 1; }
 say() { echo "[$(date +%F' '%T)] $*"; }
 # ONLY THE DEDICATED SERVER. The server and the game client are both Silica.exe,
 # so "taskkill //IM Silica.exe" closed DrMuck's client in the middle of his game
@@ -37,7 +37,7 @@ say "== batch $CFG x$N with $(basename "$DLL")"
 stop_server
 [ -f "$SRC/MelonPreferences.cfg" ] && cp "$SRC/MelonPreferences.cfg" "$SERVER/UserData/MelonPreferences.cfg"
 python "$ROOT/tools/select_config.py" "$CFG" || exit 1
-[ -f "$SRC/commander_compositions.csv" ] && cp "$SRC/commander_compositions.csv" "$SERVER/UserData/RTSAI/commander_compositions.csv"
+[ -f "$SRC/commander_compositions.csv" ] && cp "$SRC/commander_compositions.csv" "$SERVER/UserData/cfg/RTSAI/commander_compositions.csv"
 cp "$DLL" "$SERVER/Mods/Si_RTS_AI.dll"
 before=$(completed)
 powershell -NoProfile -Command "Start-Process -FilePath 'E:\Steam\steamapps\common\Silica Dedicated Server\Silica.exe' -ArgumentList '--melonloader.disablestartscreen' -WorkingDirectory 'E:\Steam\steamapps\common\Silica Dedicated Server'" >/dev/null 2>&1

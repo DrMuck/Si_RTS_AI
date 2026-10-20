@@ -29,7 +29,7 @@ namespace Si_RTS_AI.Planning
     ///
     /// The parameters are DERIVED rather than hand-authored, so a rebalanced
     /// map or a moved spawn is picked up automatically (both are configurable
-    /// via Si_MapBalance and UserData/Spawns). A per-map JSON may override any
+    /// via Si_MapBalance and UserData/cfg/Spawns). A per-map JSON may override any
     /// subset when the derivation is wrong for a specific map:
     ///
     ///     UserData/RTSA/mapprofiles/&lt;MapName&gt;.json

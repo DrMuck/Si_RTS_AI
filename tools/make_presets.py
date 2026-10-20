@@ -3,7 +3,7 @@
 Generate the shipped configuration presets: configs/presets/<name>.json.
 
     python tools/make_presets.py            # write all presets
-    python tools/make_presets.py --deploy   # ...and copy them to the server's UserData/RTSAI/configs/
+    python tools/make_presets.py --deploy   # ...and copy them to the server's UserData/cfg/RTSAI/configs/
 
 Every preset is BASE (the tuned economy, measured 2026-08-11, plus the
 former MelonPreferences values) with a handful of overrides, so the presets
@@ -11,7 +11,7 @@ differ only where they are meant to and a change to the economy is made in one
 place. Each preset starts with a "_readme" that says what it is for; keys
 starting with "_" are ignored by the mod.
 
-The mod reads one of these at a time (UserData/RTSAI/state.json names it); pick
+The mod reads one of these at a time (UserData/cfg/RTSAI/state.json names it); pick
 it in game with /rtsai, or /rtsai config <name>.
 """
 
@@ -24,7 +24,7 @@ import sys
 ROOT    = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT     = os.path.join(ROOT, "configs", "presets")
 SERVER  = r"E:\Steam\steamapps\common\Silica Dedicated Server"
-SRV_CFG = os.path.join(SERVER, "UserData", "RTSAI", "configs")
+SRV_CFG = os.path.join(SERVER, "UserData", "cfg", "RTSAI", "configs")
 
 # ---------------------------------------------------------------------------
 # The base: a normal served round, alien under the mod, military on, logging on.
@@ -234,7 +234,7 @@ def build(name):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--deploy", action="store_true", help="also copy into the server's UserData/RTSAI/configs/")
+    ap.add_argument("--deploy", action="store_true", help="also copy into the server's UserData/cfg/RTSAI/configs/")
     args = ap.parse_args()
 
     os.makedirs(OUT, exist_ok=True)

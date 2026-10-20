@@ -9,7 +9,7 @@ namespace Si_RTS_AI.Config
     /// <summary>
     /// THE ACTIVE CONFIGURATION, AS A KEY/VALUE READER.
     ///
-    /// One json file under UserData/RTSAI/configs/ is active at a time (see
+    /// One json file under UserData/cfg/RTSAI/configs/ is active at a time (see
     /// ConfigStore). This class reads it and nothing else: every setting in the
     /// mod — switches, harness, economy, military — comes through Int/Float/
     /// Bool/Str here, with the default in the call. There are no

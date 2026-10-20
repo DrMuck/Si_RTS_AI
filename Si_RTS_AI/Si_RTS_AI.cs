@@ -4,7 +4,7 @@ using Si_RTS_AI.Core;
 using System;
 using UnityEngine;
 
-[assembly: MelonInfo(typeof(Si_RTS_AI.Si_RTS_AI), "Si_RTS_AI", "0.94.1", "DrMuck")]
+[assembly: MelonInfo(typeof(Si_RTS_AI.Si_RTS_AI), "Si_RTS_AI", "0.94.2", "DrMuck")]
 [assembly: MelonGame("Bohemia Interactive", "Silica")]
 
 namespace Si_RTS_AI
@@ -14,7 +14,7 @@ namespace Si_RTS_AI
     ///
     /// This class is only the MelonLoader lifecycle and the master switch. The
     /// work lives in:
-    ///   Config/      the json configuration (UserData/RTSAI/), switches, state
+    ///   Config/      the json configuration (UserData/cfg/RTSAI/), switches, state
     ///   Core/        per-team tick, round lifecycle, round log, frame budget
     ///   Chat/        the /rtsai command and its numbered menu
     ///   Perception/  what the game is doing (events, maps, intel, samplers)

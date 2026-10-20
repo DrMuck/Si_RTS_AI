@@ -153,7 +153,7 @@ discounted value into full value.
 | # | Rule | State |
 |---|---|---|
 | 8.1 | **Si_MapBalance** sets biotics amounts per map *and* per spawn position — never assume a fixed patch value. | implemented |
-| 8.2 | `UserData/Spawns/<Map>/layout_*.json` carries spawn positions, resource amounts, per-patch overrides and chain ranges. | noted |
+| 8.2 | `UserData/cfg/Spawns/<Map>/layout_*.json` carries spawn positions, resource amounts, per-patch overrides and chain ranges. | noted |
 | 8.3 | The AI must read **modded values** (Si_UnitBalance) rather than vanilla assumptions. Reading once at round start is sufficient. | implemented |
 | 8.4 | Node build range is 200m-class due to mods — read it, don't assume. Measured live: BC 200m, Cyst 150m, Node 150m; Node **cost 200** (not 100). | implemented |
 | 8.5 | **IndustrialQuarter** has high-density biotic clusters: 1–2 Cysts can feed one cluster, and a Phase 1 of 2–4 *clusters* may beat 3–4 individual patches. Cluster mode for that map only. | implemented |

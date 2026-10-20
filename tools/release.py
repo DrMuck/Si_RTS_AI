@@ -73,10 +73,10 @@ USERDATA = os.path.join(SERVER, "UserData")
 
 # Files that decide behaviour alongside the DLL, as (archive name, source,
 # live path on the server). Source is the repo copy where there is one, because
-# that is the version-controlled truth; the ACTIVE CONFIG (UserData/RTSAI/
+# that is the version-controlled truth; the ACTIVE CONFIG (UserData/cfg/RTSAI/
 # configs/<state.activeConfig>.json) has no repo copy when it was edited live,
 # so it is taken from the server and archived as active-config.json.
-RTSAI = os.path.join(USERDATA, "RTSAI")
+RTSAI = os.path.join(USERDATA, "cfg", "RTSAI")
 
 
 def active_config_name():

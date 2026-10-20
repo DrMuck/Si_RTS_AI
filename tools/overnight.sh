@@ -47,7 +47,7 @@ set_mod() {  # set_mod <dll-name> on|off
 }
 
 set_probes() {  # set_probes on|off
-  python - "$1" "$PROBES" "$SERVER/UserData/RTSAI/configs/$ACTIVE_CFG.json" <<'EOF'
+  python - "$1" "$PROBES" "$SERVER/UserData/cfg/RTSAI/configs/$ACTIVE_CFG.json" <<'EOF'
 import sys, io, re, json
 want, probes, path = sys.argv[1], sys.argv[2], sys.argv[3]
 t = io.open(path, encoding="utf-8").read()

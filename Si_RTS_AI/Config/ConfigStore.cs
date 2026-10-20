@@ -10,9 +10,9 @@ namespace Si_RTS_AI.Config
     /// <summary>
     /// WHICH CONFIG IS ACTIVE, AND THE FEW THINGS SET FROM CHAT.
     ///
-    /// UserData/RTSAI/configs/ holds any number of json configurations
+    /// UserData/cfg/RTSAI/configs/ holds any number of json configurations
     /// (public-play, coop-eco, headless-alien-only, ...). Exactly one is active;
-    /// its name is kept in UserData/RTSAI/state.json together with the overrides
+    /// its name is kept in UserData/cfg/RTSAI/state.json together with the overrides
     /// an admin sets from chat (mod on/off, commander logging). state.json is the
     /// only file the mod writes, and it is tiny, so the configs themselves stay
     /// hand-edited and never get rewritten from memory.
@@ -170,7 +170,7 @@ namespace Si_RTS_AI.Config
                 var j = new JObject
                 {
                     ["_readme"] = new JArray(
-                        "Generated because UserData/RTSAI/configs/ was empty, with the mod OFF. Every key",
+                        "Generated because UserData/cfg/RTSAI/configs/ was empty, with the mod OFF. Every key",
                         "is optional; see configs/KEYS.md in the repo for the full list. Pick a config in",
                         "game with /rtsai, or edit this file - it is re-read at every map load."),
                     ["enabled"] = false,

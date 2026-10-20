@@ -1,7 +1,7 @@
 # Co-op eco server — the settings that are NOT in rtsai.json
 
 > **Superseded 2026-10-09 (v0.94.0).** Every setting below now lives in one json
-> under `UserData/RTSAI/configs/` — pick `coop-eco`, `coop-eco-scout` or
+> under `UserData/cfg/RTSAI/configs/` — pick `coop-eco`, `coop-eco-scout` or
 > `coop-ai-commander` with `/rtsai`. Only `VersusAutoSelectMode` is still a
 > MelonPreferences value. Kept for the reasoning.
 

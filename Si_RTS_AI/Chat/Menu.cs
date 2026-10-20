@@ -12,7 +12,7 @@ namespace Si_RTS_AI.Chat
     ///
     ///   === RTS AI ===
     ///   1. Mod: ON                 toggle the master switch
-    ///   2. Config: public-play     pick another json from UserData/RTSAI/configs
+    ///   2. Config: public-play     pick another json from UserData/cfg/RTSAI/configs
     ///   3. Factions: ...           per-faction switches for this round
     ///   4. Logging: ...            commander actions / round log file
     ///   5. Status   6. Military   7. Reload config

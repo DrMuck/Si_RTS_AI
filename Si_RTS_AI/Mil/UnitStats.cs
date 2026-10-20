@@ -9,7 +9,7 @@ namespace Si_RTS_AI.Mil
     /// <summary>
     /// THE PHYSICS TABLE, READ FROM THE BALANCE MOD'S OWN DUMP.
     ///
-    /// Si_UnitBalance rewrites `UserData/UnitBalance_cfg/Si_UnitBalance_Dump.json`
+    /// Si_UnitBalance rewrites `UserData/cfg/UnitBalance/Si_UnitBalance_Dump.json`
     /// every time it applies a configuration, so it is the live, modded truth
     /// for cost, health, damage, cooldown, speed and cap weight — the absolute
     /// half of "fit dimensionless behaviour, read absolute physics"
@@ -27,7 +27,7 @@ namespace Si_RTS_AI.Mil
     /// </summary>
     internal static class UnitStats
     {
-        const string PATH = "UserData/UnitBalance_cfg/Si_UnitBalance_Dump.json";
+        static string PATH => Config.Paths.UnitBalanceFile("Si_UnitBalance_Dump.json");
 
         internal class Stats
         {
