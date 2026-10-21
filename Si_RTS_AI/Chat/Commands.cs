@@ -46,6 +46,10 @@ namespace Si_RTS_AI.Chat
             var parts = (args ?? "").Trim().Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
             string sub = parts.Length > 1 ? parts[1].ToLowerInvariant() : "";
 
+            // "/rtsai enabled on|off|auto" = the master switch with its own sub-command word (used by the Si_ModUI
+            // switch row; the bare "/rtsai" is the registered player command and cannot carry an admin entry).
+            if (sub == "enabled" && parts.Length > 2) sub = parts[2].ToLowerInvariant();
+
             // A number while the menu is open is menu input.
             if (Menu.IsOpen(caller) && (sub == "back" || int.TryParse(sub, out _)))
             {

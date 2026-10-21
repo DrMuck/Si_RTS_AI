@@ -40,6 +40,16 @@ namespace ModUI
 
         // ---- status lines shown above the mod's command list (both tabs) ----
         public ModUIExport Info(string line) { if (!string.IsNullOrEmpty(line)) info.Add(line); return this; }
+        // Master switch of the mod: false hides the mod from the player tab (admins still see it, marked "off").
+        public ModUIExport Enabled(bool on) { root["enabled"] = on; return this; }
+        // Document for `public static string ModUIPlayerData(ulong steamId)`: this player's own state for the named
+        // switch / value rows (for example ("/flex", on ? "on" : "off")); the shared export keeps current = "".
+        public static string PlayerValues(params (string text, string value)[] values)
+        {
+            var v = new JObject();
+            foreach (var p in values) if (!string.IsNullOrEmpty(p.text) && p.value != null) v[p.text] = p.value;
+            return v.Count == 0 ? null : JsonConvert.SerializeObject(new JObject { ["v"] = v }, Formatting.None);
+        }
 
         // ---- plain button: sends `text` (plus the Arguments field, if the player typed one) ----
         public ModUIExport Action(string text, string label, string description, bool admin = false)

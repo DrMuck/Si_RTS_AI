@@ -26,6 +26,7 @@ namespace Si_RTS_AI.Chat
                 try { overrideOn = Suppression.Phase31_Production.OverrideByTeam.Values.Any(v => v); } catch { }
 
                 var x = global::ModUI.ModUIExport.New()
+                    .Enabled(ModSwitches.Enabled)
                     .Info($"RTS AI mod {(ModSwitches.Enabled ? "ON" : "OFF")} (switch {mode}) | config {ConfigStore.ActiveName} | " +
                           $"Alien {OnOff(Faction.FactionControl.AlienEnabled)}, Sol {OnOff(Faction.FactionControl.SolEnabled)}, Centauri {OnOff(Faction.FactionControl.CentauriEnabled)}")
                     .Info($"commander log {OnOff(ModSwitches.CommanderLog)} ({cmdLog}) | round log {OnOff(ModSwitches.RoundLog)} ({roundLog})" + (overrideOn ? " | production override ON" : ""))
@@ -36,7 +37,9 @@ namespace Si_RTS_AI.Chat
                     .Action("/rtsai configs", "List configs", "The config presets on the server; * marks the active one.")
                     .Action("/rtsai log", "Logging state", "Commander-action logging and round log switches.")
                     // admin switches
-                    .Switch("/rtsai", "RTS AI mod", "ON: the AI commands every enabled faction whenever no player holds the seat. OFF: vanilla commands every team. AUTO: follow the active config.", admin: true, current: mode, ("on", "ON"), ("off", "OFF"), ("auto", "AUTO"));
+                    // Own sub-command text: the bare "/rtsai" is the registered player command and the server drops an admin entry with that text.
+                    .Switch("/rtsai enabled", "RTS AI mod", "ON: the AI commands every enabled faction whenever no player holds the seat. OFF: vanilla commands every team. AUTO: follow the active config.", admin: true, current: mode, ("on", "ON"), ("off", "OFF"), ("auto", "AUTO"))
+                    .Action("/rtsai exit", "Close chat menu", "Leaves the numbered chat menu opened by Menu.", admin: true);
                 var configs = new System.Collections.Generic.List<(string, string)>();
                 try { foreach (var name in ConfigStore.List()) configs.Add((name, name)); }
                 catch { }
