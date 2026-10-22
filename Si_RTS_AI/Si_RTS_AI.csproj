@@ -1,6 +1,14 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>netstandard2.1</TargetFramework>
+    <!-- Silica branch to build against: "test" (Steam test branch, the default here) or "default" (Steam default
+         branch, what the public server runs). Reference DLLs live in include\<branch>\ (copied from that branch's
+         server install, see Projects\_silica_refs). The default build goes to bin\Release\default\ so it can never
+         be mistaken for the test build:  dotnet build -c Release -p:SilicaBranch=default -->
+    <SilicaBranch Condition="'$(SilicaBranch)' == ''">test</SilicaBranch>
+    <OutputPath Condition="'$(SilicaBranch)' == 'default'">bin\$(Configuration)\default\</OutputPath>
+    <IntermediateOutputPath Condition="'$(SilicaBranch)' == 'default'">obj\$(Configuration)\default\</IntermediateOutputPath>
+    <AppendTargetFrameworkToOutputPath Condition="'$(SilicaBranch)' == 'default'">false</AppendTargetFrameworkToOutputPath>
     <RootNamespace>Si_RTS_AI</RootNamespace>
     <AssemblyName>Si_RTS_AI</AssemblyName>
     <Nullable>enable</Nullable>
@@ -10,16 +18,16 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Reference Include="MelonLoader">           <HintPath>..\include\netstandard2.1\MelonLoader.dll</HintPath> </Reference>
-    <Reference Include="0Harmony">              <HintPath>..\include\netstandard2.1\0Harmony.dll</HintPath> </Reference>
-    <Reference Include="SilicaCore">            <HintPath>..\include\netstandard2.1\SilicaCore.dll</HintPath> </Reference>
-    <Reference Include="Si_AdminMod">           <HintPath>..\include\netstandard2.1\Si_AdminMod.dll</HintPath> </Reference>
-    <Reference Include="UnityEngine">           <HintPath>..\include\netstandard2.1\UnityEngine.dll</HintPath> </Reference>
-    <Reference Include="UnityEngine.CoreModule"><HintPath>..\include\netstandard2.1\UnityEngine.CoreModule.dll</HintPath></Reference>
-    <Reference Include="UnityEngine.TerrainModule"><HintPath>..\include\netstandard2.1\UnityEngine.TerrainModule.dll</HintPath></Reference>
-    <Reference Include="Drawing"><HintPath>../include/netstandard2.1/Drawing.dll</HintPath></Reference>
-    <Reference Include="PackageTools"><HintPath>../include/netstandard2.1/PackageTools.dll</HintPath></Reference>
-    <Reference Include="AstarPathfindingProject"><HintPath>../include/netstandard2.1/AstarPathfindingProject.dll</HintPath></Reference>
-    <Reference Include="Newtonsoft.Json">       <HintPath>..\include\netstandard2.1\Newtonsoft.Json.dll</HintPath></Reference>
+    <Reference Include="MelonLoader">           <HintPath>..\include\$(SilicaBranch)\MelonLoader.dll</HintPath> </Reference>
+    <Reference Include="0Harmony">              <HintPath>..\include\$(SilicaBranch)\0Harmony.dll</HintPath> </Reference>
+    <Reference Include="SilicaCore">            <HintPath>..\include\$(SilicaBranch)\SilicaCore.dll</HintPath> </Reference>
+    <Reference Include="Si_AdminMod">           <HintPath>..\include\$(SilicaBranch)\Si_AdminMod.dll</HintPath> </Reference>
+    <Reference Include="UnityEngine">           <HintPath>..\include\$(SilicaBranch)\UnityEngine.dll</HintPath> </Reference>
+    <Reference Include="UnityEngine.CoreModule"><HintPath>..\include\$(SilicaBranch)\UnityEngine.CoreModule.dll</HintPath></Reference>
+    <Reference Include="UnityEngine.TerrainModule"><HintPath>..\include\$(SilicaBranch)\UnityEngine.TerrainModule.dll</HintPath></Reference>
+    <Reference Include="Drawing"><HintPath>../include/$(SilicaBranch)/Drawing.dll</HintPath></Reference>
+    <Reference Include="PackageTools"><HintPath>../include/$(SilicaBranch)/PackageTools.dll</HintPath></Reference>
+    <Reference Include="AstarPathfindingProject"><HintPath>../include/$(SilicaBranch)/AstarPathfindingProject.dll</HintPath></Reference>
+    <Reference Include="Newtonsoft.Json">       <HintPath>..\include\$(SilicaBranch)\Newtonsoft.Json.dll</HintPath></Reference>
   </ItemGroup>
 </Project>
