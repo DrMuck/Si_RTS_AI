@@ -166,7 +166,7 @@ namespace Si_RTS_AI.Mil
         internal static void ResetForNewRound()
         {
             _tracks.Clear(); _known.Clear(); _bases.Clear(); _baseCountHist.Clear(); _teamPeak.Clear();
-            _harvesters.Clear();
+            _harvesters.Clear(); _notEnemy.Clear();
             _corridor = new float[0];
             Array.Clear(_sector, 0, _sector.Length);
             _lastStampAt = _lastDecayAt = _lastReportAt = 0f;
@@ -197,6 +197,7 @@ namespace Si_RTS_AI.Mil
 
                 _harvesters.Clear();
                 _enemyAlive.Clear();
+                _notEnemy.Clear();
                 var teams = Team.Teams;
                 if (teams != null)
                     for (int t = 0; t < teams.Count; t++)
@@ -205,11 +206,12 @@ namespace Si_RTS_AI.Mil
                         if (other == null || other == self) continue;
                         bool enemy = true;
                         try { enemy = Team.GetTeamsAreEnemy(self, other); } catch { }
-                        if (!enemy) continue;
+                        if (!enemy) { _notEnemy.Add(other.name ?? "?"); continue; }
                         try { if (other.Structures != null && other.Structures.Count > 0) _enemyAlive.Add(other.name ?? "?"); } catch { }
                         ObserveUnits(other, vis, now, dt);
                         ObserveStructures(other, vis, now);
                     }
+                if (_notEnemy.Count > 0) PurgeNonEnemies();
                 ForgetGone(vis, now);
                 Decay(now, vis);
                 RebuildBases(now);
@@ -680,6 +682,77 @@ namespace Si_RTS_AI.Mil
                     MilLog.Quiet($"[INTEL] {k.Team} {k.Name} at ({k.Pos.x:F0},{k.Pos.z:F0}) is gone");
                     _known.Remove(gone[i]);
                 }
+        }
+
+        // ---- alliances ---------------------------------------------------------
+
+        /// <summary>Teams that were NOT an enemy of self on the last stamp, by
+        /// name. Filled by Tick from the same GetTeamsAreEnemy call that gates
+        /// observation, so it costs nothing extra.</summary>
+        static HashSet<string> _notEnemy = new HashSet<string>();
+
+        /// <summary>True when the team was not an enemy of self on the last
+        /// stamp. Objectives reads it to end an objective aimed at a team that
+        /// became an ally, rather than mistake the purge for a kill.</summary>
+        internal static bool IsNonEnemy(string? team) => team != null && _notEnemy.Contains(team);
+
+        /// <summary>
+        /// AN ALLY IS NOT A TARGET. Si_Alliance gives two teams the same
+        /// FriendlyIndex mid-round, so GetTeamsAreEnemy turns false and Tick
+        /// stops observing them - but what was already remembered only left
+        /// through ForgetGone (grace, and the cell visible and empty), so an
+        /// ally's base could stay an attack objective for the rest of the
+        /// round. Every remembered track, structure and base of a team that is
+        /// no longer an enemy is dropped here, along with its base history and
+        /// its army peak (which would otherwise keep floor-ing EnemyEffective).
+        /// No "forgotten" flag is kept: if the alliance dissolves the team is an
+        /// enemy again and the next sighting re-adds everything as new.
+        /// </summary>
+        static void PurgeNonEnemies()
+        {
+            Dictionary<string, (int tracks, int structs, int bases)>? purged = null;
+            void Note(string team, int tr, int st, int ba)
+            {
+                purged ??= new Dictionary<string, (int, int, int)>();
+                purged.TryGetValue(team, out var had);
+                purged[team] = (had.tracks + tr, had.structs + st, had.bases + ba);
+            }
+
+            for (int i = _tracks.Count - 1; i >= 0; i--)
+                if (_notEnemy.Contains(_tracks[i].Team)) { Note(_tracks[i].Team, 1, 0, 0); _tracks.RemoveAt(i); }
+
+            List<string>? drop = null;
+            foreach (var kv in _known)
+                if (_notEnemy.Contains(kv.Value.Team)) (drop ??= new List<string>()).Add(kv.Key);
+            if (drop != null)
+                for (int i = 0; i < drop.Count; i++)
+                {
+                    Note(_known[drop[i]].Team, 0, 1, 0);
+                    _known.Remove(drop[i]);
+                }
+
+            // Bases are rebuilt from _known only every five seconds; drop them
+            // now so no objective re-reads a stale one in between.
+            for (int i = _bases.Count - 1; i >= 0; i--)
+                if (_notEnemy.Contains(_bases[i].Team)) { Note(_bases[i].Team, 0, 0, 1); _bases.RemoveAt(i); }
+
+            foreach (var team in _notEnemy) _teamPeak.Remove(team);
+
+            if (purged == null) return;
+            List<string>? hist = null;
+            foreach (var key in _baseCountHist.Keys)
+            {
+                int hash = key.LastIndexOf('#');
+                if (hash > 0 && purged.ContainsKey(key.Substring(0, hash))) (hist ??= new List<string>()).Add(key);
+            }
+            if (hist != null) for (int i = 0; i < hist.Count; i++) _baseCountHist.Remove(hist[i]);
+
+            foreach (var kv in purged)
+            {
+                var c = kv.Value;
+                MilLog.Quiet($"[RTSAI] Intel: purged {c.tracks + c.structs + c.bases} entries of non-enemy team {kv.Key} " +
+                             $"(tracks {c.tracks}, structures {c.structs}, bases {c.bases})");
+            }
         }
 
         internal static void ForEachKnown(Action<KnownStructure> fn)

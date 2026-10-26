@@ -758,6 +758,18 @@ namespace Si_RTS_AI.Mil
             for (int i = 0; i < Portfolio.Count; i++)
             {
                 var o = Portfolio[i];
+                // AN ALLY IS NOT A TARGET (Si_Alliance). Intel purges a team that
+                // stopped being an enemy; without this the check below would read
+                // the vanished base as "base gone" and log a kill that never was.
+                // A proposed one is dropped quietly, before Forces can staff it.
+                string? tgtTeam = o.BaseRef?.Team ?? o.StructRef?.Team ?? o.TrackRef?.Team;
+                if (tgtTeam != null && (o.Status == Status.Active || o.Status == Status.Proposed) && Intel.IsNonEnemy(tgtTeam))
+                {
+                    string why = $"target team {Intel.Short(tgtTeam)} is no longer an enemy";
+                    if (o.Status == Status.Active) End(o, Status.Done, why, now);
+                    else { o.Status = Status.Done; o.EndedAt = now; o.Outcome = why; }
+                    continue;
+                }
                 if (o.Status != Status.Active) continue;
                 if (o.BaseRef != null) { var lb = LiveBase(o.BaseRef); if (lb != null) o.BaseRef = lb; }
                 string done = null, failed = null;
