@@ -76,13 +76,31 @@ namespace Si_RTS_AI.Perception
             Si_RTS_AI.AppendToRound($"[CASH] t={RoundSeconds():F0} team={team.name} by={(playerCmd ? "player" : "ai")}{(who.Length > 0 ? " " + who : "")} cash={team.TotalResources} units={units} structures={structures}");
         }
 
-        // Release 1.0.1 added a trailing `Player requester = null` to Construct;
-        // the explicit parameter list must match or Harmony's PatchAll aborts
-        // here and silently skips every attribute patch after this class.
-        [HarmonyPatch(typeof(Structure), nameof(Structure.Construct),
-                      new[] { typeof(ConstructionData), typeof(Vector3), typeof(Quaternion), typeof(bool), typeof(Player) })]
+        // Release 1.0.1 added a trailing `Player requester = null` to Construct
+        // (0.9.47 on the default branch has four parameters). A fixed parameter
+        // list makes Harmony's PatchAll abort on the other branch and silently
+        // skip every attribute patch after this class, so the target is resolved
+        // at runtime by name and leading parameters; the Postfix only binds the
+        // parameters both branches share.
+        [HarmonyPatch]
         static class Patch_Construct
         {
+            static System.Reflection.MethodBase? TargetMethod()
+            {
+                var lead = new[] { typeof(ConstructionData), typeof(Vector3), typeof(Quaternion), typeof(bool) };
+                foreach (var m in typeof(Structure).GetMethods(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.DeclaredOnly))
+                {
+                    if (m.Name != nameof(Structure.Construct)) continue;
+                    var ps = m.GetParameters();
+                    if (ps.Length < lead.Length) continue;
+                    bool ok = true;
+                    for (int i = 0; i < lead.Length; i++) if (ps[i].ParameterType != lead[i]) { ok = false; break; }
+                    if (ok) return m;
+                }
+                MelonLoader.MelonLogger.Warning("[CMDLOG] Structure.Construct not found; construct log inactive");
+                return null;
+            }
+
             static void Postfix(Structure __instance, ConstructionData constructionData, Vector3 worldPosition,
                                 Quaternion worldRotation, bool isClientRequest, ProductionActionResult __result)
             {
