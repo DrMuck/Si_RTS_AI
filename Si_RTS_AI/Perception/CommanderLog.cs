@@ -78,10 +78,10 @@ namespace Si_RTS_AI.Perception
 
         // Release 1.0.1 added a trailing `Player requester = null` to Construct
         // (0.9.47 on the default branch has four parameters). A fixed parameter
-        // list makes Harmony's PatchAll abort on the other branch and silently
-        // skip every attribute patch after this class, so the target is resolved
-        // at runtime by name and leading parameters; the Postfix only binds the
-        // parameters both branches share.
+        // list fails on the other branch (MelonLoader 0.7 patches per class, so
+        // only this class is lost, with an [ERROR] in the log), so the target is
+        // resolved at runtime by name and leading parameters; the Postfix only
+        // binds the parameters both branches share.
         [HarmonyPatch]
         static class Patch_Construct
         {
