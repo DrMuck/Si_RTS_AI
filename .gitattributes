@@ -1,0 +1,2 @@
+# Binary documents: never EOL-convert (a text-looking PDF got i/lf)
+*.pdf binary
