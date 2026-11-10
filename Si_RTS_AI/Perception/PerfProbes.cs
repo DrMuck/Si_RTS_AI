@@ -72,7 +72,7 @@ namespace Si_RTS_AI.Perception
                 }
                 catch (Exception ex) { MelonLogger.Warning("[RTSA/PROBE] " + spec + ": " + ex.Message); }
             }
-            MelonLogger.Msg("[RTSA/PROBE] attached " + attached.Count + ": " + string.Join(", ", attached));
+            RtsLog.Msg("[RTSA/PROBE] attached " + attached.Count + ": " + string.Join(", ", attached));
         }
 
         static void Timed(HarmonyLib.Harmony harmony, string type, string method, string pre, string post, List<string> attached)

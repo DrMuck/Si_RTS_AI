@@ -126,7 +126,7 @@ namespace Si_RTS_AI.Perception
                     }
                     f.Write(sb.ToString());
                 }
-                MelonLogger.Msg($"[CONSTS] Appended {newSections} new section(s) to {path}. Total dumped so far: {_dumpedSections.Count}.");
+                RtsLog.Msg($"[CONSTS] Appended {newSections} new section(s) to {path}. Total dumped so far: {_dumpedSections.Count}.");
             }
             catch (Exception ex)
             {

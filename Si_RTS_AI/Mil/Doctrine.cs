@@ -102,7 +102,7 @@ namespace Si_RTS_AI.Mil
                 if (!File.Exists(PATH))
                 {
                     if (Loaded)
-                        MelonLogger.Msg("[MIL/DOC] mil_doctrine.json removed — " +
+                        RtsLog.Msg("[MIL/DOC] mil_doctrine.json removed — " +
                                         "force reads raw cash, no bands, no trajectory");
                     _value.Clear(); _trajectory.Clear(); Loaded = false;
                     return;
@@ -148,7 +148,7 @@ namespace Si_RTS_AI.Mil
                 if (src?["beta"] != null) Beta = (float)src["beta"];
 
                 Loaded = _value.Count > 0 || _trajectory.Count > 0;
-                MelonLogger.Msg($"[MIL/DOC] loaded {PATH}: {_value.Count} unit values, " +
+                RtsLog.Msg($"[MIL/DOC] loaded {PATH}: {_value.Count} unit values, " +
                                 $"{_trajectory.Count} trajectories, era {_era}" +
                                 (src?["fights"] != null
                                     ? $" | fitted on {src["fights"]} fights, " +

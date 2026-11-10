@@ -54,6 +54,13 @@
   "storageBufferCaches": 0,
   "storageBufferAtMinute": 10,
   "storageBufferOffsetM": 150,
+  "placement": {
+    "maxStepsPerSecond": 100,
+    "maxConcurrentSearches": 2,
+    "sliceS": 0.5,
+    "maxSearchS": 50,
+    "maxSearchOwnS": 120
+  },
   "military": {
     "enabled": true,
     "execute": true,

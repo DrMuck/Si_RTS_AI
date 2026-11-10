@@ -956,7 +956,7 @@ namespace Si_RTS_AI.Planning
                 try { incoming = ShrimpGroupPlanner.ShrimpsAtOrHeadingTo(at); } catch { }
                 if (incoming >= Mathf.Max(1, ShrimpGroupPlanner.TypicalGroupCapacity))
                 {
-                    MelonLogger.Msg($"[BLUEPRINT] no Cyst at ({at.x:F0},{at.z:F0}) — " +
+                    RtsLog.Msg($"[BLUEPRINT] no Cyst at ({at.x:F0},{at.z:F0}) — " +
                                     $"{incoming} shrimps are here or walking here; " +
                                     "the producer goes further out");
                     continue;
@@ -975,7 +975,7 @@ namespace Si_RTS_AI.Planning
                 float cystTime = EcoSimulator.CYST_BUILD_S + need * EcoSimulator.SHRIMP_BUILD_S;
                 if (order[oi].arrivalS <= cystTime)
                 {
-                    MelonLogger.Msg($"[BLUEPRINT] no Cyst at ({at.x:F0},{at.z:F0}) — " +
+                    RtsLog.Msg($"[BLUEPRINT] no Cyst at ({at.x:F0},{at.z:F0}) — " +
                                     $"{need} shrimps can walk here in {order[oi].arrivalS:F0}s, " +
                                     $"a Cyst would need {cystTime:F0}s");
                     continue;
@@ -990,7 +990,7 @@ namespace Si_RTS_AI.Planning
                     why  = float.IsInfinity(order[oi].arrivalS) ? "nobody can walk here"
                          : reachableOnFoot ? "understaffed" : "migration too slow",
                 });
-                MelonLogger.Msg($"[BLUEPRINT] Cyst at ({at.x:F0},{at.z:F0}) — " +
+                RtsLog.Msg($"[BLUEPRINT] Cyst at ({at.x:F0},{at.z:F0}) — " +
                                 (float.IsInfinity(order[oi].arrivalS)
                                     ? $"{need} shrimps could never walk here in time"
                                     : $"migration needs {order[oi].arrivalS:F0}s, a Cyst {cystTime:F0}s"));
@@ -1195,7 +1195,7 @@ namespace Si_RTS_AI.Planning
                 prevPt = np;
             }
             NoteBridgeCommitted(win.a, win.b);
-            MelonLogger.Msg($"[BLUEPRINT] bridge({mode.ToString().ToLowerInvariant()}): " +
+            RtsLog.Msg($"[BLUEPRINT] bridge({mode.ToString().ToLowerInvariant()}): " +
                             $"{win.hops} node(s) from " +
                             $"({win.a.x:F0},{win.a.z:F0}) to ({win.b.x:F0},{win.b.z:F0}) — " +
                             $"saves {win.savedM:F0}m of road for {win.beyond} structures, " +
@@ -1461,7 +1461,7 @@ namespace Si_RTS_AI.Planning
             for (int i = 0; i < Bridges.Count; i++)
                 sb.Append(" | bridge b").Append(Bridges[i].branchA).Append("-b").Append(Bridges[i].branchB)
                   .Append(' ').Append(Bridges[i].hops).Append("n protects ").Append(Bridges[i].protects);
-            MelonLogger.Msg(sb.ToString());
+            RtsLog.Msg(sb.ToString());
 
             BlueprintStore.Write(s);
         }

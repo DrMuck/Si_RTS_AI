@@ -125,7 +125,7 @@ namespace Si_RTS_AI.Perception
             Core.RoundLog.Append(line);
 
             if (ob.TickCount % LOG_EVERY_N_TICKS == 0)
-                MelonLogger.Msg($"[RTSA/OBS] {line}");
+                RtsLog.Console($"[RTSA/OBS] {line}");
         }
 
         // ==================== GAME EVENTS ====================
@@ -167,7 +167,7 @@ namespace Si_RTS_AI.Perception
                 GameEvents.OnUnitDestroyed           += OnUnitDestroyed;
 
                 _hooked = true;
-                MelonLogger.Msg("[RTSA] GameEvents hooked (orders + selections + spawns).");
+                RtsLog.Console("[RTSA] GameEvents hooked (orders + selections + spawns).");
             }
             catch (Exception ex)
             {

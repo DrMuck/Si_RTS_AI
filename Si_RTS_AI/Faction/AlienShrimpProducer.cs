@@ -519,7 +519,7 @@ namespace Si_RTS_AI.Faction
             float ceiling = cysts * 60f / Mathf.Max(1f, Planning.EcoSimulator.SHRIMP_BUILD_S);
 
             Planning.WorkerPlan.NoteDuty(perMin, ceiling);
-            MelonLogger.Msg($"[SHRIMP/PROD] {perMin:F1}/min against {ceiling:F1}/min from {cysts} producers " +
+            RtsLog.Msg($"[SHRIMP/PROD] {perMin:F1}/min against {ceiling:F1}/min from {cysts} producers " +
                             $"({(ceiling > 0f ? perMin / ceiling * 100f : 0f):F0}%) — " +
                             $"live={live} queued={queued} cap={cap} | " +
                             $"blocked: teamCap={_blockedTeamCap} bcCap={_blockedBcCap} " +

@@ -4,7 +4,7 @@ using Si_RTS_AI.Core;
 using System;
 using UnityEngine;
 
-[assembly: MelonInfo(typeof(Si_RTS_AI.Si_RTS_AI), "Si_RTS_AI", "0.94.8", "DrMuck")]
+[assembly: MelonInfo(typeof(Si_RTS_AI.Si_RTS_AI), "Si_RTS_AI", "0.94.14", "DrMuck")]
 [assembly: MelonGame("Bohemia Interactive", "Silica")]
 
 namespace Si_RTS_AI
@@ -35,7 +35,7 @@ namespace Si_RTS_AI
         public override void OnInitializeMelon()
         {
             try { System.IO.Directory.CreateDirectory(Paths.LogDir); } catch { }
-            MelonLogger.Msg($"[RTSA] Si_RTS_AI v0.94.8 loaded. Config folder: {System.IO.Path.GetFullPath(Paths.Root)}; round logs: {System.IO.Path.GetFullPath(Paths.LogDir)}");
+            MelonLogger.Msg($"[RTSA] Si_RTS_AI v0.94.14 loaded. Config folder: {System.IO.Path.GetFullPath(Paths.Root)}; round logs: {System.IO.Path.GetFullPath(Paths.LogDir)}");
 
             // WHICH FACTIONS MAY PLAY, spelled the way the game spells it.
             // [Silica]/VersusAutoSelectMode is a vanilla preference whose legal
@@ -66,6 +66,8 @@ namespace Si_RTS_AI
             catch (Exception ex) { MelonLogger.Warning("[RTSA/PROBE] init failed: " + ex.Message); }
             try { Faction.SpawnablePrefabGuard.Install(HarmonyInstance); }
             catch (Exception ex) { MelonLogger.Warning("[PREFAB/GUARD] install threw: " + ex.Message); }
+            try { Faction.PlacementBudget.Install(HarmonyInstance); }
+            catch (Exception ex) { MelonLogger.Warning("[PLACE/BUDGET] install failed: " + ex.Message); }
             try { Faction.StartingResourcesGuard.Install(HarmonyInstance); }
             catch (Exception ex) { MelonLogger.Warning("[CASH/GUARD] install failed: " + ex.Message); }
         }
@@ -83,6 +85,8 @@ namespace Si_RTS_AI
         {
             // The frame cap is a server setting and follows the config even with the mod off.
             Perception.TimeScaleControl.TickFpsCap();
+            // Placement search budget: starts waiting searches as slots free (flushes them when the mod is off).
+            Faction.PlacementBudget.Pump();
             if (!ModSwitches.Enabled) return;
 
             RoundLog.Flush();
@@ -136,6 +140,27 @@ namespace Si_RTS_AI
             // Headless test harness — must run AFTER Phase31 reset so its AutoOverride
             // (which populates Phase31.OverrideByTeam) sticks for this round.
             TestHarnessNs.TestHarness.OnSceneLoaded(sceneName);
+        }
+
+        /// <summary>
+        /// The game restarted the round on the scene it already had (round end
+        /// with the map kept): close the old round, re-read the config, reset
+        /// every subsystem and open a new round log — what OnSceneWasLoaded does,
+        /// minus the scene-bound parts (the EventLog hooks survive, the harness
+        /// re-arms itself). Called by the harness at the new round's STARTED.
+        /// </summary>
+        internal static void OnSameSceneRoundRestart()
+        {
+            if (string.IsNullOrEmpty(_currentScene) || !IsGameplayScene(_currentScene)) return;
+            MelonLogger.Msg($"[RTSA] new round on the same scene '{_currentScene}' — closing the old round log and resetting every planner");
+            RoundLifecycle.EndRound();
+            RoundLog.Close();
+            SceneReady = false;
+            RtsaiConfig.Reload();
+            ModSwitches.Refresh("same-scene restart");
+            if (!ModSwitches.Enabled) return;
+            RoundLifecycle.BeginRound(_currentScene);
+            SceneReady = true;
         }
 
         /// <summary>

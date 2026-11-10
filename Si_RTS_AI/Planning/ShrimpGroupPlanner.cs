@@ -590,7 +590,7 @@ namespace Si_RTS_AI.Planning
             if (now - _lastHaulLogAt > 30f)
             {
                 _lastHaulLogAt = now;
-                MelonLogger.Msg($"[SHRIMP-SUP] long haul: shrimps working " +
+                RtsLog.Msg($"[SHRIMP-SUP] long haul: shrimps working " +
                                 $"({_freePatches[fi].x:F0},{_freePatches[fi].z:F0}) unload " +
                                 $"{Mathf.Sqrt(haul2):F0}m away — wants a Bio Cache there");
             }
@@ -630,7 +630,7 @@ namespace Si_RTS_AI.Planning
             if (now - _lastDispatchLogAt > 20f)
             {
                 _lastDispatchLogAt = now;
-                MelonLogger.Msg($"[SHRIMP-SUP] heading for untapped " +
+                RtsLog.Msg($"[SHRIMP-SUP] heading for untapped " +
                                 $"({_freePatches[fi].x:F0},{_freePatches[fi].z:F0}) — " +
                                 "raising demand now so the chain arrives with them");
             }
@@ -850,7 +850,7 @@ namespace Si_RTS_AI.Planning
             _walkedPast.TryGetValue(best, out float c);
             _walkedPast[best] = c + 1f;
 
-            MelonLogger.Msg("[SHRIMP-SUP] EXPANSION-MISS walked past (" +
+            RtsLog.Msg("[SHRIMP-SUP] EXPANSION-MISS walked past (" +
                             free[best].x.ToString("F0") + "," + free[best].z.ToString("F0") + ") at " +
                             bestD.ToString("F0") + "m to reach (" +
                             chosen.x.ToString("F0") + "," + chosen.z.ToString("F0") + ") at " +
@@ -903,7 +903,7 @@ namespace Si_RTS_AI.Planning
                   .Append(free[i].z.ToString("F0")).Append(')')
                   .Append(Mathf.Sqrt(SqDist(free[i], from)).ToString("F0")).Append('m');
             }
-            MelonLogger.Msg(sb.ToString());
+            RtsLog.Msg(sb.ToString());
         }
 
         /// <summary>
@@ -953,7 +953,7 @@ namespace Si_RTS_AI.Planning
                 float dx = free[i].x - _committedPos.x, dz = free[i].z - _committedPos.z;
                 if (dx * dx + dz * dz < 1f) return;      // still unserved, keep committing
             }
-            MelonLogger.Msg($"[SHRIMP-SUP] expansion at ({_committedPos.x:F0},{_committedPos.z:F0}) " +
+            RtsLog.Msg($"[SHRIMP-SUP] expansion at ({_committedPos.x:F0},{_committedPos.z:F0}) " +
                             $"is served — releasing commitment");
             _committedAt = -1f;
         }
@@ -964,7 +964,7 @@ namespace Si_RTS_AI.Planning
             float now = Time.time;
             if (now - _lastStrandedLogAt < 20f) return;
             _lastStrandedLogAt = now;
-            MelonLogger.Msg($"[SHRIMP-SUP] {_strandedNoRoom} shrimps stranded near " +
+            RtsLog.Msg($"[SHRIMP-SUP] {_strandedNoRoom} shrimps stranded near " +
                             $"({from.x:F0},{from.z:F0}) — every live patch is full, need expansion");
             _strandedNoRoom = 0;
         }
@@ -1264,7 +1264,7 @@ namespace Si_RTS_AI.Planning
                         // a further one is the thing that needs explaining, and
                         // it cannot be diagnosed from the winner alone.
                         LogFreePatchCandidates(p, freeIdx);
-                        MelonLogger.Msg($"[SHRIMP-SUP] displaced shrimps heading to UNTAPPED " +
+                        RtsLog.Msg($"[SHRIMP-SUP] displaced shrimps heading to UNTAPPED " +
                                         $"({freeP[freeIdx].x:F0},{freeP[freeIdx].z:F0}) " +
                                         $"{Mathf.Sqrt(freshSq):F0}m away — asking for expansion there");
                     }
@@ -1286,13 +1286,13 @@ namespace Si_RTS_AI.Planning
             }
 
             if (rescued > 0 || unloading > 0)
-                MelonLogger.Msg($"[SHRIMP-SUP] depleted-patch shrimps: {stranded} stranded, " +
+                RtsLog.Msg($"[SHRIMP-SUP] depleted-patch shrimps: {stranded} stranded, " +
                                 $"{unloading} depositing first, {rescued} relocated" +
                                 (_spilled > 0 ? $", {_spilled} spilled past a full patch" : ""));
             if (_spilled > 0 && now - _lastSpillLogAt > 30f)
             {
                 _lastSpillLogAt = now;
-                MelonLogger.Msg($"[SHRIMP-SUP] anti-pile-up: {_spilled} shrimp(s) sent past a " +
+                RtsLog.Msg($"[SHRIMP-SUP] anti-pile-up: {_spilled} shrimp(s) sent past a " +
                                 $"nearer patch already holding {PileUpMax()} shrimps " +
                                 "(standing + walking) — spreading onto further ground");
                 _spilled = 0;
@@ -1514,7 +1514,7 @@ namespace Si_RTS_AI.Planning
             catch { return; }
             if (shrimps.Count == 0) return;
             if (placedFirstTime > 0)
-                MelonLogger.Msg($"[SHRIMP-GRP] took control of {placedFirstTime} unassigned shrimps");
+                RtsLog.Msg($"[SHRIMP-GRP] took control of {placedFirstTime} unassigned shrimps");
 
             // ---- Waterfill: spread to SOFT_TARGET first, then top up ----
             var order = new List<int>(groups.Count);
@@ -1847,7 +1847,7 @@ namespace Si_RTS_AI.Planning
                 if (spilledNow > 0 && now - _lastSpillLogAt > 20f)
                 {
                     _lastSpillLogAt = now;
-                    MelonLogger.Msg($"[SHRIMP-SUP] spill: {spilledNow} shrimp(s) off over-capacity " +
+                    RtsLog.Msg($"[SHRIMP-SUP] spill: {spilledNow} shrimp(s) off over-capacity " +
                                     $"groups onto untapped ground (quota {pileMax} per patch, " +
                                     "standing + walking)");
                 }
@@ -1898,7 +1898,7 @@ namespace Si_RTS_AI.Planning
                     if (now - _lastHintLogAt > 20f)
                     {
                         _lastHintLogAt = now;
-                        MelonLogger.Msg($"[SHRIMP-GRP] {homeless} shrimps have no home — " +
+                        RtsLog.Msg($"[SHRIMP-GRP] {homeless} shrimps have no home — " +
                                         $"want expansion at ({patches[best].pos.x:F0},{patches[best].pos.z:F0})");
                     }
                 }
@@ -2042,7 +2042,7 @@ namespace Si_RTS_AI.Planning
                   .Append(" cur=").Append(g.Current).Append("/des=").Append(g.Desired)
                   .Append("/cap=").Append(g.Capacity).Append(']');
             }
-            MelonLogger.Msg($"[SHRIMP-GRP] shrimps={shrimps} groups={groups.Count} used={used} empty={empty} " +
+            RtsLog.Msg($"[SHRIMP-GRP] shrimps={shrimps} groups={groups.Count} used={used} empty={empty} " +
                             $"overfilled={over} totalCap={totalCap} moved={moved} " +
                             $"migrated={MigratedThisRound} reissued={ReissuedThisRound} top:{sb}");
         }

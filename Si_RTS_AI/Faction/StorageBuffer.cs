@@ -88,7 +88,7 @@ namespace Si_RTS_AI.Faction
                     var probe = HelperMethods.SpawnAtLocation(n, _centre, Quaternion.identity, team.Index);
                     if (probe != null)
                     {
-                        MelonLogger.Msg($"[BUFFER] prefab '{n}' spawns (tried: {string.Join(", ", names)})");
+                        RtsLog.Msg($"[BUFFER] prefab '{n}' spawns (tried: {string.Join(", ", names)})");
                         return n;      // the probe itself counts as the first cache
                     }
                 }
@@ -206,13 +206,13 @@ namespace Si_RTS_AI.Faction
             if (!_announced)
             {
                 _announced = true;
-                MelonLogger.Msg($"[BUFFER] storage scaffold: {want} free Bio Caches at " +
+                RtsLog.Msg($"[BUFFER] storage scaffold: {want} free Bio Caches at " +
                                 $"({_centre.x:F0},{_centre.z:F0}), {atMin:F0} min into the round. " +
                                 $"Capacity {capBefore:N0} -> {capAfter:N0} so far. " +
                                 "These are SPAWNED, not built — excluded from Bio Cache metrics.");
             }
             if (done + failed >= want)
-                MelonLogger.Msg($"[BUFFER] complete: {done} placed, {failed} failed. " +
+                RtsLog.Msg($"[BUFFER] complete: {done} placed, {failed} failed. " +
                                 $"team capacity now {capAfter:N0}" +
                                 (capAfter <= capBefore
                                     ? "  — WARNING: capacity did not rise, a spawned Bio Cache may not count toward storage"

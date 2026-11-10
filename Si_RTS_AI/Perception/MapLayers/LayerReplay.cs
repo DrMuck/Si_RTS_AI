@@ -138,7 +138,7 @@ namespace Si_RTS_AI.Perception.MapLayers
                 m.Append("frameFormat = uint32 magic; uint8 typeCode; int32 tickNo; float32 roundTime; int32 w; int32 h; T[w*h] data\n");
                 File.WriteAllText(Path.Combine(_roundDir, "manifest.txt"), m.ToString());
 
-                MelonLogger.Msg($"[RTSA/Layers] Recording replay to {_roundDir}");
+                RtsLog.Msg($"[RTSA/Layers] Recording replay to {_roundDir}");
             }
             catch (Exception ex) { MelonLogger.Warning("[RTSA/Layers] Replay init threw: " + ex.Message); _roundDir = ""; }
         }
@@ -189,7 +189,7 @@ namespace Si_RTS_AI.Perception.MapLayers
             _roundStarted   = true;
             _roundStartTime = Time.time;
             float lobby = _sceneLoadedAt > 0f ? Time.time - _sceneLoadedAt : 0f;
-            MelonLogger.Msg($"[RTSA/Layers] Round clock t=0 ({reason}); {lobby:F1}s of pre-round excluded.");
+            RtsLog.Msg($"[RTSA/Layers] Round clock t=0 ({reason}); {lobby:F1}s of pre-round excluded.");
         }
 
         public static void MaybeSnapshot(int tickNo, Team team)

@@ -95,7 +95,7 @@ namespace Si_RTS_AI.Planning
             if (Time.time - _lastLogAt > 30f)
             {
                 _lastLogAt = Time.time;
-                MelonLogger.Msg($"[ARMY] t={roundS:F0}s have={Have} " +
+                RtsLog.Msg($"[ARMY] t={roundS:F0}s have={Have} " +
                                 (Target > 0
                                     ? $"— winning alien rounds hold about {Target} by now ({Ratio:F2}x). "
                                     : "— no reference for this minute. ") +

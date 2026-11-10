@@ -48,6 +48,10 @@ namespace Si_RTS_AI.TestHarnessNs
         static bool  _autoStartFired;       // one-shot per scene — set when STARTED observed OR fallback fires
         static bool  _forceAssignFired;     // one-shot per scene — set when every active team is assigned OR timeout
         static bool  _fakeTeamJoinFired;    // one-shot per scene — set once the FakeTeamJoin sim has run
+        static bool  _sameSceneRestartPending; // a round ended and the game restarted WITHOUT a scene load; reset the mod at the next STARTED
+        static int   _vsModeRetries;        // (0c) how often this scene re-issued the vs-mode after a game Restart undid it
+        const int    VSMODE_MAX_RETRIES = 6;
+        const float  VSMODE_RETRY_AFTER_S = 12f;
         static float _fakeTeamJoinArmedAt;  // Time.time when MinimalAutoStart fired — we wait a bit after that
         static Player? _fakeJoinPlayer;     // synthetic Player produced by Player.AddPlayer, cached for logging
 
@@ -210,6 +214,7 @@ namespace Si_RTS_AI.TestHarnessNs
             _autoOverrideApplied       = false;
             _forceEndRoundFired        = false;
             _autoStartFired            = false;
+            _vsModeRetries             = 0;
             _forceAssignFired          = false;
             _fakeTeamJoinFired         = false;
             _fakeTeamJoinArmedAt       = 0f;
@@ -380,6 +385,34 @@ namespace Si_RTS_AI.TestHarnessNs
             // that server-side by synthesizing a Player and pushing it onto a team.
             if (!_fakeTeamJoinFired && ModSwitches.FakeTeamJoin && _autoStartFired)
                 TryFakeTeamJoin();
+
+            // (0c) THE GAME'S OWN RESTART CAN UNDO OUR VS-MODE. 2026-10-29 00:37,
+            // CrimsonPeak loaded by the harness's `map` command after a force-end:
+            // SetTeamVersusMode(HvHvA) at t+3.0s, MP_Strategy.Restart 340 ms later
+            // (TeamsVersus back to NONE), fake-join gave up after 10 s and the
+            // server sat in INIT for the rest of the night. On the first map of a
+            // server boot the Restart runs BEFORE we set the mode, which is why it
+            // only showed on the second map. Re-issue the whole auto-start while
+            // the pre-round is still INIT with no mode set, a few times, well apart.
+            if (_autoStartFired && ModSwitches.AutoStartRound && _fakeTeamJoinArmedAt > 0f &&
+                _vsModeRetries < VSMODE_MAX_RETRIES && Time.time - _fakeTeamJoinArmedAt >= VSMODE_RETRY_AFTER_S)
+            {
+                try
+                {
+                    var mp = GameMode.CurrentGameMode as MP_Strategy;
+                    if (mp != null && mp.MissionState == GameModeExt.EMissionState.INIT &&
+                        mp.TeamsVersus == GameModeExt.ETeamsVersus.NONE)
+                    {
+                        _vsModeRetries++;
+                        MelonLogger.Warning($"[RTSA/HT] AutoStart: TeamsVersus fell back to NONE {Time.time - _fakeTeamJoinArmedAt:F0}s after we set it " +
+                                            $"(the game restarted the round underneath us) — re-issuing SetTeamVersusMode + fake join, retry {_vsModeRetries}/{VSMODE_MAX_RETRIES}.");
+                        _autoStartFired      = false;
+                        _fakeTeamJoinFired   = false;
+                        _fakeTeamJoinArmedAt = 0f;
+                    }
+                }
+                catch (Exception ex) { MelonLogger.Warning("[RTSA/HT] vs-mode watchdog threw: " + ex.Message); }
+            }
 
             // (1) auto-override: try each tick until at least one commander exists, then
             // flip Phase31.OverrideByTeam=true for every AI-commanded team, once.
@@ -831,7 +864,9 @@ namespace Si_RTS_AI.TestHarnessNs
                     {
                         MelonLogger.Msg("[RTSA/HT] Re-arm: MissionState fell back to INIT on same scene — resetting auto-start flags so TryMinimalAutoStart fires again.");
                         _autoStartFired            = false;
+                        _vsModeRetries             = 0;
                         _forceEndRoundFired        = false;
+                        _sameSceneRestartPending   = true;
                         _autoOverrideApplied       = false;
                         _forceAssignFired          = false;
                         _fakeTeamJoinFired         = false;
@@ -862,6 +897,23 @@ namespace Si_RTS_AI.TestHarnessNs
                         catch { }
                     }
 
+                    // A NEW ROUND ON THE SAME SCENE IS A NEW ROUND. GreatErg 2026-11-01
+                    // 15:55: the round ended, the game restarted in place (no scene
+                    // load, as Mapcycle does for a repeated map), and every planner
+                    // kept the dead round's state — the eco planner held sites that
+                    // no longer existed and fired nothing for the whole next round,
+                    // the military kept the previous config's execute=false, the
+                    // round clock read 2300 s at minute five. RoundLifecycle only
+                    // ran on OnSceneWasLoaded. Run it here, once the new bases stand
+                    // (STARTED), so the new round begins from a clean slate and the
+                    // active config's round-start keys apply.
+                    if (state == GameModeExt.EMissionState.STARTED && _sameSceneRestartPending)
+                    {
+                        _sameSceneRestartPending = false;
+                        try { global::Si_RTS_AI.Si_RTS_AI.OnSameSceneRoundRestart(); }
+                        catch (Exception ex) { MelonLogger.Warning("[RTSA/HT] same-scene round reset threw: " + ex.Message); }
+                    }
+
                     _lastLoggedMissionState = state;
                     _haveLastLoggedMissionState = true;
                 }
@@ -876,7 +928,7 @@ namespace Si_RTS_AI.TestHarnessNs
                     float gmT = TryReadGameModeTimer(mp);
                     float elapsed = Time.time - _sceneLoadedAt;
                     string gmStr = float.IsNaN(gmT) ? "n/a" : $"{gmT:F1}s";
-                    MelonLogger.Msg($"[RTSA/HT] Waiting — MissionState={state} TeamsVersus={mp.TeamsVersus} VoteTimer={voteT:F1}s GameMode.Timer={gmStr} at t+{elapsed:F1}s.");
+                    RtsLog.Msg($"[RTSA/HT] Waiting — MissionState={state} TeamsVersus={mp.TeamsVersus} VoteTimer={voteT:F1}s GameMode.Timer={gmStr} at t+{elapsed:F1}s.");
                 }
             }
             catch (Exception ex)

@@ -86,7 +86,7 @@ namespace Si_RTS_AI.Faction
             if (_blockedMove == 0 && _blockedAttack == 0) return;
             if (UnityEngine.Time.time - _lastReportAt < 30f) return;
             _lastReportAt = UnityEngine.Time.time;
-            MelonLogger.Msg($"[COOP/GATE] blocked vanilla commander orders — " +
+            RtsLog.Msg($"[COOP/GATE] blocked vanilla commander orders — " +
                             $"move={_blockedMove} attack={_blockedAttack} (cumulative)");
         }
 

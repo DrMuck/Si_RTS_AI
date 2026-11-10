@@ -97,7 +97,7 @@ namespace Si_RTS_AI.Perception
                 float now = Time.time;
                 if (now - _lastLogAt < LOG_S) return;
                 _lastLogAt = now;
-                MelonLogger.Msg(
+                RtsLog.Msg(
                     $"[UTIL] cash {CashIdleMinutes:F1}min idle | " +
                     $"army {ArmyEngaged * 100f:F0}% engaged | " +
                     $"producers {ProducersBusy * 100f:F0}% busy | " +

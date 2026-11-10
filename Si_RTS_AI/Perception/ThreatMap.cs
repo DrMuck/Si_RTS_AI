@@ -353,7 +353,7 @@ namespace Si_RTS_AI.Perception
 
             if (_known.Count == 0)
             {
-                MelonLogger.Msg("[DISCOVERED] nothing of theirs is remembered at all");
+                RtsLog.Msg("[DISCOVERED] nothing of theirs is remembered at all");
                 return;
             }
 
@@ -372,7 +372,7 @@ namespace Si_RTS_AI.Perception
                   .Append(dHome.ToString("F0")).Append("m from home, cost ").Append(k.Cost)
                   .Append(", last seen ").Append((now - k.LastSeenAt).ToString("F0")).Append("s ago");
             }
-            MelonLogger.Msg(sb.ToString());
+            RtsLog.Msg(sb.ToString());
         }
 
         internal static string SightReport()
@@ -756,7 +756,7 @@ namespace Si_RTS_AI.Perception
             }
             _hvt.Clear();
 
-            MelonLogger.Msg(sb.ToString());
+            RtsLog.Msg(sb.ToString());
         }
     }
 }

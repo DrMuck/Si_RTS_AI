@@ -115,7 +115,7 @@ namespace Si_RTS_AI.Mil
             _perSite     = RtsaiConfig.Int  ("mil.spires.perSite",      1);
             _heavyThreat = RtsaiConfig.Float("mil.spires.heavyThreat",  2000f);
             _nestByMin   = RtsaiConfig.Float("mil.spires.nestByMin",    8f);
-            MelonLogger.Msg($"[MIL/SPIRE] {(Enabled ? "on" : "off")} " +
+            RtsLog.Msg($"[MIL/SPIRE] {(Enabled ? "on" : "off")} " +
                             $"execute={Execute} cashFloor={_cashFloor} " +
                             $"perSite={_perSite} (+1 above threat {_heavyThreat:F0}) " +
                             $"nestBy={_nestByMin:F0}min" +
@@ -216,7 +216,7 @@ namespace Si_RTS_AI.Mil
 
                 float yardstick = Doctrine.TargetAt(name, minutes);
                 _placedThisRound++;
-                MelonLogger.Msg(
+                RtsLog.Msg(
                     $"[MIL/SPIRE] t={minutes:F1}m {name} -> ({site.Pos.x:F0},{site.Pos.z:F0}) " +
                     $"{site.Why} | warranted {warranted} covered {covered} " +
                     $"| spendable {spendable} cost {cost}" +
@@ -227,7 +227,7 @@ namespace Si_RTS_AI.Mil
                 try
                 {
                     if (!Faction.Construction.TryBuild(team, cd, site.Pos))
-                        MelonLogger.Msg($"[MIL/SPIRE] placement refused at " +
+                        RtsLog.Msg($"[MIL/SPIRE] placement refused at " +
                                         $"({site.Pos.x:F0},{site.Pos.z:F0}) — construction said no");
                 }
                 catch (Exception ex) { MelonLogger.Warning("[MIL/SPIRE] build threw: " + ex.Message); }
@@ -391,7 +391,7 @@ namespace Si_RTS_AI.Mil
                                 && !_cds.ContainsKey(n))
                             {
                                 _cds[n] = opt;
-                                MelonLogger.Msg($"[MIL/SPIRE] found {n} buildable " +
+                                RtsLog.Msg($"[MIL/SPIRE] found {n} buildable " +
                                                 $"(cost {opt.ObjectInfo?.Cost ?? 0})");
                             }
                     }

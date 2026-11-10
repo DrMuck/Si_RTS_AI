@@ -94,7 +94,7 @@ namespace Si_RTS_AI.Perception
                                             nameof(ConstructionSiteManager.RequestConstructionSite));
                 var m2 = AccessTools.Method(typeof(Structure),
                                             nameof(Structure.OnConstructionSiteDeinitialized));
-                MelonLogger.Msg($"[BUILD/HOOK] RequestConstructionSite resolved={m1 != null} " +
+                RtsLog.Msg($"[BUILD/HOOK] RequestConstructionSite resolved={m1 != null} " +
                                 $"OnConstructionSiteDeinitialized resolved={m2 != null} " +
                                 $"patched={(m1 != null && HarmonyLib.Harmony.GetPatchInfo(m1) != null)}");
             }
@@ -116,7 +116,7 @@ namespace Si_RTS_AI.Perception
                     {
                         _hookCalls++;
                         string raw = __result?.ConstructionData?.ObjectInfo?.DisplayName ?? "<null cd>";
-                        MelonLogger.Msg($"[BUILD/HOOK] RequestConstructionSite #{_hookCalls} " +
+                        RtsLog.Msg($"[BUILD/HOOK] RequestConstructionSite #{_hookCalls} " +
                                         $"result={(__result == null ? "null" : "ok")} name='{raw}'");
                     }
                 }

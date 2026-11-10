@@ -83,7 +83,7 @@ namespace Si_RTS_AI.Faction
             if (killed > 0)
             {
                 _lifetimeUnitsKilled += killed;
-                MelonLogger.Msg($"[RTSA/SuppressHumanAI] Purged {killed} unit(s) from {team.name} (lifetime={_lifetimeUnitsKilled}).");
+                RtsLog.Msg($"[RTSA/SuppressHumanAI] Purged {killed} unit(s) from {team.name} (lifetime={_lifetimeUnitsKilled}).");
             }
         }
 
@@ -141,7 +141,7 @@ namespace Si_RTS_AI.Faction
                 if (!_cashDiagLogged)
                 {
                     _cashDiagLogged = true;
-                    MelonLogger.Msg($"[RTSA/SuppressHumanAI] Cash-zero: {team.name} {cur}→{after} via {usedPath ?? "NONE"}.");
+                    RtsLog.Msg($"[RTSA/SuppressHumanAI] Cash-zero: {team.name} {cur}→{after} via {usedPath ?? "NONE"}.");
                 }
             }
             catch (Exception ex)

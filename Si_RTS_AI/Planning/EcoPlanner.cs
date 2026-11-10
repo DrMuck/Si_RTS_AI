@@ -860,7 +860,7 @@ namespace Si_RTS_AI.Planning
                 if (Time.time - _lastReachReportAt > 120f)
                 {
                     _lastReachReportAt = Time.time;
-                    MelonLogger.Msg($"[REACH] observed max anchor distance — " +
+                    RtsLog.Msg($"[REACH] observed max anchor distance — " +
                                     $"BioCache {ObservedBcAnchorMaxM:F0}m (planner assumes " +
                                     $"{EcoSimulator.BcPlaceReachM:F0}m), " +
                                     $"Node {ObservedNodeAnchorMaxM:F0}m (assumes " +
@@ -908,7 +908,7 @@ namespace Si_RTS_AI.Planning
                 if (dx * dx + dz * dz < OBSTRUCTION_RADIUS_M * OBSTRUCTION_RADIUS_M) return;
             }
             _obstructions.Add(p);
-            MelonLogger.Msg($"[PLACE] ground at ({p.x:F0},{p.z:F0}) marked unbuildable — " +
+            RtsLog.Msg($"[PLACE] ground at ({p.x:F0},{p.z:F0}) marked unbuildable — " +
                             $"chains will route around it ({_obstructions.Count} known)");
         }
 
@@ -947,7 +947,7 @@ namespace Si_RTS_AI.Planning
             SlideSamples++; SlideSumM += slide;
             if (slide > SlideMaxM) SlideMaxM = slide;
             if (slide > PLACEMENT_MARGIN_M)
-                MelonLogger.Msg($"[PLACE] {name} slid {slide:F0}m past target " +
+                RtsLog.Msg($"[PLACE] {name} slid {slide:F0}m past target " +
                                 $"(margin={PLACEMENT_MARGIN_M:F0}m) — target=({log[best].pos.x:F0},{log[best].pos.z:F0}) " +
                                 $"actual=({actual.x:F0},{actual.z:F0})");
 
@@ -990,7 +990,7 @@ namespace Si_RTS_AI.Planning
                         float rise = Mathf.Abs(actual.y - st.patches[p].pos.y);
                         float rdx = actual.x - st.patches[p].pos.x, rdz = actual.z - st.patches[p].pos.z;
                         float run = Mathf.Sqrt(rdx * rdx + rdz * rdz);
-                        MelonLogger.Msg($"[PLACE] Bio Cache at ({actual.x:F0},{actual.z:F0}) sits " +
+                        RtsLog.Msg($"[PLACE] Bio Cache at ({actual.x:F0},{actual.z:F0}) sits " +
                                         $"{rise:F0}m above/below its patch over {run:F0}m — " +
                                         "shrimps will struggle to reach it; the site stays open");
                         NoteObstruction(actual);
@@ -1516,7 +1516,7 @@ namespace Si_RTS_AI.Planning
                       .Append(" killDepth=").Append(_pioKillDepth)
                       .Append(" killRoi=").Append(_pioKillRoi)
                       .Append(" emitted=").Append(_pioEmit);
-                    MelonLogger.Msg(sb.ToString());
+                    RtsLog.Msg(sb.ToString());
                 }
                 catch (System.Exception ex)
                 { MelonLogger.Warning("[PLAN/CANDMAP] threw: " + ex.Message); }
@@ -1538,7 +1538,7 @@ namespace Si_RTS_AI.Planning
             if (now - _lastRateReportAt > 60f && _cycleN > 0)
             {
                 _lastRateReportAt = now;
-                MelonLogger.Msg("[PLAN/RATE] cycles=" + _cycleN +
+                RtsLog.Msg("[PLAN/RATE] cycles=" + _cycleN +
                                 " achieved=" + (_cycleSum / _cycleN).ToString("F2") + "s" +
                                 " (asked " + PLAN_CADENCE_S.ToString("F0") + "s)" +
                                 " mainThread=" + (_snapMsSum / _cycleN).ToString("F1") + "ms/cycle");
@@ -2211,7 +2211,7 @@ namespace Si_RTS_AI.Planning
                             {
                                 _bcHoldLogAt[si] = Time.time;
                                 float g = NearestFinishedGapTo(st.Target, state);
-                                MelonLogger.Msg($"[OPENER] step {si + 1}/{OpenerPlanner.StepCount} " +
+                                RtsLog.Msg($"[OPENER] step {si + 1}/{OpenerPlanner.StepCount} " +
                                     $"Bc at ({st.Target.x:F0},{st.Target.z:F0}) held: no FINISHED anchor " +
                                     $"in reach — gap={g:F0}m limit=" +
                                     $"{EcoSimulator.BcPlaceReachM + BC_TIGHT_GAP_M:F0}m");
@@ -2237,7 +2237,7 @@ namespace Si_RTS_AI.Planning
                             // Cyst-delay problem because this was invisible.
                             string why = _skipReasons.Length > skipsBefore.Length
                                 ? _skipReasons.Substring(skipsBefore.Length).Trim() : "?";
-                            MelonLogger.Msg($"[OPENER] step {si + 1}/{OpenerPlanner.StepCount} " +
+                            RtsLog.Msg($"[OPENER] step {si + 1}/{OpenerPlanner.StepCount} " +
                                             $"{st.Kind} at ({st.Target.x:F0},{st.Target.z:F0}) refused: {why}");
                             continue;
                         }
@@ -2347,7 +2347,7 @@ namespace Si_RTS_AI.Planning
                         if (fired == beforeRep) { blockWhy = $"fire refused at ({repHop.x:F0},{repHop.z:F0})"; break; }
                         laid++;
                         anchor = repHop;
-                        MelonLogger.Msg($"[PLAN/EXEC] REPAIR node at ({repHop.x:F0},{repHop.z:F0}) " +
+                        RtsLog.Msg($"[PLAN/EXEC] REPAIR node at ({repHop.x:F0},{repHop.z:F0}) " +
                                         $"reconnecting ({repTo.x:F0},{repTo.z:F0})");
                     }
 
@@ -2358,7 +2358,7 @@ namespace Si_RTS_AI.Planning
                     // never allowed". A rescue that cannot proceed is worth a
                     // line every time.
                     if (laid == 0)
-                        MelonLogger.Msg($"[PLAN/EXEC] REPAIR BLOCKED toward " +
+                        RtsLog.Msg($"[PLAN/EXEC] REPAIR BLOCKED toward " +
                                         $"({repTo.x:F0},{repTo.z:F0}) — cash={cashLeft} " +
                                         $"nodeCost={EcoSimulator.NODE_COST} " +
                                         $"({(blockWhy.Length > 0 ? blockWhy : "no reachable hop, or unaffordable")})");
@@ -2394,7 +2394,7 @@ namespace Si_RTS_AI.Planning
                         patchIdx = -1,
                     });
                     if (fired > beforeLoop)
-                        MelonLogger.Msg($"[PLAN/EXEC] LOOP node at ({loopHop.x:F0},{loopHop.z:F0}) " +
+                        RtsLog.Msg($"[PLAN/EXEC] LOOP node at ({loopHop.x:F0},{loopHop.z:F0}) " +
                                         $"closing ({loopFrom.x:F0},{loopFrom.z:F0})-" +
                                         $"({loopTo.x:F0},{loopTo.z:F0}), {loopNodes} node(s)");
                 }
@@ -2429,7 +2429,7 @@ namespace Si_RTS_AI.Planning
                         patchIdx = -1,
                     });
                     if (fired > beforeHop)
-                        MelonLogger.Msg($"[PLAN/EXEC] chain node at ({hintHop.x:F0},{hintHop.z:F0}) " +
+                        RtsLog.Msg($"[PLAN/EXEC] chain node at ({hintHop.x:F0},{hintHop.z:F0}) " +
                                         $"toward shrimp-requested ({reachHint.Pos.x:F0}," +
                                         $"{reachHint.Pos.z:F0}) for {reachHint.Shrimps} shrimps");
                 }
@@ -2724,7 +2724,7 @@ namespace Si_RTS_AI.Planning
                         else if (demanded && Time.time - _lastHaulJumpLogAt > 20f)
                         {
                             _lastHaulJumpLogAt = Time.time;
-                            MelonLogger.Msg($"[PLAN/EXEC] {it.kind} at ({it.pos.x:F0},{it.pos.z:F0}) " +
+                            RtsLog.Msg($"[PLAN/EXEC] {it.kind} at ({it.pos.x:F0},{it.pos.z:F0}) " +
                                             $"jumps the build order — shrimps have detoured past it " +
                                             $"(demand {haulDemand:F1})");
                         }
@@ -3066,7 +3066,7 @@ namespace Si_RTS_AI.Planning
                             TryFireAction(c);
                             if (fired > beforeEsc) firedHere.Add(cf);
                         }
-                        MelonLogger.Msg("[PLAN/ESCAPE] team=" + tn +
+                        RtsLog.Msg("[PLAN/ESCAPE] team=" + tn +
                                         " cash=" + state.cash + "/" + state.cap +
                                         " cands B=" + candBcs + " C=" + candCysts + " N=" + candNodes +
                                         " → fired=" + fired);
@@ -3136,7 +3136,7 @@ namespace Si_RTS_AI.Planning
                         else if (diag[i].kind == ActionKind.PlaceCyst) nc++;
                         else if (diag[i].kind == ActionKind.PlaceNode) nn++;
                     }
-                    MelonLogger.Msg($"[PLAN/DIAG] nothing fired, cash={state.cash} " +
+                    RtsLog.Msg($"[PLAN/DIAG] nothing fired, cash={state.cash} " +
                                     $"seqLen={best.sequence.Count} gain={gain:F0} " +
                                     $"candidates: BC={nb} Cyst={nc} Node={nn} | " +
                                     $"bcs={state.bcs.Count} cysts={state.cysts.Count} " +
@@ -3254,7 +3254,7 @@ namespace Si_RTS_AI.Planning
                       .Append("(").Append(pp.x.ToString("F0")).Append(',').Append(pp.z.ToString("F0"))
                       .Append(") d=").Append(d.ToString("F0")).Append("m");
                 }
-                MelonLoader.MelonLogger.Msg(sb.ToString());
+                RtsLog.Msg(sb.ToString());
             }
 
             return reserved.Count > 0 ? reserved : null;
@@ -3347,7 +3347,7 @@ namespace Si_RTS_AI.Planning
             if (Time.time - _lastPhaseLogAt > 30f)
             {
                 _lastPhaseLogAt = Time.time;
-                MelonLogger.Msg("[PHASE] still=" + current +
+                RtsLog.Msg("[PHASE] still=" + current +
                                 " shrimps=" + state.totalShrimps + "/" + PHASE2_MIN_SHRIMPS +
                                 " income=" + incomeRate.ToString("F0") + "/" + PHASE2_MIN_INCOME_RATE +
                                 " tapped=" + CountTappedPatches(state) + "/" + PHASE1_MIN_TAPPED_PATCHES +
@@ -3377,7 +3377,7 @@ namespace Si_RTS_AI.Planning
             }
 
             _phaseByTeam[team] = PlanPhase.Phase2_Expand;
-            MelonLogger.Msg("[PLAN/PHASE] team=" + (team.name ?? "?") +
+            RtsLog.Msg("[PLAN/PHASE] team=" + (team.name ?? "?") +
                             " → PHASE2_EXPAND at t=" + Time.time.ToString("F0") +
                             "s (shrimps=" + state.totalShrimps + " cash=" + state.cash +
                             " rate=" + incomeRate.ToString("F0") + "/s" +
@@ -3878,7 +3878,7 @@ namespace Si_RTS_AI.Planning
             {
                 bool ok = Faction.AlienConstruction.TryBuildStructureForPlanner(team, c.kind, c.target);
                 if (ok) log.Add(new FiredAction { kind = c.kind, pos = c.target, at = Time.time });
-                MelonLogger.Msg("[PLAN/EXEC] team=" + team.name +
+                RtsLog.Msg("[PLAN/EXEC] team=" + team.name +
                                 " requested " + c.kind +
                                 " at (" + c.target.x.ToString("F0") + "," + c.target.z.ToString("F0") +
                                 ") queued=" + ok);

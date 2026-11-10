@@ -77,7 +77,7 @@ namespace Si_RTS_AI.Perception
                     MelonLogger.Warning("[QUEEN] no Queen found for the alien team — construction " +
                                         "is impossible for the rest of the round.");
                 else if (s == State.Buildable)
-                    MelonLogger.Msg("[QUEEN] docked — construction available.");
+                    RtsLog.Msg("[QUEEN] docked — construction available.");
             }
             return s;
         }

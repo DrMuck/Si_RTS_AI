@@ -151,6 +151,18 @@ namespace Si_RTS_AI.Mil
         /// </summary>
         internal static bool UnderSiege { get; private set; }
         const float SIEGE_MARGIN = 1.0f;
+
+        /// <summary>
+        /// OVERWHELMING: the mirror of UNDER SIEGE. The army stands at the
+        /// doctrine's commit ratio over everything the enemy owns. GreatErg
+        /// 2026-11-01: 390k against 50k, unit-capped, and the win condition was
+        /// never staffed, because every eco site with a forecast track ranked
+        /// above it and twenty such defences held the whole army (DrMuck: "way
+        /// too passive"). When the army outweighs the enemy by the commit band,
+        /// an affordable KillHQ ranks with the Queen, ahead of the forecast
+        /// defences; a real incursion still pre-empts it, a prediction does not.
+        /// </summary>
+        internal static bool Overwhelming { get; private set; }
         internal static int   ArmyCash { get; private set; }
         internal static float DpsPerEff { get; private set; } = 0.05f;
 
@@ -166,6 +178,7 @@ namespace Si_RTS_AI.Mil
             _lastRefreshAt = _lastCheckAt = _lastLogAt = 0f;
             _nextId = 0; _team = null; _nest = Vector3.zero;
             ArmyEff = 0f; ArmyCash = 0; NextOffensivePrice = 0f; NextOffensiveWhat = "";
+            UnderSiege = false; Overwhelming = false;
         }
 
         internal static void Tick(Team team)
@@ -221,6 +234,11 @@ namespace Si_RTS_AI.Mil
                 MilLog.Msg(siege ? $"[OBJ] UNDER SIEGE: enemy ~{Intel.EnemyEffective:F0} eff against our {ArmyEff:F0} — army has right of way, home guard stays home"
                                  : $"[OBJ] siege lifted: enemy ~{Intel.EnemyEffective:F0} eff against our {ArmyEff:F0}");
             UnderSiege = siege;
+            bool overwhelming = !siege && Intel.EnemyEffective > 0f && ArmyEff >= Intel.EnemyEffective * Doctrine.CommitAt;
+            if (overwhelming != Overwhelming)
+                MilLog.Msg(overwhelming ? $"[OBJ] OVERWHELMING: our {ArmyEff:F0} eff against enemy ~{Intel.EnemyEffective:F0} — an affordable KillHQ outranks the forecast defences"
+                                        : $"[OBJ] no longer overwhelming: our {ArmyEff:F0} eff against enemy ~{Intel.EnemyEffective:F0}");
+            Overwhelming = overwhelming;
             float dps = f.Dps();
             if (ArmyEff > 0f && dps > 0f) DpsPerEff = dps / ArmyEff;
             _nest = Intel.Nest;
@@ -580,7 +598,9 @@ namespace Si_RTS_AI.Mil
                     {
                         Kind = Kind.KillHQ, Key = "killhq@" + b.Key, Where = b.Centre, Radius = 500f,
                         RequiredEff = price, CeilingEff = Mathf.Max(price, affordable ? spare : def * Doctrine.WastefulAbove), DefenceEff = def,
-                        Rank = affordable ? 3 : 7, Score = b.Cost / Mathf.Max(1f, price),
+                        // Rank 0 sorts behind the Queen (Score MaxValue) and ahead of
+                        // every forecast defence when the army is overwhelming.
+                        Rank = affordable ? (Overwhelming ? 0 : 3) : 7, Score = b.Cost / Mathf.Max(1f, price),
                         PoolPref = Pool.Line, Attack = true, Offensive = true, BaseRef = b,
                         Gain = b.Cost * 2f, ExpectedLoss = Kernel.ExpectedLossOfWinner(price, def),
                         PWin = Kernel.PWin(price, def),
@@ -997,22 +1017,40 @@ namespace Si_RTS_AI.Mil
             var sb = new System.Text.StringBuilder("[OBJ] ");
             sb.Append("army ").Append(ArmyEff.ToString("F0")).Append(" eff (").Append(ArmyCash).Append(" cash) ")
               .Append("enemy~").Append(Intel.EnemyEffective.ToString("F0"));
+            if (Overwhelming) sb.Append(" OVERWHELMING");
             if (NextOffensivePrice > 0f)
                 sb.Append(" | building toward ").Append(NextOffensivePrice.ToString("F0")).Append(" for ").Append(NextOffensiveWhat);
-            int shown = 0;
-            for (int i = 0; i < Portfolio.Count && shown < 7; i++)
+            int shown = 0, cut = Portfolio.Count;
+            for (int i = 0; i < Portfolio.Count; i++)
             {
                 var o = Portfolio[i];
                 if (o.Status == Status.Done || o.Status == Status.Failed) continue;
+                if (shown >= 7) { cut = i; break; }
                 shown++;
-                sb.Append(" | #").Append(o.Id).Append(' ').Append(o.Kind).Append(' ').Append(o.Status == Status.Active ? "ACTIVE" : "proposed")
-                  .Append(" need ").Append(o.RequiredEff.ToString("F0")).Append(" have ").Append(o.AssignedEff.ToString("F0"))
-                  .Append(o.Status == Status.Active && o.Kind != Kind.DefendQueen ? $" pWin {o.PWin:F2}" : "")
-                  .Append(float.IsInfinity(o.DeadlineAt) ? "" : $" eta {Mathf.Max(0f, o.DeadlineAt - Time.time):F0}s")
-                  .Append(" [").Append(o.Note).Append(']');
+                AppendEntry(sb, o);
+            }
+            // THE OFFENCE IS ALWAYS IN THE LINE. With twenty forecast defences in
+            // the portfolio the first seven entries were all DefendEco, and whether
+            // a KillHQ was proposed, affordable or active could not be read off the
+            // round log at all (GreatErg 2026-11-01).
+            for (int i = cut; i < Portfolio.Count; i++)
+            {
+                var o = Portfolio[i];
+                if (o.Status == Status.Done || o.Status == Status.Failed || !o.Offensive || o.Kind == Kind.Recon) continue;
+                if (o.Status != Status.Active && o.Kind != Kind.KillHQ) continue;
+                AppendEntry(sb, o);
             }
             if (!MilConfig.Execute) sb.Append(" [shadow — no orders]");
             MilLog.Msg(sb.ToString());
+        }
+
+        static void AppendEntry(System.Text.StringBuilder sb, Objective o)
+        {
+            sb.Append(" | #").Append(o.Id).Append(' ').Append(o.Kind).Append(' ').Append(o.Status == Status.Active ? "ACTIVE" : "proposed")
+              .Append(" need ").Append(o.RequiredEff.ToString("F0")).Append(" have ").Append(o.AssignedEff.ToString("F0"))
+              .Append(o.Status == Status.Active && o.Kind != Kind.DefendQueen ? $" pWin {o.PWin:F2}" : "")
+              .Append(float.IsInfinity(o.DeadlineAt) ? "" : $" eta {Mathf.Max(0f, o.DeadlineAt - Time.time):F0}s")
+              .Append(" [").Append(o.Note).Append(']');
         }
     }
 }

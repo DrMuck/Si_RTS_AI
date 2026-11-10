@@ -97,7 +97,7 @@ namespace Si_RTS_AI.Chat
                     if (!RequireAdmin(caller, "reload")) return;
                     RtsaiConfig.Reload(force: true);
                     ModSwitches.Refresh("chat reload" + Who(caller));
-                    Reply(caller, $"[RTSA] re-read {ConfigStore.ActiveName}.json — live keys applied, round-start keys at the next map");
+                    Reply(caller, $"[RTSA] re-read {ConfigStore.ActiveName}.json — live keys applied, round-start keys at the next round");
                     return;
 
                 case "log":
@@ -156,7 +156,7 @@ namespace Si_RTS_AI.Chat
                 MelonLogger.Msg($"[RTSA] config '{ConfigStore.ActiveName}' activated{Who(caller)}");
                 Reply(caller, $"[RTSA] config -> {ConfigStore.ActiveName}: mod {(ModSwitches.Enabled ? "ON" : "OFF")}, " +
                               $"alien {OnOff(Faction.FactionControl.AlienEnabled)} sol {OnOff(Faction.FactionControl.SolEnabled)} cent {OnOff(Faction.FactionControl.CentauriEnabled)}, " +
-                              $"testMode {ModSwitches.TestMode}. Economy/military keys apply at the next map load.");
+                              $"testMode {ModSwitches.TestMode}. Economy/military keys apply at the next round.");
             }
             else Reply(caller, "[RTSA] " + err);
         }
@@ -169,18 +169,27 @@ namespace Si_RTS_AI.Chat
                           (ConfigStore.CommanderLogOverride.HasValue ? " (chat override)" : " (config)") +
                           $", round log {OnOff(ModSwitches.RoundLog)}" +
                           (ConfigStore.RoundLogOverride.HasValue ? " (chat override)" : " (config)") +
-                          $" — file {Core.RoundLog.Path}. /rtsai log [cmd|round] on|off|auto");
+                          $", planner diagnostics {RtsLog.Name}" +
+                          $" — file {Core.RoundLog.Path}. /rtsai log [cmd|round] on|off|auto · /rtsai log planner off|file|console");
         }
 
         static void HandleLog(Player? caller, string[] parts)
         {
             // /rtsai log on|off|auto          -> commander logging
             // /rtsai log cmd|round on|off|auto
+            // /rtsai log planner off|file|console -> planner diagnostics (until the next config reload)
             string which = "cmd", val;
             if (parts.Length >= 4) { which = parts[2].ToLowerInvariant(); val = parts[3].ToLowerInvariant(); }
             else val = parts[2].ToLowerInvariant();
+            if (which == "planner" || which == "diag" || which == "console")
+            {
+                if (val != "off" && val != "file" && val != "console") { Reply(caller, "[RTSA] usage: /rtsai log planner off|file|console"); return; }
+                RtsLog.Level = RtsLog.Parse(val, RtsLog.Level);
+                Reply(caller, $"[RTSA] planner diagnostics {RtsLog.Name}{Who(caller)} (until the next config reload; the config key is log.planner)");
+                return;
+            }
             bool? want = val == "on" ? true : val == "off" ? false : val == "auto" ? (bool?)null : (bool?)null;
-            if (val != "on" && val != "off" && val != "auto") { Reply(caller, "[RTSA] usage: /rtsai log [cmd|round] on|off|auto"); return; }
+            if (val != "on" && val != "off" && val != "auto") { Reply(caller, "[RTSA] usage: /rtsai log [cmd|round] on|off|auto · /rtsai log planner off|file|console"); return; }
             if (which == "cmd" || which == "commander") SetCommanderLog(caller, want);
             else if (which == "round" || which == "file") SetRoundLog(caller, want);
             else Reply(caller, "[RTSA] usage: /rtsai log [cmd|round] on|off|auto");

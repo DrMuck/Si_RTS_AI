@@ -94,7 +94,7 @@ namespace Si_RTS_AI.Faction
                     if (_lastEjected != who)
                     {
                         _lastEjected = who;
-                        MelonLogger.Msg($"[ALIEN/LOCK] '{who}' took the {team.name} commander seat — " +
+                        RtsLog.Msg($"[ALIEN/LOCK] '{who}' took the {team.name} commander seat — " +
                                         "returned to the AI (lockAlienCommander is on in the active config).");
                     }
                 }

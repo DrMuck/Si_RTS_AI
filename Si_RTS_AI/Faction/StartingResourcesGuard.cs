@@ -70,7 +70,7 @@ namespace Si_RTS_AI.Faction
                     {
                         try { cashPath = SuppressHumanAI.TrySetResourcesReflective(team, want) ?? "none"; } catch (Exception ex) { cashPath = "threw " + ex.Message; }
                     }
-                    MelonLogger.Msg($"[CASH/GUARD] {reason}: {team.name} starting {start}->{want}, cash {cash}->{team.TotalResources}{(cashPath.Length > 0 ? " via " + cashPath : "")}{setPath}");
+                    RtsLog.Msg($"[CASH/GUARD] {reason}: {team.name} starting {start}->{want}, cash {cash}->{team.TotalResources}{(cashPath.Length > 0 ? " via " + cashPath : "")}{setPath}");
                     try { Si_RTS_AI.AppendToRound($"[CASH/GUARD] {reason} team={team.name} starting={start}->{want} cash={cash}->{team.TotalResources}"); } catch { }
                 }
             }
@@ -90,10 +90,10 @@ namespace Si_RTS_AI.Faction
                 try
                 {
                     var m = AccessTools.Method(typeof(MP_Strategy), name);
-                    if (m == null) { MelonLogger.Msg($"[CASH/GUARD] MP_Strategy.{name} not present on this build"); continue; }
+                    if (m == null) { RtsLog.Msg($"[CASH/GUARD] MP_Strategy.{name} not present on this build"); continue; }
                     harmony.Patch(m, postfix: new HarmonyMethod(typeof(StartingResourcesGuard), nameof(PostfixSpawn)));
                     n++;
-                    MelonLogger.Msg($"[CASH/GUARD] postfix on MP_Strategy.{name}");
+                    RtsLog.Msg($"[CASH/GUARD] postfix on MP_Strategy.{name}");
                 }
                 catch (Exception ex) { MelonLogger.Warning($"[CASH/GUARD] patching {name} threw: {ex.Message}"); }
             }

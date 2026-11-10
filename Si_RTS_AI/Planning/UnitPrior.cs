@@ -77,7 +77,7 @@ namespace Si_RTS_AI.Planning
             {
                 if (!File.Exists(PATH))
                 {
-                    if (Loaded) MelonLogger.Msg("[MIL/PRIOR] rtsai_units.json removed — " +
+                    if (Loaded) RtsLog.Msg("[MIL/PRIOR] rtsai_units.json removed — " +
                                                 "falling back to most-expensive-option");
                     _units.Clear(); _enemyClass.Clear(); ArmyPlan.SetCurve(null); Loaded = false;
                     return;
@@ -123,7 +123,7 @@ namespace Si_RTS_AI.Planning
                         _enemyClass[p.Name] = (string)p.Value;
 
                 Loaded = _units.Count > 0;
-                MelonLogger.Msg($"[MIL/PRIOR] loaded {PATH}: {_units.Count} units, " +
+                RtsLog.Msg($"[MIL/PRIOR] loaded {PATH}: {_units.Count} units, " +
                                 $"{_enemyClass.Count} enemy chassis classified, " +
                                 $"armyCurve {(ArmyPlan.HasCurve ? "present" : "absent")}" +
                                 (root["_source"]?["generated"] != null

@@ -351,6 +351,21 @@ namespace Si_RTS_AI.Mil
                     // SQUIDS ONLY AGAINST AIR. DrMuck: "a lot of squids are built, too
                     // many; only usable against air or single soldiers."
                     if (n == "Squid" && !EnemyAirSeen()) continue;
+                    // ASK THE GAME BEFORE SCORING. Badlands 2026-10-29 12:10 (Release
+                    // 1.0.12): the Lesser Spawning Cyst lists Wasp and Dragonfly among
+                    // its options, both gated on a structure the team did not have.
+                    // They out-scored Crab and Shocker, Construct answered
+                    // UnmetPrerequisite 242 times, the cyst stood idle for ten
+                    // minutes and nothing else was ever tried. An option the team
+                    // has not unlocked is not a candidate.
+                    bool unlocked = true;
+                    try { unlocked = s.HasPrerequisitesForConstruction(opt); } catch { }
+                    if (!unlocked)
+                    {
+                        MilLog.Every("prod:prereq:" + typeName + ":" + n, 120f,
+                                     $"[MIL/PROD] {typeName} offers {n} but the prerequisite is missing — skipped");
+                        continue;
+                    }
                     int cost = 0; try { cost = opt.ResourceCost; } catch { }
                     if (cost <= 0 || cost > budget) continue;
                     if (!CapRoom(team, opt.ObjectInfo)) continue;
@@ -841,12 +856,20 @@ namespace Si_RTS_AI.Mil
             // 582,000 cash while queuing nothing. Whatever stops the standing
             // producers from queuing — prerequisites, budget, the Queen — a new
             // cyst will not fix.
-            if (_total >= 1 && _busy == 0) return;
+            //
+            // EXCEPT THE FIRST OF A KIND. Badlands 2026-10-29: the Lesser Cysts were
+            // idle only because every pick was a unit gated on a Greater Spawning
+            // Cyst, and this guard then refused to place the Greater Spawning Cyst
+            // that would have unlocked them — a deadlock the economy sat out at the
+            // 52,000 storage cap for twelve minutes. The spam this guard stops was
+            // the 2nd..107th producer of a type; the first one it must allow.
+            bool idleProducers = _total >= 1 && _busy == 0;
             foreach (var kv in _producerCds)
             {
                 string name = kv.Key; var cd = kv.Value;
                 _want.TryGetValue(name, out int want); if (want < 1) want = 1;
                 int have = CountOf(team, name, includeSites: true);
+                if (idleProducers && have >= 1) continue;
                 // The forward base carries its own allowance.
                 int atFob = ForwardBase == Vector3.zero ? 0 : CountNear(team, ForwardBase, FOB_RADIUS_M);
                 bool fobWants = ForwardBase != Vector3.zero && atFob < MilConfig.FobProducers &&

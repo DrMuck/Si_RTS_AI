@@ -123,7 +123,9 @@ namespace Si_RTS_AI.Mil
                 // nobody claims returns to it below.
                 if (_reserve != null) _reserve.Units.Clear();
                 var free = FreeCombatUnits(team);
+                Shed(free, now);
                 Assign(free, now);
+                TopUpOffence(free, now);
                 Reserve(free, now);
                 Judge(now);
                 if (MilConfig.Execute && CanCommand(team)) Execute(now);
@@ -342,9 +344,21 @@ namespace Si_RTS_AI.Mil
                 if (o.Offensive && o.Kind != Objectives.Kind.Recon && !wave)
                 {
                     float spareForOffence = Objectives.ArmyEff - Mathf.Min(MilConfig.HomeFloorCash, Objectives.ArmyEff * 0.5f);
-                    fillTo = Mathf.Clamp(ceiling, o.RequiredEff, Mathf.Max(o.RequiredEff, spareForOffence));
+                    // PAST FOUR TO ONE THE CURVE IS FLAT (Doctrine): what a push holds
+                    // beyond WastefulAbove times the defence it faces does nothing
+                    // there. GreatErg 2026-11-01: 270k stood on a Centauri HQ held by
+                    // 20k while Sol, the other enemy, was never touched (DrMuck: "split
+                    // them up and go different structures"). The first fill stops at
+                    // the wasteful line; the rest funds the next offensive objective in
+                    // the portfolio, and what no objective claims rejoins a push in
+                    // TopUpOffence, so the army still leaves home together.
+                    float wasteful = o.DefenceEff > 0f ? Mathf.Max(o.RequiredEff, o.DefenceEff * Doctrine.WastefulAbove) : ceiling;
+                    fillTo = Mathf.Clamp(Mathf.Min(ceiling, wasteful), o.RequiredEff, Mathf.Max(o.RequiredEff, spareForOffence));
                 }
                 if (!wave && have >= fillTo) continue;
+                // Members added to a force that is already under way are ordered
+                // after it below; a Forming force is ordered by Execute.
+                var joiners = force != null && force.Phase != State.Forming ? new List<Unit>(8) : null;
 
                 // ALL OR NOTHING. A force is raised only when the free pool can
                 // pay the whole price now; otherwise the units stay in the
@@ -450,6 +464,7 @@ namespace Si_RTS_AI.Mil
                         }
                         free.RemoveAt(idx);
                         force.Units.Add(u);
+                        joiners?.Add(u);
                         have += e; taken++;
                         if (IsRaid(o)) raidHeld += e;
                         if (have >= ceiling) break;
@@ -458,6 +473,7 @@ namespace Si_RTS_AI.Mil
                 if (force != null)
                 {
                     Measure(force);
+                    if (joiners != null && joiners.Count > 0) OrderJoiners(force, joiners, now);
                     // NO FORCE OF ONE. A new force with fewer than MIN_FORCE_UNITS units is
                     // sent back to the reserve unless it defends the Nest or scouts:
                     // 39 intercept forces of one or two units on Naraka 22:04 (DrMuck:
@@ -477,6 +493,173 @@ namespace Si_RTS_AI.Mil
 
         static bool IsRaid(Objectives.Objective o) =>
             o != null && (o.Kind == Objectives.Kind.RaidEco || o.Kind == Objectives.Kind.RaidProduction);
+
+        /// <summary>
+        /// A DEFENCE KEEPS WHAT THE THREAT IS WORTH, NOT WHAT IT WAS WORTH. A force
+        /// filled to its price when the forecast said three tracks and kept every
+        /// unit when it said one: GreatErg 2026-11-01, DefendEco#261 held 32k
+        /// against a 3k need, twenty such forces held the whole 390k army, the
+        /// reserve stood at zero and no push on Sol could be raised at eight to
+        /// one. Above the doctrine's wasteful band the surplus belongs elsewhere:
+        /// a defence that is not fighting returns its units beyond the ceiling to
+        /// the pool, farthest from the asset first, where this tick's assignment
+        /// can claim them. Never below the price it was raised for.
+        /// </summary>
+        const float SHED_HYSTERESIS = 1.15f;
+        static List<(float d2, Unit u)> _shedOrder = new List<(float, Unit)>(32);
+
+        static void Shed(List<Unit> free, float now)
+        {
+            for (int f = 0; f < Active.Count; f++)
+            {
+                var force = Active[f];
+                var o = force.Obj;
+                if (o == null || o.Offensive || o.Kind == Objectives.Kind.DefendQueen) continue;
+                if (force.Phase == State.Forming || force.Phase == State.Withdrawing) continue;
+                float ceiling = Mathf.Max(o.RequiredEff, o.CeilingEff);
+                if (ceiling <= 0f || force.Eff <= ceiling * SHED_HYSTERESIS) continue;
+                if (AnyFighting(force)) continue;
+                _shedOrder.Clear();
+                for (int i = 0; i < force.Units.Count; i++)
+                {
+                    var u = force.Units[i];
+                    Vector3 p; try { p = u.transform.position; } catch { continue; }
+                    float dx = p.x - o.Where.x, dz = p.z - o.Where.z;
+                    _shedOrder.Add((dx * dx + dz * dz, u));
+                }
+                _shedOrder.Sort((a, b) => b.d2.CompareTo(a.d2));
+                float eff = force.Eff, shedEff = 0f; int shed = 0;
+                for (int i = 0; i < _shedOrder.Count && eff > ceiling; i++)
+                {
+                    var u = _shedOrder[i].u;
+                    string n = ""; try { n = u.ObjectInfo?.DisplayName ?? ""; } catch { }
+                    float e = Kernel.EffectiveOf(n);
+                    if (eff - e < o.RequiredEff) continue;      // too big a piece: try a smaller unit
+                    force.Units.Remove(u);
+                    free.Add(u);
+                    eff -= e; shedEff += e; shed++;
+                }
+                if (shed > 0)
+                {
+                    Measure(force);
+                    MilLog.Msg($"[FORCE] {force.Name} sheds {shed} units {shedEff:F0} eff — holds {force.Eff:F0} against a {o.DefenceEff:F0} threat (ceiling {ceiling:F0})");
+                }
+            }
+        }
+
+        /// <summary>
+        /// WHAT NO OBJECTIVE CLAIMED JOINS THE PUSH. The wasteful cap in Assign
+        /// leaves the army's surplus in the pool once every objective is filled;
+        /// "commit once, commit everything" still holds for the win condition, so
+        /// what stands beyond the home guard joins an offensive force that has not
+        /// yet left its rally — the one facing the biggest defence first — rather
+        /// than a reserve of 65k standing at home while 40k fights at their HQ.
+        /// </summary>
+        static void TopUpOffence(List<Unit> free, float now)
+        {
+            if (free.Count == 0 || Objectives.UnderSiege) return;
+            Force best = null;
+            for (int f = 0; f < Active.Count; f++)
+            {
+                var force = Active[f]; var o = force.Obj;
+                if (o == null || !o.Offensive || o.Kind == Objectives.Kind.Recon || IsRaid(o)) continue;
+                if (force.Phase != State.Forming && force.Phase != State.Staging) continue;
+                if (best == null || o.DefenceEff > best.Obj.DefenceEff) best = force;
+            }
+            if (best == null) return;
+            float avail = 0f;
+            for (int k = 0; k < free.Count; k++)
+            {
+                string fn = ""; try { fn = free[k].ObjectInfo?.DisplayName ?? ""; } catch { }
+                avail += Kernel.EffectiveOf(fn);
+            }
+            avail -= Mathf.Min(MilConfig.HomeFloorCash, Objectives.ArmyEff * 0.5f);
+            if (avail <= 0f) return;
+            var o2 = best.Obj;
+            var joiners = new List<Unit>(8);
+            while (avail > 0f && free.Count > 0)
+            {
+                int idx = Nearest(free, o2.Where, o2.PoolPref);
+                if (idx < 0) idx = Nearest(free, o2.Where, Objectives.Pool.Any);
+                if (idx < 0) break;
+                var u = free[idx];
+                if (Reach.Enforce && !Reach.CanReach(u, o2.Where)) { free.RemoveAt(idx); continue; }
+                string n = ""; try { n = u.ObjectInfo?.DisplayName ?? ""; } catch { }
+                free.RemoveAt(idx);
+                best.Units.Add(u); joiners.Add(u);
+                avail -= Kernel.EffectiveOf(n);
+            }
+            if (joiners.Count == 0) return;
+            Measure(best);
+            if (best.Phase != State.Forming) OrderJoiners(best, joiners, now);
+            MilLog.Every("topup:" + best.Id, 30f, $"[FORCE] {best.Name} takes the unclaimed surplus: {joiners.Count} units, now {best.Units.Count}u {best.Eff:F0} eff");
+        }
+
+        /// <summary>
+        /// A UNIT THAT JOINS A FORCE UNDER WAY GETS THE FORCE'S ORDER AT ONCE.
+        /// Orders went out on a change of destination or on a stall, never on a
+        /// change of membership: GreatErg 2026-11-01, KillHQ#4 formed with 12
+        /// units at t=706, grew to 80 while Staging, and only the units present
+        /// at two moments were ever told to walk — the other sixty stood at the
+        /// reserve point for nine minutes, the push then read as a coin flip
+        /// against a Sol army that had doubled meanwhile, and went home without a
+        /// shot (DrMuck: "a lot of units were just passively standing around").
+        /// </summary>
+        static void OrderJoiners(Force force, List<Unit> joiners, float now)
+        {
+            if (!MilConfig.Execute || joiners.Count == 0 || _team == null || !CanCommand(_team)) return;
+            var o = force.Obj;
+            int n = 0;
+            switch (force.Phase)
+            {
+                case State.Staging:
+                    n = MoveUnits(joiners, force.Rally);
+                    break;
+                case State.Advancing:
+                case State.Engaged:
+                    if (o != null && o.Attack && force.LastTarget != null && !TargetDead(force.LastTarget))
+                    {
+                        Vector3 at; try { at = force.LastTarget.transform.position; } catch { break; }
+                        for (int i = 0; i < joiners.Count; i++) if (IssueAttack(joiners[i], force.LastTarget, at)) n++;
+                    }
+                    else if (force.LastOrderAt > 0f)
+                    {
+                        n = o != null && o.Attack ? AttackMoveUnits(joiners, force.LastOrderDest) : MoveUnits(joiners, force.LastOrderDest);
+                    }
+                    break;
+                default:
+                    return;
+            }
+            if (n == 0) return;
+            force.OrdersIssued += n;
+            MilLog.Every("joiners:" + force.Id, 30f, $"[FORCE] {force.Name} {n} late joiners sent after the force ({force.Phase})");
+        }
+
+        static int MoveUnits(List<Unit> units, Vector3 dest)
+        {
+            int n = 0;
+            for (int i = 0; i < units.Count; i++)
+            {
+                var u = units[i];
+                if (u == null || IsFighting(u)) continue;
+                Issue(() => OrderCompat.Move(u, dest), 1);
+                n++;
+            }
+            return n;
+        }
+
+        static int AttackMoveUnits(List<Unit> units, Vector3 dest)
+        {
+            int n = 0;
+            for (int i = 0; i < units.Count; i++)
+            {
+                var u = units[i];
+                if (u == null || IsFighting(u)) continue;
+                Issue(() => OrderCompat.AttackMove(u, dest), 1);
+                n++;
+            }
+            return n;
+        }
 
         static Force Find(Objectives.Objective o)
         {
@@ -1138,33 +1321,36 @@ namespace Si_RTS_AI.Mil
             force.LastOrderDest = at; force.LastOrderAt = now; force.LastTarget = target;
             int n = 0;
             for (int i = 0; i < _scratch.Count; i++)
-            {
-                var u = _scratch[i];
-                if (u == null) continue;
-                // RANGED UNITS ATTACK FROM RANGE. The attack order carries an
-                // attack-from position (the agent's ChasingPosition); every unit
-                // used to get the target itself, so a Barrage Truck drove up to
-                // the Nest it could have shelled from 300 m (DrMuck, 2026-09-07
-                // 20:50). A unit with a real weapon range stops at 80% of it on
-                // its own line of approach.
-                Vector3 atU = at;
-                try
-                {
-                    string n2 = u.ObjectInfo?.DisplayName ?? "";
-                    float r = UnitStats.RangeOf(n2);
-                    if (r >= STANDOFF_MIN_RANGE_M)
-                    {
-                        Vector3 from = u.transform.position;
-                        Vector3 d = from - at; d.y = 0f;
-                        float len = d.magnitude;
-                        if (len > 1f) atU = at + d / len * (r * STANDOFF_SHARE);
-                    }
-                }
-                catch { }
-                Issue(() => OrderCompat.Attack(u, atU, target), 1);
-                n++;
-            }
+                if (IssueAttack(_scratch[i], target, at)) n++;
             force.OrdersIssued += n;
+        }
+
+        /// <summary>
+        /// One attack order. RANGED UNITS ATTACK FROM RANGE: the order carries an
+        /// attack-from position (the agent's ChasingPosition); every unit used to
+        /// get the target itself, so a Barrage Truck drove up to the Nest it could
+        /// have shelled from 300 m (DrMuck, 2026-09-07 20:50). A unit with a real
+        /// weapon range stops at 80% of it on its own line of approach.
+        /// </summary>
+        static bool IssueAttack(BaseGameObject u, Target target, Vector3 at)
+        {
+            if (u == null || target == null) return false;
+            Vector3 atU = at;
+            try
+            {
+                string n2 = u.ObjectInfo?.DisplayName ?? "";
+                float r = UnitStats.RangeOf(n2);
+                if (r >= STANDOFF_MIN_RANGE_M)
+                {
+                    Vector3 from = u.transform.position;
+                    Vector3 d = from - at; d.y = 0f;
+                    float len = d.magnitude;
+                    if (len > 1f) atU = at + d / len * (r * STANDOFF_SHARE);
+                }
+            }
+            catch { }
+            Issue(() => OrderCompat.Attack(u, atU, target), 1);
+            return true;
         }
         const float STANDOFF_MIN_RANGE_M = 80f;
         const float STANDOFF_SHARE       = 0.8f;

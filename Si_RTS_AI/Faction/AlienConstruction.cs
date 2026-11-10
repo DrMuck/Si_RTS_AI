@@ -343,7 +343,10 @@ namespace Si_RTS_AI.Faction
                             _nodeCd.ObjectPreviewSetup, team, nodeAnchor, firedForNode,
                             _nodeCd.GridSnapXZ, _nodeCd.GridSnapY,
                             NODE_SEARCH_RADIUS,   // deliberately WIDE for nodes → slide toward biotics
-                            8f, 300,   // maxTime 40s → 8s: fail-fast for retry
+                            // maxTime 40s → 8s for fail-fast retry; v0.94.13: never faster than the
+                            // placement budget's step cap (PlacementBudget), which would clamp it anyway.
+                            PlacementBudget.MaxTimeFor(NODE_SEARCH_RADIUS, _nodeCd.GridSnapXZ, 8f),
+                            PlacementBudget.StepsFloor,
                             (cd, callingTeam, callingStructure, gotPos, gotRot) =>
                             {
                                 NodeSuccesses++;
@@ -952,7 +955,14 @@ namespace Si_RTS_AI.Faction
         /// for that long behind a doomed request. Same-spot serialisation kills
         /// the duplicates without ever making an unrelated placement wait.
         /// </summary>
-        const float INFLIGHT_TIMEOUT_S = 6f;
+        ///
+        /// v0.94.13: the safety timeout follows the placement budget. Under the
+        /// step cap a search takes seconds instead of milliseconds and may wait
+        /// for a slot, and the budget answers every request within
+        /// PlacementBudget.ResolveWithinS; a 6 s timeout would re-fire the same
+        /// spot while its first search is still running. The callbacks still
+        /// clear the entry the moment the search resolves.
+        static float INFLIGHT_TIMEOUT_S => Mathf.Max(6f, PlacementBudget.ResolveWithinS);
         const float INFLIGHT_RADIUS_M  = 120f;
 
         struct InFlight { public string Name; public Vector3 Want; public float At; }
@@ -1005,6 +1015,31 @@ namespace Si_RTS_AI.Faction
         const int   BACKOFF_AFTER_FAILS = 6;
         const float BACKOFF_MIN_S       = 10f;
         const float BACKOFF_MAX_S       = 60f;
+
+        /// <summary>
+        /// PER-SPOT BACK-OFF (v0.94.13). The team-wide back-off above only trips
+        /// after six failures in a row anywhere; one doomed spot retried every
+        /// few seconds between successes elsewhere never trips it, and each
+        /// retry is a full placement search. The first failure at a spot is
+        /// retried as before; from the second on the spot waits 10, 20, 40, 80,
+        /// then 120 s. A success at the spot clears it.
+        /// </summary>
+        const float SPOT_BACKOFF_CELL_M = 30f;
+        const float SPOT_BACKOFF_BASE_S = 10f;
+        const float SPOT_BACKOFF_MAX_S  = 120f;
+        struct SpotFails { public int Fails; public float Until; }
+        static readonly Dictionary<string, SpotFails> _spotFails = new Dictionary<string, SpotFails>();
+        static string SpotKey(string name, Vector3 p) =>
+            name + "@" + Mathf.RoundToInt(p.x / SPOT_BACKOFF_CELL_M) + "," + Mathf.RoundToInt(p.z / SPOT_BACKOFF_CELL_M);
+        static void NoteSpotFailed(string name, Vector3 p)
+        {
+            string k = SpotKey(name, p);
+            _spotFails.TryGetValue(k, out var f);
+            f.Fails++;
+            if (f.Fails >= 2)
+                f.Until = Time.time + Mathf.Min(SPOT_BACKOFF_MAX_S, SPOT_BACKOFF_BASE_S * Mathf.Pow(2f, f.Fails - 2));
+            _spotFails[k] = f;
+        }
 
         static int   _consecutiveSearchFails;
         static float _placementBackoffUntil;
@@ -1063,7 +1098,7 @@ namespace Si_RTS_AI.Faction
             _refusalLogAt.TryGetValue(key, out float last);
             if (Time.time - last < REFUSAL_LOG_EVERY_S) return;
             _refusalLogAt[key] = Time.time;
-            MelonLogger.Msg($"[PLAN/EXEC] {name} at ({pos.x:F0},{pos.z:F0}) not requested: {why}");
+            RtsLog.Msg($"[PLAN/EXEC] {name} at ({pos.x:F0},{pos.z:F0}) not requested: {why}");
         }
 
         internal static bool TryBuildStructureByCd(
@@ -1092,6 +1127,8 @@ namespace Si_RTS_AI.Faction
             { NoteRefusal(cdName, targetPos, "searchInFlight<120m"); return false; }
             if (Time.time < _placementBackoffUntil)
             { NoteRefusal(cdName, targetPos, $"backoff {_placementBackoffUntil - Time.time:F0}s"); return false; }
+            if (_spotFails.TryGetValue(SpotKey(cdName, targetPos), out var spot) && Time.time < spot.Until)
+            { NoteRefusal(cdName, targetPos, $"spotBackoff {spot.Until - Time.time:F0}s after {spot.Fails} failed searches"); return false; }
             // Direct read of the state the game enforces: no docked Queen, no
             // construction. Cheaper and far more honest than the failure
             // counting below, which only infers it after six refusals.
@@ -1114,6 +1151,7 @@ namespace Si_RTS_AI.Faction
                 onSuccess: (thisCd, cbTeam, cbStruct, gotPos, gotRot) =>
                 {
                     SearchDone(cdName, targetPos);
+                    _spotFails.Remove(SpotKey(cdName, targetPos));
                     // SCENE TEARDOWN GUARD — see CallbackTargetsAlive.
                     _consecutiveSearchFails = 0;
                     _placementBackoffUntil = 0f;
@@ -1139,7 +1177,7 @@ namespace Si_RTS_AI.Faction
                         string dupName = thisCd.ObjectInfo?.DisplayName ?? "?";
                         if (IsDuplicateNow(cbTeam, dupName, gotPos, deliberatePair))
                         {
-                            MelonLogger.Msg("[PLAN/EXEC] team=" + cbTeam.name +
+                            RtsLog.Msg("[PLAN/EXEC] team=" + cbTeam.name +
                                             " SKIP stale " + dupName +
                                             " at (" + gotPos.x.ToString("F0") + "," +
                                             gotPos.z.ToString("F0") + ") — one is already " +
@@ -1172,7 +1210,7 @@ namespace Si_RTS_AI.Faction
 
                         float anchorDist = cbStruct != null
                             ? Vector3.Distance(cbStruct.transform.position, gotPos) : -1f;
-                        MelonLogger.Msg("[PLAN/EXEC] team=" + cbTeam.name +
+                        RtsLog.Msg("[PLAN/EXEC] team=" + cbTeam.name +
                                         " Construct " + (thisCd.ObjectInfo?.DisplayName ?? "?") +
                                         " at (" + gotPos.x.ToString("F0") + "," + gotPos.z.ToString("F0") + ")" +
                                         " anchor=" + (cbStruct?.ObjectInfo?.DisplayName ?? "?") +
@@ -1186,12 +1224,13 @@ namespace Si_RTS_AI.Faction
                 {
                     SearchDone(cdName, targetPos);
                     NoteSearchFailed();
+                    NoteSpotFailed(cdName, targetPos);
                     // Nothing was placed, so the planner's repeat-suppression
                     // around this spot is protecting a structure that does not
                     // exist. Release it now rather than after the timer.
                     Planning.EcoPlanner.NoteSearchFailedAt(targetPos);
                     if (!CallbackTargetsAlive(thisCd, cbTeam, cbStruct)) return;
-                    MelonLogger.Msg("[PLAN/EXEC] team=" + cbTeam.name +
+                    RtsLog.Msg("[PLAN/EXEC] team=" + cbTeam.name +
                                     " placement search FAILED for " + (thisCd.ObjectInfo?.DisplayName ?? "?") +
                                     " near (" + targetPos.x.ToString("F0") + "," + targetPos.z.ToString("F0") + ")");
                 });
@@ -1356,8 +1395,10 @@ namespace Si_RTS_AI.Faction
                     cd.GridSnapXZ,
                     cd.GridSnapY,
                     PLACEMENT_SEARCH_RADIUS,
-                    8f,                           // maxTime shrunk 40→8s so failed searches retry sooner
-                    300,                          // minStepsPerSecond
+                    // maxTime shrunk 40→8s so failed searches retry sooner; v0.94.13: stretched
+                    // so num/maxTime stays at the placement budget's step cap (was ~1200 steps/s).
+                    PlacementBudget.MaxTimeFor(PLACEMENT_SEARCH_RADIUS, cd.GridSnapXZ, 8f),
+                    PlacementBudget.StepsFloor,   // minStepsPerSecond (the game's 300 sat above the cap)
                     onSuccess,
                     onFail);
             }
@@ -1741,6 +1782,7 @@ namespace Si_RTS_AI.Faction
             _pendingNodeForBiotics.Clear();
             _forceNodeForBiotics.Clear();
             _nodesFiredForBiotics.Clear();
+            _spotFails.Clear();
             BcAttempts = BcSuccesses = BcFailures = 0;
             CystAttempts = CystSuccesses = CystFailures = 0;
             NodeAttempts = NodeSuccesses = NodeFailures = 0;

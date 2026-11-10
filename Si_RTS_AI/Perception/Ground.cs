@@ -129,7 +129,7 @@ namespace Si_RTS_AI.Perception
             {
                 _shortenedLogged++;
                 float dyFinal = HeightAt(p) - y0;
-                MelonLoader.MelonLogger.Msg($"[GROUND] hop from ({from.x:F0},{from.z:F0}) h{y0:F0} toward ({to.x:F0},{to.z:F0}) " +
+                RtsLog.Msg($"[GROUND] hop from ({from.x:F0},{from.z:F0}) h{y0:F0} toward ({to.x:F0},{to.z:F0}) " +
                                             $"shortened {Mathf.Min(hopM, len):F0}->{step:F0} m, rise {dyFinal:F0} m");
             }
             return p;

@@ -1,3 +1,4 @@
+using System;
 using MelonLoader;
 
 namespace Si_RTS_AI.Config
@@ -67,6 +68,8 @@ namespace Si_RTS_AI.Config
             Enabled      = ConfigStore.EnabledOverride      ?? RtsaiConfig.Bool("enabled",      true);
             CommanderLog = ConfigStore.CommanderLogOverride ?? RtsaiConfig.Bool("commanderLog", true);
             RoundLog     = ConfigStore.RoundLogOverride     ?? RtsaiConfig.Bool("roundLog",     true);
+            // Planner diagnostics: off (default) / file (round log only) / console (both).
+            RtsLog.Level = RtsLog.Parse(RtsaiConfig.Str("log.planner", "off"), RtsLog.PlannerLevel.Off);
 
             TestMode          = RtsaiConfig.Bool("testMode",          false);
             SuppressCombat    = RtsaiConfig.Bool("suppressCombat",    false);
@@ -135,7 +138,7 @@ namespace Si_RTS_AI.Config
                             $"alien={(Faction.FactionControl.AlienEnabled ? "on" : "off")} sol={(Faction.FactionControl.SolEnabled ? "on" : "off")} cent={(Faction.FactionControl.CentauriEnabled ? "on" : "off")} " +
                             $"testMode={TestMode} ecoAssist={Planning.EcoPlannerConfig.EcoAssistWithHumanCommander} ecoPlannerActive={EcoPlannerActive} " +
                             $"scout={ScoutEnabled}/{ScoutMaxUnits} opener={(OpenerExecute ? "execute" : "shadow")} " +
-                            $"commanderLog={CommanderLog} roundLog={RoundLog} telemetry={(wantTelemetry ? TelemetryPort.ToString() : "off")}");
+                            $"commanderLog={CommanderLog} roundLog={RoundLog} plannerLog={RtsLog.Name} telemetry={(wantTelemetry ? TelemetryPort.ToString() : "off")}");
 
             _lastEnabled = Enabled;
             if (_first || wasEnabled != Enabled)

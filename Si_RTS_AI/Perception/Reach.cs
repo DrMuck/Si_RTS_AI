@@ -104,7 +104,7 @@ namespace Si_RTS_AI.Perception
                         if (graph == null) { sb.Append(" [null]"); continue; }
                         sb.Append(" [").Append(graph.graphIndex).Append(' ').Append(graph.name ?? "?").Append(' ').Append(graph.GetType().Name).Append(']');
                     }
-                    MelonLogger.Msg(sb.ToString());
+                    RtsLog.Msg(sb.ToString());
                 }
                 bool diag = _diag < DIAG_CAP;
                 System.Text.StringBuilder d = diag ? new System.Text.StringBuilder() : null;
@@ -151,7 +151,7 @@ namespace Si_RTS_AI.Perception
                 if (diag)
                 {
                     _diag++;
-                    MelonLogger.Msg($"[REACH] mask {mask.value} ({from.x:F0},{from.z:F0})->({to.x:F0},{to.z:F0}) verdict {(ok ? "reachable" : "NO PATH")}{(anyNode ? "" : " (no nodes: unknown)")}:{d}");
+                    RtsLog.Msg($"[REACH] mask {mask.value} ({from.x:F0},{from.z:F0})->({to.x:F0},{to.z:F0}) verdict {(ok ? "reachable" : "NO PATH")}{(anyNode ? "" : " (no nodes: unknown)")}:{d}");
                 }
                 if (_cache.Count > 4000) _cache.Clear();
                 _cache[key] = (ok, now);

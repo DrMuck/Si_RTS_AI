@@ -569,7 +569,7 @@ namespace Si_RTS_AI.Planning
             if (_commitAt < 0f) return false;
             if (Time.time - _commitAt > LOOP_COMMIT_TTL_S)
             {
-                MelonLogger.Msg("[NODEMGR] loop commitment aged out — searching again");
+                RtsLog.Msg("[NODEMGR] loop commitment aged out — searching again");
                 _commitAt = -1f; return false;
             }
 
@@ -579,7 +579,7 @@ namespace Si_RTS_AI.Planning
             int hops = HopDistanceCached(g, a, b, cache);
             if (hops < MIN_HOPS_SAVED)
             {
-                MelonLogger.Msg($"[NODEMGR] loop ({_commitA.x:F0},{_commitA.z:F0})-" +
+                RtsLog.Msg($"[NODEMGR] loop ({_commitA.x:F0},{_commitA.z:F0})-" +
                                 $"({_commitB.x:F0},{_commitB.z:F0}) CLOSED — now {hops} hops apart");
                 _commitAt = -1f;
                 return false;
@@ -812,7 +812,7 @@ namespace Si_RTS_AI.Planning
                     {
                         cleared += n;
                         NoteStallRetry(at);
-                        MelonLogger.Msg($"[NODEMGR] stalled Node at ({at.x:F0},{at.z:F0}) never " +
+                        RtsLog.Msg($"[NODEMGR] stalled Node at ({at.x:F0},{at.z:F0}) never " +
                                         $"started after {clearAfter:F0}s — order forgotten " +
                                         $"(attempt {tries + 1}/{STALL_MAX_RETRIES}), the spot is " +
                                         $"open to be planned again");
@@ -854,7 +854,7 @@ namespace Si_RTS_AI.Planning
                 sb.Append(" cut@(").Append(g[cuts[i]].Pos.x.ToString("F0")).Append(',')
                   .Append(g[cuts[i]].Pos.z.ToString("F0")).Append(')');
             ReportLoopCandidates(g, seen, sb);
-            MelonLogger.Msg(sb.ToString());
+            RtsLog.Msg(sb.ToString());
         }
 
         /// <summary>

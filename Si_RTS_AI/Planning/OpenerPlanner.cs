@@ -201,7 +201,7 @@ namespace Si_RTS_AI.Planning
                         / System.Diagnostics.Stopwatch.Frequency;
                 if (best == null)
                 {
-                    MelonLogger.Msg("[OPENER] no viable opening found");
+                    RtsLog.Msg("[OPENER] no viable opening found");
                     return;
                 }
                 _queue.Clear();
@@ -209,7 +209,7 @@ namespace Si_RTS_AI.Planning
                 _stepDone = new bool[_queue.Count];
                 _queueStalledSince = 0f;
                 _skipped = 0;
-                MelonLogger.Msg($"[OPENER] evaluated={evaluated} in {ms}ms  " +
+                RtsLog.Msg($"[OPENER] evaluated={evaluated} in {ms}ms  " +
                                 $"{(ShadowOnly ? "SHADOW" : "EXECUTING")} steps={_queue.Count}  " +
                                 $"chosen: {best.Describe()}");
             }
@@ -426,7 +426,7 @@ namespace Si_RTS_AI.Planning
                         || StructureNear(team, "Lesser Spawning Cyst", _queue[i].Target,
                                          Mathf.Min(60f, dedupR)))
                     {
-                        MelonLogger.Msg($"[OPENER] Cyst step {i + 1}/{_queue.Count} confirmed ordered");
+                        RtsLog.Msg($"[OPENER] Cyst step {i + 1}/{_queue.Count} confirmed ordered");
                         MarkDone(i);
                         continue;
                     }
@@ -448,7 +448,7 @@ namespace Si_RTS_AI.Planning
                         // If this never logs, the production-queue reflection is
                         // not matching and duplicate protection rests entirely
                         // on the one-per-tick rule and the retry interval.
-                        MelonLogger.Msg($"[OPENER] Cyst step {i + 1}/{_queue.Count} waiting — " +
+                        RtsLog.Msg($"[OPENER] Cyst step {i + 1}/{_queue.Count} waiting — " +
                                         $"a Cyst is already queued at {whereQueued}");
                         break;   // one Cyst in flight at a time
                     }
@@ -511,7 +511,7 @@ namespace Si_RTS_AI.Planning
                         if (now - _lastWaitLogAt > 5f)
                         {
                             _lastWaitLogAt = now;
-                            MelonLogger.Msg($"[OPENER] Cyst step {i + 1}/{_queue.Count} waiting: " +
+                            RtsLog.Msg($"[OPENER] Cyst step {i + 1}/{_queue.Count} waiting: " +
                                             $"this site's Bio Cache is not placed yet");
                         }
                         continue;
@@ -527,7 +527,7 @@ namespace Si_RTS_AI.Planning
                             _lastWaitLogAt = now;
                             float rt = 0f;
                             try { rt = Perception.MapLayers.LayerReplay.CurrentRoundTime; } catch { }
-                            MelonLogger.Msg($"[OPENER] Cyst step {i + 1}/{_queue.Count} waiting: " +
+                            RtsLog.Msg($"[OPENER] Cyst step {i + 1}/{_queue.Count} waiting: " +
                                             $"no finished BC anywhere yet; target ({_queue[i].Target.x:F0}," +
                                             $"{_queue[i].Target.z:F0}) at roundT={rt:F0}s " +
                                             $"(usable {Perception.BuildTimeline.MeasuredBuildUpS("Bio Cache"):F0}s after start)");
@@ -543,7 +543,7 @@ namespace Si_RTS_AI.Planning
                         if (now - _lastWaitLogAt > 5f)
                         {
                             _lastWaitLogAt = now;
-                            MelonLogger.Msg($"[OPENER] Cyst step {i + 1}/{_queue.Count} waiting: " +
+                            RtsLog.Msg($"[OPENER] Cyst step {i + 1}/{_queue.Count} waiting: " +
                                             $"cash={team.TotalResources} < {_queue[i].Cost}+{floor} " +
                                             $"(keeping shrimp production funded)");
                         }
@@ -597,7 +597,7 @@ namespace Si_RTS_AI.Planning
                         float dx0 = aimed.x - _queue[i].Target.x, dz0 = aimed.z - _queue[i].Target.z;
                         if (dx0 * dx0 + dz0 * dz0 > 25f * 25f)
                         {
-                            MelonLogger.Msg($"[OPENER] Cyst step {i + 1}/{_queue.Count} retargeted " +
+                            RtsLog.Msg($"[OPENER] Cyst step {i + 1}/{_queue.Count} retargeted " +
                                             $"({_queue[i].Target.x:F0},{_queue[i].Target.z:F0}) -> " +
                                             $"({aimed.x:F0},{aimed.z:F0}) — its Bio Cache actually " +
                                             $"stands at ({realBc.x:F0},{realBc.z:F0})");
@@ -616,7 +616,7 @@ namespace Si_RTS_AI.Planning
                     _cystAttempts.TryGetValue(i, out int tries);
                     if (tries >= MAX_CYST_ATTEMPTS)
                     {
-                        MelonLogger.Msg($"[OPENER] Cyst step {i + 1}/{_queue.Count} gave up after " +
+                        RtsLog.Msg($"[OPENER] Cyst step {i + 1}/{_queue.Count} gave up after " +
                                         $"{tries} attempts at ({_queue[i].Target.x:F0},{_queue[i].Target.z:F0}) " +
                                         $"— no structure appeared; leaving it to the beam");
                         MarkDone(i);
@@ -632,8 +632,8 @@ namespace Si_RTS_AI.Planning
                     _lastCystTry[i] = now;
 
                     AnythingNear(team, _queue[i].Target, 60f, out string nearby);
-                    MelonLogger.Msg($"[OPENER] Cyst step {i + 1}/{_queue.Count} BC ready via={bcVia}");
-                    MelonLogger.Msg($"[OPENER] Cyst step {i + 1}/{_queue.Count} attempt {tries + 1}" +
+                    RtsLog.Msg($"[OPENER] Cyst step {i + 1}/{_queue.Count} BC ready via={bcVia}");
+                    RtsLog.Msg($"[OPENER] Cyst step {i + 1}/{_queue.Count} attempt {tries + 1}" +
                                     $"/{MAX_CYST_ATTEMPTS} at ({_queue[i].Target.x:F0},{_queue[i].Target.z:F0}) " +
                                     $"cash={team.TotalResources} nearby='{nearby}'");
                     // Straight at the game, bypassing the planner dedup.
@@ -760,7 +760,7 @@ namespace Si_RTS_AI.Planning
                     if (Time.time - _lastWaitLogAt > 10f)
                     {
                         _lastWaitLogAt = Time.time;
-                        MelonLogger.Msg($"[OPENER] holding chain toward ({goal.x:F0},{goal.z:F0}) — " +
+                        RtsLog.Msg($"[OPENER] holding chain toward ({goal.x:F0},{goal.z:F0}) — " +
                                         $"a Bio Cache at ({bcPos.x:F0},{bcPos.z:F0}) anchors it " +
                                         $"{Vector3.Distance(from, goal) - Vector3.Distance(bcPos, goal):F0}m closer");
                     }
@@ -795,7 +795,7 @@ namespace Si_RTS_AI.Planning
                 }
                 if (tooClose) continue;
 
-                MelonLogger.Msg($"[OPENER] step {i + 1}/{_queue.Count} chain node at " +
+                RtsLog.Msg($"[OPENER] step {i + 1}/{_queue.Count} chain node at " +
                                 $"({np.x:F0},{np.z:F0}) toward ({goal.x:F0},{goal.z:F0}) " +
                                 $"gap={gap:F0}m cash={team.TotalResources}");
                 Faction.AlienConstruction.TryBuildStructureForPlanner(
@@ -1171,7 +1171,7 @@ namespace Si_RTS_AI.Planning
             foreach (int i in PendingSteps())
             {
                 _skipped++;
-                MelonLogger.Msg($"[OPENER] step {i + 1}/{_queue.Count} ({_queue[i].Kind}) " +
+                RtsLog.Msg($"[OPENER] step {i + 1}/{_queue.Count} ({_queue[i].Kind}) " +
                                 $"stalled {QUEUE_STALL_LIMIT_S:F0}s — skipping it");
                 _stepDone[i] = true;
                 break;
@@ -1180,7 +1180,7 @@ namespace Si_RTS_AI.Planning
 
             if (_skipped >= MAX_SKIPS)
             {
-                MelonLogger.Msg($"[OPENER] {_skipped} steps skipped — abandoning opening, beam takes over");
+                RtsLog.Msg($"[OPENER] {_skipped} steps skipped — abandoning opening, beam takes over");
                 for (int i = 0; i < _stepDone.Length; i++) _stepDone[i] = true;
             }
         }
@@ -1529,17 +1529,17 @@ namespace Si_RTS_AI.Planning
             evaluated = evalCount;
 
             for (int i = 0; i < top.Count; i++)
-                MelonLogger.Msg($"[OPENER/ALT] #{i + 1} {top[i].Describe()}");
+                RtsLog.Msg($"[OPENER/ALT] #{i + 1} {top[i].Describe()}");
 
             // The doubled-Cyst option, always shown even when it loses — it was
             // added to answer a specific question and a silent absence from the
             // top six answers nothing.
             if (bestDoubled != null)
-                MelonLogger.Msg($"[OPENER/2X] best doubled: {bestDoubled.Describe()}" +
+                RtsLog.Msg($"[OPENER/2X] best doubled: {bestDoubled.Describe()}" +
                                 $" | vs best single {(int)(bestSingle?.Score ?? 0)}" +
                                 $" ({(int)(bestDoubled.Score - (bestSingle?.Score ?? 0))})");
             else
-                MelonLogger.Msg("[OPENER/2X] no doubled-Cyst plan was affordable");
+                RtsLog.Msg("[OPENER/2X] no doubled-Cyst plan was affordable");
 
             // The best opening that taps a site the winner ignored. This is the
             // "why not that patch?" question in one line, rather than a guess.
@@ -1553,11 +1553,11 @@ namespace Si_RTS_AI.Planning
                         && (bestWith == null || top[i].Score > bestWith.Score)) bestWith = top[i];
                 var site = sites[sIdx];
                 if (bestWith != null)
-                    MelonLogger.Msg($"[OPENER/SKIP] site@{(int)site.DistFromNest}m best-with-it " +
+                    RtsLog.Msg($"[OPENER/SKIP] site@{(int)site.DistFromNest}m best-with-it " +
                                     $"score={(int)bestWith.Score} vs winner {(int)(best?.Score ?? 0)} " +
                                     $"({(int)(bestWith.Score - (best?.Score ?? 0))})");
                 else
-                    MelonLogger.Msg($"[OPENER/SKIP] site@{(int)site.DistFromNest}m not in any " +
+                    RtsLog.Msg($"[OPENER/SKIP] site@{(int)site.DistFromNest}m not in any " +
                                     $"top-{RUNNERS_UP} opening");
             }
             return best;

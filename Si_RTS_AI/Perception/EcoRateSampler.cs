@@ -313,7 +313,7 @@ namespace Si_RTS_AI.Perception
                 if (!_drainDiagLogged)
                 {
                     _drainDiagLogged = true;
-                    MelonLogger.Msg($"[ECO] drain first-attempt team={team.name} {cash}→{after} (wanted {target}) via {usedPath}");
+                    RtsLog.Msg($"[ECO] drain first-attempt team={team.name} {cash}→{after} (wanted {target}) via {usedPath}");
                 }
                 Si_RTS_AI.AppendToRound(
                     $"[ECO] drain team={team.name} cash={cash}→{after} capacity={cap} drained={cash-after}");
@@ -399,8 +399,8 @@ namespace Si_RTS_AI.Perception
                         seen.Add($"[oth] {mi.Name}{sig} -> {mi.ReturnType.Name}");
                 }
                 seen.Sort();
-                MelonLogger.Msg("[ECO/DIAG] Team methods reflection can see (filtered):");
-                foreach (var s in seen) MelonLogger.Msg($"  {s}");
+                RtsLog.Msg("[ECO/DIAG] Team methods reflection can see (filtered):");
+                foreach (var s in seen) RtsLog.Msg($"  {s}");
             }
             return false;
         }
@@ -454,7 +454,7 @@ namespace Si_RTS_AI.Perception
                 args[0] = cmd;
                 for (int i = 1; i < pars.Length; i++) args[i] = Type.Missing;
                 _consoleExec.Invoke(target, args);
-                MelonLogger.Msg($"[CONSOLE] ran '{cmd}'");
+                RtsLog.Msg($"[CONSOLE] ran '{cmd}'");
                 return true;
             }
             catch (Exception ex)
@@ -490,7 +490,7 @@ namespace Si_RTS_AI.Perception
                         if (mi.Name == "TryExecuteCommand" || mi.Name == "ExecuteCommand") { hasExec = true; break; }
                     }
                     if (hasExec) { break; }
-                    MelonLogger.Msg($"[ECO] Console: {_consoleType.FullName} has no exec method — continuing search.");
+                    RtsLog.Msg($"[ECO] Console: {_consoleType.FullName} has no exec method — continuing search.");
                     _consoleType = null;
                 }
                 if (_consoleType == null)
@@ -522,12 +522,12 @@ namespace Si_RTS_AI.Perception
                 {
                     _consoleExec = candidates[0];
                     _consoleIsStatic = _consoleExec.IsStatic;
-                    MelonLogger.Msg($"[ECO] Console executor selected: {_consoleType.FullName}.{_consoleExec.Name}(...) static={_consoleIsStatic} params={_consoleExec.GetParameters().Length}");
+                    RtsLog.Msg($"[ECO] Console executor selected: {_consoleType.FullName}.{_consoleExec.Name}(...) static={_consoleIsStatic} params={_consoleExec.GetParameters().Length}");
                 }
                 else
                 {
                     MelonLogger.Warning($"[ECO] Console executor: {_consoleType.FullName} has no TryExecuteCommand/ExecuteCommand method. All methods:");
-                    foreach (var s in allSigs) MelonLogger.Msg(s);
+                    foreach (var s in allSigs) RtsLog.Msg(s);
                     return;
                 }
         }
@@ -662,7 +662,7 @@ namespace Si_RTS_AI.Perception
                             "}");
                     }
                 }
-                MelonLogger.Msg($"[ECO] benchmark: appended {_perTeam.Count} team rows to {path} (map={mapName} elapsed={roundElapsedS:F0}s)");
+                RtsLog.Msg($"[ECO] benchmark: appended {_perTeam.Count} team rows to {path} (map={mapName} elapsed={roundElapsedS:F0}s)");
             }
             catch (Exception ex) { MelonLogger.Warning($"[ECO] WriteBenchmarkLines threw: {ex.Message}"); }
         }

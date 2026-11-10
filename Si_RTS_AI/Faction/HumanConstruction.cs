@@ -525,7 +525,7 @@ namespace Si_RTS_AI.Faction
                 if (ownHq != null) hqCount = CountOwnedIncludingSites(team, ownHq);
 
                 // Grid config for coordinate-mapping sanity check.
-                MelonLogger.Msg(
+                RtsLog.Msg(
                     $"[RTSA/Human/DIAG] team={team.name} tick={_tickCounter} " +
                     $"ownHq='{ownHq ?? "?"}' refCd={haveRefCd} hqCd={haveHqCd} " +
                     $"apiReturn={apiReturn} patches={actualPatchCount} firstPatch=({firstPatchCenter.x:F0},{firstPatchCenter.z:F0}) " +
@@ -689,10 +689,19 @@ namespace Si_RTS_AI.Faction
                     // separate, economic rule (REFINERY_PLACEMENT_QUALITY_RADIUS).
                     float refSearch = REFINERY_SEARCH_RADIUS;
                     try { if (refineryCd.MaximumBaseStructureDistance > 0f) refSearch = refineryCd.MaximumBaseStructureDistance; } catch { }
+                    // v0.94.13 PLACEMENT BUDGET. A landing farther than the quality
+                    // radius from the field is rejected below, and the search starts
+                    // REFINERY_SEARCH_OFFSET_M from the field, so a ring beyond
+                    // quality + offset (+ two grid cells for snapping) can only yield
+                    // a reject, which is booked exactly like a failed search
+                    // (NoteRefineryReject). 600 m on the 15 m grid -> 420 m: 6561 -> 3249
+                    // cells. maxTime keeps num/maxTime at the step cap.
+                    refSearch = Mathf.Min(refSearch, REFINERY_PLACEMENT_QUALITY_RADIUS + REFINERY_SEARCH_OFFSET_M + 2f * cd.GridSnapXZ);
                     ConstructionPlacement.QueueFirstValidPlacementAroundPoint(
                         cd.ObjectPreviewSetup, team, closer, searchFrom,
                         cd.GridSnapXZ, cd.GridSnapY,
-                        refSearch, Mathf.Clamp(refSearch / 20f, 6f, 40f), 300,
+                        refSearch, PlacementBudget.MaxTimeFor(refSearch, cd.GridSnapXZ, Mathf.Clamp(refSearch / 20f, 6f, 40f)),
+                        PlacementBudget.StepsFloor,
                         (cData, ct, cs, gotPos, gotRot) =>
                         {
                             // Quality gate: reject placements that landed too far from

@@ -203,7 +203,7 @@ namespace Si_RTS_AI.Planning
             if (Enabled || _announced)
             {
                 _announced = true;
-                MelonLogger.Msg($"[MIL/CONFIG] enabled={Enabled} execute={Execute} produce={Produce} " +
+                RtsLog.Msg($"[MIL/CONFIG] enabled={Enabled} execute={Execute} produce={Produce} " +
                                 $"offence={Offence} blockVanillaAttacks={BlockVanillaAttackOrders} | " +
                                 $"margin={StrengthMargin:F2} " +
                                 $"home={HomeShare:F2}..{HomeCapShare:F2} of army " +

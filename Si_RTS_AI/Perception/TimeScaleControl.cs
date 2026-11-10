@@ -37,7 +37,7 @@ namespace Si_RTS_AI.Perception
                     Time.timeScale = 1f;
                     if (_fixedDeltaAt1 > 0f) Time.fixedDeltaTime = _fixedDeltaAt1;
                     _applied = 1f;
-                    MelonLogger.Msg("[RTSA/TIME] timeScale back to 1");
+                    RtsLog.Msg("[RTSA/TIME] timeScale back to 1");
                 }
             }
             catch { }
@@ -74,12 +74,12 @@ namespace Si_RTS_AI.Perception
             {
                 if (_origTargetFps == int.MinValue) _origTargetFps = Application.targetFrameRate;
                 Application.targetFrameRate = cap;
-                MelonLogger.Msg($"[RTSA/TIME] serverFpsCap={cap} applied (Application.targetFrameRate)");
+                RtsLog.Msg($"[RTSA/TIME] serverFpsCap={cap} applied (Application.targetFrameRate)");
             }
             else if (cap <= 0 && _origTargetFps != int.MinValue && Application.targetFrameRate != _origTargetFps)
             {
                 Application.targetFrameRate = _origTargetFps;
-                MelonLogger.Msg($"[RTSA/TIME] serverFpsCap=0: targetFrameRate back to the game's own {_origTargetFps}");
+                RtsLog.Msg($"[RTSA/TIME] serverFpsCap=0: targetFrameRate back to the game's own {_origTargetFps}");
             }
         }
 
@@ -100,7 +100,7 @@ namespace Si_RTS_AI.Perception
                 if (!Mathf.Approximately(_applied, want))
                 {
                     _applied = want;
-                    MelonLogger.Msg($"[RTSA/TIME] timeScale={want:F2} " +
+                    RtsLog.Msg($"[RTSA/TIME] timeScale={want:F2} " +
                                     $"(fixedDelta {_fixedDeltaAt1:F4} -> {Time.fixedDeltaTime:F4}). " +
                                     (want > 1f
                                         ? $"A 25 game-minute round should finish in {25f / want:F1} wall-minutes — " +
@@ -125,7 +125,7 @@ namespace Si_RTS_AI.Perception
             float achieved = (float)(gameS / wallS);
             bool short_ = want > 1.05f && achieved < want * KEEPING_UP_FRACTION;
             if (short_ || Mathf.Abs(achieved - want) > 0.15f)
-                MelonLogger.Msg($"[RTSA/TIME] achieved {achieved:F2}x of {want:F2}x requested" +
+                RtsLog.Msg($"[RTSA/TIME] achieved {achieved:F2}x of {want:F2}x requested" +
                                 (short_ ? "  — SERVER IS NOT KEEPING UP; this round is not comparable "
                                         + "to 1x rounds and the timeScale should be lowered"
                                         : ""));

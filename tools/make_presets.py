@@ -71,6 +71,17 @@ BASE = {
     "storageBufferAtMinute": 10,
     "storageBufferOffsetM": 150,
 
+    # Placement search budget (Faction/PlacementBudget.cs, v0.94.13): applies to
+    # every AI placement search on the server, vanilla commander and ours; the
+    # player's own placement preview is exempt. 0 switches a limit off.
+    "placement": {
+        "maxStepsPerSecond": 100,      # cap on a search's steps/s (game floor 300; callers asked 875-1200)
+        "maxConcurrentSearches": 2,    # AI searches stepping at once, server-wide; the rest are parked and take turns
+        "sliceS": 0.5,                 # turn length while searches wait for a slot
+        "maxSearchS": 50,              # callers outside this mod (vanilla): a search older than this ends as failed
+        "maxSearchOwnS": 120,          # Si_RTS_AI's own callers (they hold the spot while in flight)
+    },
+
     "military": {
         "enabled": True, "execute": True, "produce": True, "offence": True,
         "blockVanillaAttackOrders": True,
@@ -117,6 +128,9 @@ HEADLESS = {
     "endRoundAfterMinutes": 60,
     "roundsPerMap": 24,
     "perfTimers": True,
+    # Headless rounds exist to be reviewed: planner diagnostics into the round log
+    # (off by default everywhere else; "console" mirrors them to MelonLoader).
+    "log": {"planner": "file"},
 }
 
 # name -> (readme lines, overrides). Overrides merge recursively into BASE.
@@ -200,6 +214,30 @@ PRESETS = {
         "military": {"enabled": False, "execute": False, "produce": False, "offence": False, "blockVanillaAttackOrders": False},
         "mil": {"spires": {"execute": False}},
         "harness": dict(HEADLESS["harness"], configId="headless-eco-only"),
+    })),
+
+    "headless-vanilla-3way": ([
+        "HEADLESS VANILLA SURVEY: NO faction under the mod - the game's own commander",
+        "AI runs alien, Sol and Centauri. The mod only starts the round (fake client),",
+        "force-ends it after 60 minutes, moves to the next map after EVERY round",
+        "(roundsPerMap 1) and records: [CMD] every Construct call with yaw and the",
+        "game's answer, [CASH] per team every 30 s, [BUILD] timeline, [ORDER] unit",
+        "orders, BcMetrics/EcoRate for every team. Military observe-only, spires off,",
+        "no vanilla-order blocking: nothing the mod does touches a vanilla decision.",
+        "VersusAutoSelectMode in MelonPreferences.cfg [Silica] must be",
+        "HUMANS_VS_HUMANS_VS_ALIENS for the 3-way (server stopped to edit).",
+        "Written 2026-10-28 to measure the vanilla AI live (docs/VANILLA_AI_ECO_REVIEW_1.0.9.md).",
+    ], dict(HEADLESS, **{
+        "factions": {"alien": False, "sol": False, "centauri": False},
+        "lockAlienCommander": False,
+        "coopBlockVanillaUnitOrders": False,
+        "military": COOP_MIL_OBSERVE,
+        "mil": {"spires": {"enabled": False, "execute": False}},
+        "roundsPerMap": 1,
+        "layerSnapshots": False,
+        "harness": dict(HEADLESS["harness"],
+                        configId="headless-vanilla-3way",
+                        mapRotation="NarakaCity,NorthPolarCap,RiftBasin,TheMaw,GreatErg,CrimsonPeak,MonumentValley,CrystalChasm,WhisperingPlains"),
     })),
 
     "off": ([

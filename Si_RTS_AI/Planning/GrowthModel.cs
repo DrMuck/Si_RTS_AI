@@ -176,7 +176,7 @@ namespace Si_RTS_AI.Planning
                   .Append(" toward(").Append(p.Toward.x.ToString("F0")).Append(',')
                   .Append(p.Toward.z.ToString("F0")).Append(')');
             }
-            MelonLogger.Msg(sb.ToString());
+            RtsLog.Msg(sb.ToString());
         }
 
         static bool NearAnyStructure(EcoState s, Vector3 p, float r2)

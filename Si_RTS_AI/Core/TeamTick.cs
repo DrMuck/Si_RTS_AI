@@ -122,7 +122,7 @@ namespace Si_RTS_AI.Core
             if (StructureCount(team) > 0) _everBuilt.Add(tid);
             bool eliminated = _everBuilt.Contains(tid) && StructureCount(team) == 0;
             if (eliminated && _standDownLogged.Add(tid))
-                MelonLogger.Msg($"[RTSA] {team.name} has no structures left — planners stood down for the rest of the round");
+                RtsLog.Msg($"[RTSA] {team.name} has no structures left — planners stood down for the rest of the round");
 
             bool enabled = Faction.FactionControl.IsEnabled(team);
             bool perceiver = !eliminated && (isAlien ? (alienOn || !humanOn)
@@ -206,7 +206,7 @@ namespace Si_RTS_AI.Core
             long total = tLayer + tBcMetrics + tShrimpState + tEcoRate + tPlan + tThreat + tControl + tMil;
             if (total >= SLOW_TICK_LOG_THRESHOLD_MS)
             {
-                MelonLogger.Msg("[RTSA/PERF] slow tick team=" + tn +
+                RtsLog.Msg("[RTSA/PERF] slow tick team=" + tn +
                                 " total=" + total + "ms  layer=" + tLayer +
                                 " bcmetrics=" + tBcMetrics + " shrimpstate=" + tShrimpState +
                                 " ecorate=" + tEcoRate + " plan=" + tPlan +
@@ -250,7 +250,7 @@ namespace Si_RTS_AI.Core
             if (dt * 1000f >= LAG_SPIKE_MS && Si_RTS_AI.SceneReady)
             {
                 var recent = RecentModWork.SnapshotAndReset(dt);
-                MelonLogger.Msg($"[RTSA/LAG] spike dt={dt * 1000f:F0}ms  {recent}");
+                RtsLog.Msg($"[RTSA/LAG] spike dt={dt * 1000f:F0}ms  {recent}");
             }
 
             double ours = (System.Diagnostics.Stopwatch.GetTimestamp() - startTs) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
@@ -271,7 +271,7 @@ namespace Si_RTS_AI.Core
                           $" | fixedDt {Time.fixedDeltaTime * 1000f:F0} ms, gc0 +{gc0 - _gc0} gc2 +{gc2 - _gc2}, " +
                           $"heap {heapMb} MB | units {units} structures {structures} sites {sites}";
             _gc0 = gc0; _gc2 = gc2;
-            MelonLogger.Msg(line);
+            RtsLog.Msg(line);
             RoundLog.Append(line);
             _oursMs = 0; _wallMs = 0; _worstMs = 0; _frames = 0;
         }

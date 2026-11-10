@@ -143,7 +143,7 @@ namespace Si_RTS_AI.Planning
                 if (v > 0.01f)
                 {
                     if (Mathf.Abs(v - SHRIMP_SPEED) > 0.01f)
-                        MelonLoader.MelonLogger.Msg(
+                        RtsLog.Msg(
                             $"[ECO/COSTS] SHRIMP_SPEED {SHRIMP_SPEED:F2} -> {v:F2} (from live Shrimp.MoveSpeed)");
                     SHRIMP_SPEED = v;
                     _shrimpSpeedResolved = true;
@@ -297,7 +297,7 @@ namespace Si_RTS_AI.Planning
             if (any && bcCd != null && cystCd != null && nodeCd != null)
             {
                 _costsResolved = true;
-                MelonLoader.MelonLogger.Msg(
+                RtsLog.Msg(
                     $"[ECO/COSTS] resolved from game: " +
                     $"BC={BC_COST}/{BC_REACH_M:F0}m(+r{BC_RADIUS_M:F0}={BcPlaceReachM:F0}m)/usable{BC_BUILD_S:F0}s " +
                     $"Cyst={CYST_COST}/-/usable{CYST_BUILD_S:F0}s " +

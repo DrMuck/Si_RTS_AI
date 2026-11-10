@@ -81,7 +81,7 @@ namespace Si_RTS_AI.Faction
                         if (res == ProductionActionResult.Success)
                         {
                             Queued++;
-                            MelonLogger.Msg($"[RTSA/Human] {team.name} researching {cd.ObjectInfo?.DisplayName} (tier {tier}, cost {cost}) at {s.ObjectInfo.DisplayName}");
+                            RtsLog.Msg($"[RTSA/Human] {team.name} researching {cd.ObjectInfo?.DisplayName} (tier {tier}, cost {cost}) at {s.ObjectInfo.DisplayName}");
                             break;
                         }
                     }
@@ -119,7 +119,7 @@ namespace Si_RTS_AI.Faction
                 _logged = true;
                 var sb = new System.Text.StringBuilder("[RTSA/Human] tech ladder:");
                 foreach (var cd in list) sb.Append(' ').Append(cd.ObjectInfo?.DisplayName).Append("(T").Append(cd.TechnologyTier).Append(')');
-                MelonLogger.Msg(sb.ToString());
+                RtsLog.Msg(sb.ToString());
             }
         }
 

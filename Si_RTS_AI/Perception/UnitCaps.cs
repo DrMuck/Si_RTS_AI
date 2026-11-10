@@ -108,7 +108,7 @@ namespace Si_RTS_AI.Perception
                   .Append(WorkersConsumeCap
                       ? "  (economy and army compete for population)"
                       : "  (workers are free — the contention is cash only)");
-                MelonLogger.Msg(sb.ToString());
+                RtsLog.Msg(sb.ToString());
 
                 ProbeTeamTotals(team);
             }
@@ -137,7 +137,7 @@ namespace Si_RTS_AI.Perception
                     try { v = p.GetValue(team); } catch { }
                     if (v is int || v is float) found.Add($"{p.Name}={v}");
                 }
-                MelonLogger.Msg("[UNITCAP] team cap-ish members: " +
+                RtsLog.Msg("[UNITCAP] team cap-ish members: " +
                                 (found.Count > 0 ? string.Join(" ", found) : "none found"));
             }
             catch { }

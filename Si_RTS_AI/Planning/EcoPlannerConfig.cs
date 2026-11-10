@@ -23,7 +23,7 @@ namespace Si_RTS_AI.Planning
     {
         internal static void Init()
         {
-            MelonLogger.Msg($"[RTSA/CONFIG] EcoPlanner: P2Cover={Phase2CystCoverageRadiusM:F0}m " +
+            RtsLog.Msg($"[RTSA/CONFIG] EcoPlanner: P2Cover={Phase2CystCoverageRadiusM:F0}m " +
                             $"P2MinCluster={Phase2CystMinClusterPatches} P2TargetFar={Phase2CystTargetFarthestInCluster} " +
                             $"P2MaxUncysted={Phase2MaxUncystedBcQueue} P1MinTapped={Phase1MinTappedPatches} " +
                             $"ecoAssistWithHumanCommander={EcoAssistWithHumanCommander}");

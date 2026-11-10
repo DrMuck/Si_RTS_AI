@@ -122,7 +122,7 @@ namespace Si_RTS_AI.Mil
             _heldField = typeof(Forces).GetField("_held", BindingFlags.Static | BindingFlags.NonPublic);
             _scoutField = typeof(Planning.ScoutPlanner).GetField("_scoutSet", BindingFlags.Static | BindingFlags.NonPublic);
             _ready = true;
-            MelonLogger.Msg($"[MIL/CTX] per-team context over {_fields.Length} static fields of {CLASSES.Length} classes");
+            RtsLog.Msg($"[MIL/CTX] per-team context over {_fields.Length} static fields of {CLASSES.Length} classes");
         }
 
         /// <summary>Called LAST in the round reset: the reset and freshly configured values become the template for further teams.</summary>
@@ -172,7 +172,7 @@ namespace Si_RTS_AI.Mil
                         catch (Exception ex) { MelonLogger.Warning($"[MIL/CTX] {t.Name}.ResetForNewRound threw for {team.name}: {ex.InnerException?.Message ?? ex.Message}"); }
                     }
                     for (int i = 0; i < _fields.Length; i++) vals[i] = _fields[i].GetValue(null);
-                    MelonLogger.Msg($"[MIL/CTX] fresh military state for {team.name}");
+                    RtsLog.Msg($"[MIL/CTX] fresh military state for {team.name}");
                 }
                 _current = team;
                 Swaps++;

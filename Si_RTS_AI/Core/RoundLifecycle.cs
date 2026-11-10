@@ -78,6 +78,7 @@ namespace Si_RTS_AI.Core
             Faction.SuppressCombat.ResetForNewRound();
             Faction.HumanConstruction.ResetForNewRound();
             Faction.HumanBuild.ResetForNewRound();
+            Faction.PlacementBudget.ResetForNewRound();
             Human.HarvesterManager.ResetForNewRound();
             Perception.CommanderLog.ResetForNewRound();
             Faction.HumanTechResearcher.ResetForNewRound();

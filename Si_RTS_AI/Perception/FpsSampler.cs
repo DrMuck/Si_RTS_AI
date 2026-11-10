@@ -71,7 +71,7 @@ namespace Si_RTS_AI.Perception
                 _writer = new StreamWriter(_path, append: false);
                 _writer.WriteLine("t_sec,smoothed_fps,peak_dt_ms,frames_in_window");
                 _writer.Flush();
-                MelonLogger.Msg($"[FPS] logging to {_path}");
+                RtsLog.Msg($"[FPS] logging to {_path}");
             }
             catch (Exception ex) { MelonLogger.Warning("[FPS] EnsureCsv threw: " + ex.Message); }
         }

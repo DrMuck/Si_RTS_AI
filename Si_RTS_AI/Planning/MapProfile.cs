@@ -264,7 +264,7 @@ namespace Si_RTS_AI.Planning
             LoadOverride();
 
             Ready = true;
-            MelonLogger.Msg(
+            RtsLog.Msg(
                 $"[MAPPROF] {MapName}: patches={PatchCount} biotics={TotalBiotics} " +
                 $"nearest={NearestPatchM:F0}m median={MedianPatchM:F0}m p90={P90PatchM:F0}m " +
                 $"within1500m={PatchesWithin1500} clusterSize={MeanClusterSize:F1} " +
@@ -320,7 +320,7 @@ namespace Si_RTS_AI.Planning
                 MinChainRoi         = ReadFloat(txt, "minChainRoi",         MinChainRoi);
                 ClusterMode         = ReadFloat(txt, "clusterMode", ClusterMode ? 1f : 0f) >= 0.5f;
                 ExpansionAggression = ReadFloat(txt, "expansionAggression", ExpansionAggression);
-                MelonLogger.Msg($"[MAPPROF] applied per-map override from {path}");
+                RtsLog.Msg($"[MAPPROF] applied per-map override from {path}");
             }
             catch (Exception ex) { MelonLogger.Warning("[MAPPROF] override read failed: " + ex.Message); }
         }

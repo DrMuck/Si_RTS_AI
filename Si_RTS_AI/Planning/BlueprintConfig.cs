@@ -20,7 +20,7 @@ namespace Si_RTS_AI.Planning
     {
         internal static void Init()
         {
-            MelonLogger.Msg($"[RTSA/CONFIG] Blueprint: drivesPhase2={Enabled} replan={ReplanS:F0}s " +
+            RtsLog.Msg($"[RTSA/CONFIG] Blueprint: drivesPhase2={Enabled} replan={ReplanS:F0}s " +
                             $"maxSites={MaxSites} maxCysts={MaxCystsPerPlan} auto={CystStrategyAuto} " +
                             $"workers10={WorkersByTenMinutes} cap/BC={WorkerCapPerBioCache} producerPerSites={ProducerPerSites} persist={Persist}");
         }

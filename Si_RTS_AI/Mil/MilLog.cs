@@ -30,8 +30,9 @@ namespace Si_RTS_AI.Mil
 
         internal static void Msg(string line)
         {
+            if (!RtsLog.Enabled) return;                   // log.planner = off: diagnostics are opt-in
             string tag = MilContext.Tag;
-            MelonLogger.Msg(tag + line);
+            RtsLog.Console(tag + line);
             try { Si_RTS_AI.AppendToRound(Stamp() + tag + line); } catch { }
         }
 
@@ -54,6 +55,7 @@ namespace Si_RTS_AI.Mil
 
         internal static void Quiet(string line)
         {
+            if (!RtsLog.Enabled) return;
             if (_quietCount >= QUIET_CAP) return;          // a flood is not information
             _quiet.Append(Stamp()).Append(MilContext.Tag).Append(line).Append(NL);
             _quietCount++;

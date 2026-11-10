@@ -134,7 +134,7 @@ namespace Si_RTS_AI.Planning
                 sb.Append(" => ").Append(bestP).Append(" producers, ")
                   .Append(bestA).Append(" sites ahead");
                 LastReport = sb.ToString();
-                MelonLogger.Msg(LastReport);
+                RtsLog.Msg(LastReport);
             }
             catch (System.Exception ex)
             { MelonLogger.Warning("[STRATEGY] threw: " + ex.Message); }

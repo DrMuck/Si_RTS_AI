@@ -22,6 +22,7 @@ reload`), so it applies to the next round.
 | `coopBlockVanillaUnitOrders` | false | live | Refuse move/attack orders raised INSIDE `AICommander.Think` on teams the mod runs, so Silica's own commander cannot re-task units players drive. Player orders are untouched (they come from the network handler). |
 | `commanderLog` | true | live | `[CMD] [CASH] [ORDER] [SELECT] [PILOT] [TEAM] [AI]` lines in the round log. `/rtsai log cmd on|off|auto`. |
 | `roundLog` | true | live | The per-round log file and the `.melon.log` copy. `/rtsai log round on|off|auto`. |
+| `log.planner` | off | live | Planner diagnostics (`[MIL/*] [INTEL] [OBJ] [FORCE] [PLAN/*] [RTSA/LAG] [RTSA/PERF] [NODEMGR] [UTIL] …`). `off` = dropped. `file` = written to the round log only (the headless presets use this). `console` = round log plus the MelonLoader console, as before 0.94.14. Lifecycle lines, config changes, chat replies and warnings always reach the console; the observation streams (`commanderLog`) and the jsonl datasets are not affected. `/rtsai log planner off|file|console` changes it until the next reload. |
 | `telemetryPort` | 8765 | live | HTTP port for the layers viewer (localhost). 0 = off. |
 
 ## Planners
@@ -77,6 +78,11 @@ reload`), so it applies to the next round.
 | `remoteSupplyEnabled` / `remoteSupplyMaxWalkS` | true / 60 | live | A Cyst may produce for free capacity elsewhere within this walk. |
 | `storageBufferCaches` / `storageBufferAtMinute` / `storageBufferOffsetM` | 0 / 10 / 150 | live | Measurement scaffold: free Bio Caches spawned at the Nest to raise storage. 0 = off. |
 | `autoResourceDrain` | false | live | Measurement scaffold: cut cash to 70% of capacity whenever it passes 75%. Destroys money. |
+| `placement.maxStepsPerSecond` | 100 | live (5 s) | Cap on the steps/s of every AI construction-placement search on the server (vanilla commander and ours; the player's placement preview is exempt). The game computes num/maxTime with a floor of 300; callers asked 875-1200. Do not set it far below the server frame rate: a search stepping less than once per frame re-runs its last batch on the idle frames (game behaviour), which costs more than it saves. 0 = no cap. Since 0.94.13. |
+| `placement.maxConcurrentSearches` | 2 | live (5 s) | AI searches stepping at once, server-wide. Every request starts at once; the ones beyond the cap are parked (GameObject inactive) and take turns, longest-waiting first. 0 = no limit. |
+| `placement.sliceS` | 0.5 | live (5 s) | Turn length while searches wait for a slot. |
+| `placement.maxSearchS` | 50 | live (5 s) | Callers outside this mod (vanilla commander): a search older than this (counted from the request, parked time included) ends through the game's failure path, so the caller hears back before vanilla's 60 s release. 0 = no limit. |
+| `placement.maxSearchOwnS` | 120 | live (5 s) | The same limit for Si_RTS_AI's own searches, which hold their spot while in flight (HumanBuild, AlienConstruction). |
 | `eco.phase2CystCoverageRadiusM` | 250 | live | Existing Cyst within this many m of a BC covers it. |
 | `eco.phase2CystMinClusterPatches` | 2 (presets: 1) | live | Patches a BC needs in its cluster to get a Cyst candidate. |
 | `eco.phase2CystTargetFarthestInCluster` | true (presets: false) | live | Cyst at the cluster's far patch (true) or at the BC (false). |

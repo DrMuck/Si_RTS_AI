@@ -68,7 +68,7 @@ namespace Si_RTS_AI.Perception.MapLayers
                 OriginZ = -extent;
                 Width   = Mathf.Max(1, Mathf.CeilToInt(2f * extent / CellSize));
                 Height  = Width;
-                MelonLogger.Msg($"[RTSA/Layers] Grid configured from playable extent for '{mapName}': " +
+                RtsLog.Msg($"[RTSA/Layers] Grid configured from playable extent for '{mapName}': " +
                                 $"{Width}×{Height} @ {CellSize}m origin=({OriginX:F0},{OriginZ:F0}) " +
                                 $"size=({2*extent},{2*extent}) → {CellCount} cells.");
                 return;
@@ -79,7 +79,7 @@ namespace Si_RTS_AI.Perception.MapLayers
             if (terrains == null || terrains.Length == 0)
             {
                 OriginX = -3000f; OriginZ = -3000f; Width = 150; Height = 150;
-                MelonLogger.Msg($"[RTSA/Layers] Unknown map '{mapName}' and no terrain — default grid " +
+                RtsLog.Msg($"[RTSA/Layers] Unknown map '{mapName}' and no terrain — default grid " +
                                 $"{Width}×{Height} at ({OriginX},{OriginZ}).");
                 return;
             }
@@ -103,7 +103,7 @@ namespace Si_RTS_AI.Perception.MapLayers
             if (tileCount == 0 || minX >= maxX || minZ >= maxZ)
             {
                 OriginX = -3000f; OriginZ = -3000f; Width = 150; Height = 150;
-                MelonLogger.Msg($"[RTSA/Layers] Terrain tiles had no usable data — default grid " +
+                RtsLog.Msg($"[RTSA/Layers] Terrain tiles had no usable data — default grid " +
                                 $"{Width}×{Height} at ({OriginX},{OriginZ}).");
                 return;
             }
@@ -112,7 +112,7 @@ namespace Si_RTS_AI.Perception.MapLayers
             OriginZ = minZ;
             Width   = Mathf.Max(1, Mathf.CeilToInt((maxX - minX) / CellSize));
             Height  = Mathf.Max(1, Mathf.CeilToInt((maxZ - minZ) / CellSize));
-            MelonLogger.Msg($"[RTSA/Layers] Grid configured from {tileCount} terrain tile(s) (unknown map " +
+            RtsLog.Msg($"[RTSA/Layers] Grid configured from {tileCount} terrain tile(s) (unknown map " +
                             $"'{mapName}'): {Width}×{Height} @ {CellSize}m " +
                             $"origin=({OriginX:F0},{OriginZ:F0}) size=({maxX-minX:F0},{maxZ-minZ:F0}) → {CellCount} cells.");
         }

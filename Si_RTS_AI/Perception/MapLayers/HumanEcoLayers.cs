@@ -244,17 +244,17 @@ namespace Si_RTS_AI.Perception.MapLayers
                 float prodDist= TryReadMaxBaseStructDist(humanTeam, "Barracks");
                 if (refDist  > 0f && !Mathf.Approximately(refDist,  REFINERY_HQ_RADIUS))
                 {
-                    MelonLoader.MelonLogger.Msg($"[RTSA/Layers] REFINERY_HQ_RADIUS: {REFINERY_HQ_RADIUS:F0}m → {refDist:F0}m (from ConstructionData)");
+                    RtsLog.Msg($"[RTSA/Layers] REFINERY_HQ_RADIUS: {REFINERY_HQ_RADIUS:F0}m → {refDist:F0}m (from ConstructionData)");
                     REFINERY_HQ_RADIUS = refDist;
                 }
                 if (hqDist   > 0f && !Mathf.Approximately(hqDist,   HQ_TO_HQ_RADIUS))
                 {
-                    MelonLoader.MelonLogger.Msg($"[RTSA/Layers] HQ_TO_HQ_RADIUS:   {HQ_TO_HQ_RADIUS:F0}m → {hqDist:F0}m (from ConstructionData)");
+                    RtsLog.Msg($"[RTSA/Layers] HQ_TO_HQ_RADIUS:   {HQ_TO_HQ_RADIUS:F0}m → {hqDist:F0}m (from ConstructionData)");
                     HQ_TO_HQ_RADIUS = hqDist;
                 }
                 if (prodDist > 0f && !Mathf.Approximately(prodDist, PRODUCTION_HQ_RADIUS))
                 {
-                    MelonLoader.MelonLogger.Msg($"[RTSA/Layers] PRODUCTION_HQ_RADIUS: {PRODUCTION_HQ_RADIUS:F0}m → {prodDist:F0}m (from ConstructionData)");
+                    RtsLog.Msg($"[RTSA/Layers] PRODUCTION_HQ_RADIUS: {PRODUCTION_HQ_RADIUS:F0}m → {prodDist:F0}m (from ConstructionData)");
                     PRODUCTION_HQ_RADIUS = prodDist;
                 }
             }

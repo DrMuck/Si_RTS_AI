@@ -346,7 +346,7 @@ namespace Si_RTS_AI.Planning
                     {
                         _graves.Add(new Grave
                         { Pos = _scouts[i].LastPos, At = now, Arm = _scouts[i].Arm });
-                        MelonLogger.Msg($"[SCOUT] lost a scout at " +
+                        RtsLog.Msg($"[SCOUT] lost a scout at " +
                                         $"({_scouts[i].LastPos.x:F0},{_scouts[i].LastPos.z:F0}) " +
                                         $"on arm {_scouts[i].Arm} — closing that ground for " +
                                         $"{GRAVE_FORGET_S:F0}s");
@@ -435,7 +435,7 @@ namespace Si_RTS_AI.Planning
                         _released.Add(u);   // never re-conscript — see _released
                         _scouts.RemoveAt(i);
                         i--;
-                        MelonLogger.Msg("[SCOUT] map revealed — released scout back to vanilla control");
+                        RtsLog.Msg("[SCOUT] map revealed — released scout back to vanilla control");
                         continue;
                     }
                     sc.Waypoint = wp;
@@ -566,7 +566,7 @@ namespace Si_RTS_AI.Planning
                     int arm = ClaimArm();
                     _scouts.Add(new Scout { Unit = u, Ring = 0, Lap = 0, Arm = arm });
                     _scoutSet.Add(u);
-                    MelonLogger.Msg($"[SCOUT] recruited {u.ObjectInfo.DisplayName} " +
+                    RtsLog.Msg($"[SCOUT] recruited {u.ObjectInfo.DisplayName} " +
                                     $"arm={arm}/{ArmCount()} (scouts={_scouts.Count}, ceiling={MaxScouts})");
                 }
             }
@@ -639,7 +639,7 @@ namespace Si_RTS_AI.Planning
                     if (s.Construct(_scoutCd) != ProductionActionResult.Success) continue;
                     _lastBuildAt = now;
                     ScoutsQueued++;
-                    MelonLogger.Msg($"[SCOUT] queued a {SCOUT_BUILD_UNIT} to fill the star " +
+                    RtsLog.Msg($"[SCOUT] queued a {SCOUT_BUILD_UNIT} to fill the star " +
                                     $"({_scouts.Count} scouts, buildTarget={BuildTargetNow()}, " +
                                     $"ceiling={MaxScouts}, built={ScoutsQueued})");
                     return;
@@ -860,7 +860,7 @@ namespace Si_RTS_AI.Planning
                 for (int i = 0; i < data.Length; i++) if (data[i] != 0) set++;
             }
             float pct = total > 0 ? 100f * set / total : 0f;
-            MelonLogger.Msg($"[SCOUT] scouts={_scouts.Count} target={BuildTargetNow()} ceiling={MaxScouts} explored={pct:F1}% " +
+            RtsLog.Msg($"[SCOUT] scouts={_scouts.Count} target={BuildTargetNow()} ceiling={MaxScouts} explored={pct:F1}% " +
                             $"undiscoveredPatches={unexploredPatches} reached={WaypointsReached} " +
                             $"timedOut={WaypointsTimedOut} built={ScoutsQueued} lost={ScoutsLost}");
         }

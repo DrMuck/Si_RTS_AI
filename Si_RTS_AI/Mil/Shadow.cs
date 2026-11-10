@@ -74,7 +74,7 @@ namespace Si_RTS_AI.Mil
         {
             Enabled = RtsaiConfig.Bool("mil.shadow", true);
             Doctrine.Reload();
-            MelonLogger.Msg($"[MIL/SHADOW] {(Enabled ? "on" : "off")} — " +
+            RtsLog.Msg($"[MIL/SHADOW] {(Enabled ? "on" : "off")} — " +
                             "observes only, issues no orders and builds nothing");
         }
 
@@ -157,7 +157,7 @@ namespace Si_RTS_AI.Mil
 
             string mix = "";
             try { mix = Perception.ThreatMap.EnemyMixSummary() ?? ""; } catch { }
-            MelonLogger.Msg($"[MIL/SHADOW force] t={minutes:F1}m ours={rawCash} cash " +
+            RtsLog.Msg($"[MIL/SHADOW force] t={minutes:F1}m ours={rawCash} cash " +
                             $"(effective {effective:F0}, x{lift:F2}) theirs~{theirs} " +
                             $"| ratio {ratioTxt}" +
                             (mix.Length > 0 ? $" | seen: {mix}" : ""));
@@ -167,7 +167,7 @@ namespace Si_RTS_AI.Mil
                 // Not a fault: it means nothing enemy is inside the threat field
                 // yet. Said explicitly so a quiet log is not mistaken for a
                 // module that failed to start.
-                MelonLogger.Msg("[MIL/SHADOW band]  no enemy value in the threat " +
+                RtsLog.Msg("[MIL/SHADOW band]  no enemy value in the threat " +
                                 "field yet — no ratio to band");
                 return;
             }
@@ -199,7 +199,7 @@ namespace Si_RTS_AI.Mil
                                        : "doctrine would commit, live holds");
             }
 
-            MelonLogger.Msg($"[MIL/SHADOW band]  {band} -> {Doctrine.Advice(band)} " +
+            RtsLog.Msg($"[MIL/SHADOW band]  {band} -> {Doctrine.Advice(band)} " +
                             $"| pushMargin {need:F2}x says {(liveWouldCommit ? "commit" : "hold")} " +
                             $"| {verdict}");
         }
@@ -244,7 +244,7 @@ namespace Si_RTS_AI.Mil
             string tail = worstName != null && worstGap >= 1f
                 ? $" | BEHIND on {worstName} by {worstGap:F1}"
                 : " | on trajectory";
-            MelonLogger.Msg($"[MIL/SHADOW build] t={minutes:F1}m {sb}{tail}");
+            RtsLog.Msg($"[MIL/SHADOW build] t={minutes:F1}m {sb}{tail}");
         }
 
         /// <summary>Cyst names are long and the line has seven of them.</summary>

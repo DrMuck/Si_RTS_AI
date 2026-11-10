@@ -60,7 +60,7 @@ namespace Si_RTS_AI.Faction
                 if (nulls > 0 && !_loggedNulls)
                 {
                     _loggedNulls = true;
-                    MelonLogger.Msg($"[PREFAB/GUARD] GameDatabase.AllNetworkedPrefabs holds {nulls} null entr{(nulls == 1 ? "y" : "ies")}; " +
+                    RtsLog.Msg($"[PREFAB/GUARD] GameDatabase.AllNetworkedPrefabs holds {nulls} null entr{(nulls == 1 ? "y" : "ies")}; " +
                                      "GetSpawnablePrefabIndex(string) now skips them instead of throwing");
                 }
             }
@@ -78,11 +78,11 @@ namespace Si_RTS_AI.Faction
                 var m = AccessTools.Method(typeof(GameDatabase), "GetSpawnablePrefabIndex", new[] { typeof(string) });
                 if (m == null)
                 {
-                    MelonLogger.Msg("[PREFAB/GUARD] GameDatabase.GetSpawnablePrefabIndex(string) not present on this build");
+                    RtsLog.Msg("[PREFAB/GUARD] GameDatabase.GetSpawnablePrefabIndex(string) not present on this build");
                     return;
                 }
                 harmony.Patch(m, prefix: new HarmonyMethod(typeof(SpawnablePrefabGuard), nameof(Prefix)));
-                MelonLogger.Msg("[PREFAB/GUARD] GetSpawnablePrefabIndex(string) guarded against null prefab entries");
+                RtsLog.Msg("[PREFAB/GUARD] GetSpawnablePrefabIndex(string) guarded against null prefab entries");
             }
             catch (Exception ex) { MelonLogger.Warning("[PREFAB/GUARD] install threw: " + ex.Message); }
         }

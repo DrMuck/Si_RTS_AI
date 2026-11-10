@@ -24,11 +24,29 @@ namespace Si_RTS_AI.Faction
         // (6..40). A flat 120 m / 8 s found no spot for a Barracks anywhere in
         // the first Sol rounds (2026-09-07 19:55) while nine refineries landed.
         const float DEFAULT_REACH_M = 500f;
-        const int   SEARCH_STEPS    = 300;
+        // v0.94.13: minStepsPerSecond is PlacementBudget.StepsFloor (the step cap)
+        // and maxTime is stretched so num/maxTime stays at the cap; the game's
+        // 300 floor and 600 m / 30 s (about 900 steps/s on the 15 m grid) were the
+        // human share of the placement storms (Silica_Performance REPORT 2.4).
         const float DEDUPE_M       = 60f;
         const float DEDUPE_S       = 45f;
 
-        struct Pending { public string Name; public Vector3 At; public float When; }
+        // A request stays pending while its search runs (Done false), however
+        // long the budget makes it take, and DEDUPE_S after it was fired once it
+        // has resolved: under the step cap a search can outlive DEDUPE_S, and a
+        // second search for the same spot would then build twice.
+        struct Pending { public string Name; public Vector3 At; public float When; public bool Done; }
+
+        // PER-SPOT BACK-OFF (v0.94.13): a spot whose search found nothing waits
+        // 20, 40, 80, 160, then 320 s before it is searched again; a landing
+        // there clears it. Keyed by structure name and a 60 m cell.
+        const float BACKOFF_CELL_M = 60f;
+        const float BACKOFF_BASE_S = 20f;
+        const float BACKOFF_MAX_S  = 320f;
+        struct SpotFails { public int Fails; public float Until; }
+        static readonly Dictionary<string, SpotFails> _spotFails = new Dictionary<string, SpotFails>();
+        static string SpotKey(string name, Vector3 p) =>
+            name + "@" + Mathf.RoundToInt(p.x / BACKOFF_CELL_M) + "," + Mathf.RoundToInt(p.z / BACKOFF_CELL_M);
         static readonly List<Pending> _pending = new List<Pending>();
         static readonly Dictionary<string, int> _refusals = new Dictionary<string, int>();
         static readonly HashSet<string> _geomLogged = new HashSet<string>();
@@ -36,15 +54,17 @@ namespace Si_RTS_AI.Faction
 
         internal static void ResetForNewRound()
         {
-            _pending.Clear(); _refusals.Clear(); _geomLogged.Clear(); _landed.Clear(); Fired = Landed = Failed = 0;
+            _pending.Clear(); _refusals.Clear(); _spotFails.Clear(); _geomLogged.Clear(); _landed.Clear(); Fired = Landed = Failed = 0;
         }
 
         static bool PendingNear(string name, Vector3 at)
         {
             float now = Time.time;
+            float inFlightS = Mathf.Max(DEDUPE_S, PlacementBudget.ResolveWithinS + 5f);
             for (int i = _pending.Count - 1; i >= 0; i--)
             {
-                if (now - _pending[i].When > DEDUPE_S) { _pending.RemoveAt(i); continue; }
+                float age = now - _pending[i].When;
+                if (age > (_pending[i].Done ? DEDUPE_S : inFlightS)) { _pending.RemoveAt(i); continue; }
                 if (_pending[i].Name != name) continue;
                 float dx = _pending[i].At.x - at.x, dz = _pending[i].At.z - at.z;
                 if (dx * dx + dz * dz <= DEDUPE_M * DEDUPE_M) return true;
@@ -52,11 +72,21 @@ namespace Si_RTS_AI.Faction
             return false;
         }
 
+        static void MarkDone(string name, Vector3 at)
+        {
+            for (int i = _pending.Count - 1; i >= 0; i--)
+            {
+                var p = _pending[i];
+                if (p.Done || p.Name != name || (p.At - at).sqrMagnitude > 1f) continue;
+                p.Done = true; _pending[i] = p; return;
+            }
+        }
+
         static void Refuse(string name, string why)
         {
             string key = name + ":" + why;
             _refusals.TryGetValue(key, out int n); _refusals[key] = n + 1;
-            if (n < 5 || n % 50 == 0) MelonLogger.Msg($"[HUMAN/BUILD] {name} refused: {why} (#{n + 1})");
+            if (n < 5 || n % 50 == 0) RtsLog.Msg($"[HUMAN/BUILD] {name} refused: {why} (#{n + 1})");
         }
 
         internal static Structure FindAnchor(Team team, ConstructionData cd, Vector3 near)
@@ -152,12 +182,18 @@ namespace Si_RTS_AI.Faction
             float dist = toward.magnitude;
             if (dist > reach && dist > 0.01f) pos = anchorPos + toward / dist * reach;
             float range = Mathf.Clamp(reach * 1.2f + Mathf.Min(dist, reach), 80f, 600f);
-            float maxTime = Mathf.Clamp(range / 20f, 6f, 40f);
+            // A landing beyond maxDriftM is refused in the callback anyway, so the
+            // search need not walk past it (Headquarters: 600 m -> 315 m).
+            if (maxDriftM > 0f) range = Mathf.Min(range, Mathf.Max(80f, maxDriftM + cd.GridSnapXZ));
+            float maxTime = PlacementBudget.MaxTimeFor(range, cd.GridSnapXZ, Mathf.Clamp(range / 20f, 6f, 40f));
+            string spotKey = SpotKey(name, pos);
+            if (_spotFails.TryGetValue(spotKey, out var spot) && Time.time < spot.Until)
+            { Refuse(name, $"back-off {spot.Until - Time.time:F0}s after {spot.Fails} failed searches here"); return false; }
             if (!_geomLogged.Contains(name))
             {
                 _geomLogged.Add(name);
                 bool placeable = false; try { placeable = cd.Placeable; } catch { }
-                MelonLogger.Msg($"[HUMAN/BUILD] {name}: reach {reach:F0}m snap {cd.GridSnapXZ}/{cd.GridSnapY} placeable {placeable} cost {cost} anchor {anchor.ObjectInfo?.DisplayName} range {range:F0}m time {maxTime:F0}s minTier {minTier} teamTier {teamTier}");
+                RtsLog.Msg($"[HUMAN/BUILD] {name}: reach {reach:F0}m snap {cd.GridSnapXZ}/{cd.GridSnapY} placeable {placeable} cost {cost} anchor {anchor.ObjectInfo?.DisplayName} range {range:F0}m time {maxTime:F0}s minTier {minTier} teamTier {teamTier}");
             }
             _pending.Add(new Pending { Name = name, At = pos, When = Time.time });
             Fired++;
@@ -166,9 +202,11 @@ namespace Si_RTS_AI.Faction
             {
                 ConstructionPlacement.QueueFirstValidPlacementAroundPoint(
                     preview, team, anchor, pos, cd.GridSnapXZ, cd.GridSnapY,
-                    range, maxTime, SEARCH_STEPS,
+                    range, maxTime, PlacementBudget.StepsFloor,
                     (cData, cbTeam, cbStruct, gotPos, gotRot) =>
                     {
+                        MarkDone(name, asked);
+                        _spotFails.Remove(spotKey);
                         string res = "void";
                         float drift = Vector2.Distance(new Vector2(gotPos.x, gotPos.z), new Vector2(asked.x, asked.z));
                         if (maxDriftM > 0f && drift > maxDriftM)
@@ -190,11 +228,16 @@ namespace Si_RTS_AI.Faction
                         }
                         catch (Exception ex) { res = "threw " + ex.Message; }
                         if (res == "Success") { Landed++; _landed.Add(new LandedSite { Name = name, At = gotPos }); } else Failed++;
-                        MelonLogger.Msg($"[HUMAN/BUILD] {cbTeam?.name} {name} at ({gotPos.x:F0},{gotPos.z:F0}) asked ({asked.x:F0},{asked.z:F0}) " +
+                        RtsLog.Msg($"[HUMAN/BUILD] {cbTeam?.name} {name} at ({gotPos.x:F0},{gotPos.z:F0}) asked ({asked.x:F0},{asked.z:F0}) " +
                                         $"anchor {cbStruct?.ObjectInfo?.DisplayName} rot {(rot.HasValue ? "given" : "search")} result {res} cash {cbTeam?.TotalResources}");
                     },
                     (cData, cbTeam, cbStruct) =>
                     {
+                        MarkDone(name, asked);
+                        _spotFails.TryGetValue(spotKey, out var sf);
+                        sf.Fails++;
+                        sf.Until = Time.time + Mathf.Min(BACKOFF_MAX_S, BACKOFF_BASE_S * Mathf.Pow(2f, sf.Fails - 1));
+                        _spotFails[spotKey] = sf;
                         Failed++;
                         Refuse(name, $"no valid spot within {range:F0}m of ({asked.x:F0},{asked.z:F0})");
                     },

@@ -79,7 +79,7 @@ namespace Si_RTS_AI.Planning
             {
                 TryForceSyncTier(ctx.Team);
                 try { tier = ctx.Team.TechnologyTier; } catch { }
-                if (tier > 0) MelonLogger.Msg($"[TECH] force-sync raised tier {ctx.Team.name} to T{tier}");
+                if (tier > 0) RtsLog.Msg($"[TECH] force-sync raised tier {ctx.Team.name} to T{tier}");
             }
 
             ctx.SubsystemState[SourceId] = new TechPublishedState
@@ -167,7 +167,7 @@ namespace Si_RTS_AI.Planning
                     // the round (humans-vs-humans, 2026-09-05): one line a second
                     // of zeros for an hour says nothing.
                     if (ctx.Cash == 0 && shrimps == 0 && producers == 0) return;
-                    MelonLogger.Msg($"[TECH/RESERVE] cash={ctx.Cash} shrimps={shrimps} " +
+                    RtsLog.Msg($"[TECH/RESERVE] cash={ctx.Cash} shrimps={shrimps} " +
                                     $"perShrimp={perShrimp:F2}/s producers={producers} " +
                                     $"committedCysts={committedCysts} " +
                                     $"dtTo15={dtStr} projected@dl={projected} " +
@@ -204,7 +204,7 @@ namespace Si_RTS_AI.Planning
                                      "producers,committed_cysts,dt_to_15,projected_at_deadline," +
                                      "reserved,cortex_count,tier,max_tier");
                 _csvWriter.Flush();
-                MelonLogger.Msg($"[TECH/CSV] logging to {_csvPath}");
+                RtsLog.Msg($"[TECH/CSV] logging to {_csvPath}");
             }
             catch (Exception ex) { MelonLogger.Warning("[TECH/CSV] EnsureCsv threw: " + ex.Message); }
         }
@@ -455,13 +455,13 @@ namespace Si_RTS_AI.Planning
                 string name = st?.ObjectInfo?.DisplayName ?? "?";
                 if (_dumpedResearchNames.Contains(name)) return;
                 _dumpedResearchNames.Add(name);
-                MelonLogger.Msg($"[TECH/PROBE] Research structure '{name}':");
+                RtsLog.Msg($"[TECH/PROBE] Research structure '{name}':");
 
                 // 1) ConstructionOptions (what it can build)
                 try
                 {
                     var opts = st.ConstructionOptions;
-                    MelonLogger.Msg($"  ConstructionOptions: count={(opts == null ? "null" : opts.Count.ToString())}");
+                    RtsLog.Msg($"  ConstructionOptions: count={(opts == null ? "null" : opts.Count.ToString())}");
                     if (opts != null)
                         foreach (var opt in opts)
                         {
@@ -470,7 +470,7 @@ namespace Si_RTS_AI.Planning
                             try { cost = opt.ResourceCost; } catch { }
                             string stype = "";
                             try { stype = opt.ObjectInfo.StructureType.ToString(); } catch { }
-                            MelonLogger.Msg($"    - '{opt.ObjectInfo.DisplayName}' cost={cost} structureType={stype}");
+                            RtsLog.Msg($"    - '{opt.ObjectInfo.DisplayName}' cost={cost} structureType={stype}");
                         }
                 }
                 catch (Exception ex) { MelonLogger.Warning("  ConstructionOptions threw: " + ex.Message); }
@@ -484,24 +484,24 @@ namespace Si_RTS_AI.Planning
                     if (ttField != null)
                     {
                         var list = ttField.GetValue(st);
-                        MelonLogger.Msg("  TechnologyTiers list type: " + (list?.GetType().FullName ?? "null"));
+                        RtsLog.Msg("  TechnologyTiers list type: " + (list?.GetType().FullName ?? "null"));
                         if (list is System.Collections.IEnumerable en)
                         {
                             int idx = 0;
                             foreach (var item in en)
                             {
-                                if (item == null) { MelonLogger.Msg($"  [{idx}] <null>"); idx++; continue; }
-                                MelonLogger.Msg($"  [{idx}] type={item.GetType().Name}");
+                                if (item == null) { RtsLog.Msg($"  [{idx}] <null>"); idx++; continue; }
+                                RtsLog.Msg($"  [{idx}] type={item.GetType().Name}");
                                 var itype = item.GetType();
                                 foreach (var p in itype.GetProperties(flags))
                                 {
-                                    try { MelonLogger.Msg($"    prop {p.PropertyType.Name} {p.Name} = {p.GetValue(item)}"); }
-                                    catch { MelonLogger.Msg($"    prop {p.PropertyType.Name} {p.Name} = <threw>"); }
+                                    try { RtsLog.Msg($"    prop {p.PropertyType.Name} {p.Name} = {p.GetValue(item)}"); }
+                                    catch { RtsLog.Msg($"    prop {p.PropertyType.Name} {p.Name} = <threw>"); }
                                 }
                                 foreach (var f in itype.GetFields(flags))
                                 {
-                                    try { MelonLogger.Msg($"    field {f.FieldType.Name} {f.Name} = {f.GetValue(item)}"); }
-                                    catch { MelonLogger.Msg($"    field {f.FieldType.Name} {f.Name} = <threw>"); }
+                                    try { RtsLog.Msg($"    field {f.FieldType.Name} {f.Name} = {f.GetValue(item)}"); }
+                                    catch { RtsLog.Msg($"    field {f.FieldType.Name} {f.Name} = <threw>"); }
                                 }
                                 idx++;
                             }
@@ -514,7 +514,7 @@ namespace Si_RTS_AI.Planning
                 try
                 {
                     var t = st.GetType();
-                    MelonLogger.Msg($"  Runtime type: {t.FullName}");
+                    RtsLog.Msg($"  Runtime type: {t.FullName}");
                     var flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic;
                     var interesting = new List<string>();
                     foreach (var p in t.GetProperties(flags))
@@ -539,8 +539,8 @@ namespace Si_RTS_AI.Planning
                             catch { interesting.Add($"    field {f.FieldType.Name} {nm} = <threw>"); }
                         }
                     }
-                    MelonLogger.Msg($"  Tier/Tech/Research/Queue/Production/Progress/Order members ({interesting.Count}):");
-                    foreach (var line in interesting) MelonLogger.Msg(line);
+                    RtsLog.Msg($"  Tier/Tech/Research/Queue/Production/Progress/Order members ({interesting.Count}):");
+                    foreach (var line in interesting) RtsLog.Msg(line);
 
                     // 3) Also enumerate methods
                     var mnames = new List<string>();
@@ -557,8 +557,8 @@ namespace Si_RTS_AI.Planning
                             mnames.Add($"    method {m.ReturnType.Name} {nm}{sig}");
                         }
                     }
-                    MelonLogger.Msg($"  Tier/Tech/Research/Queue/Production/Progress/Order/Upgrade methods ({mnames.Count}):");
-                    foreach (var line in mnames) MelonLogger.Msg(line);
+                    RtsLog.Msg($"  Tier/Tech/Research/Queue/Production/Progress/Order/Upgrade methods ({mnames.Count}):");
+                    foreach (var line in mnames) RtsLog.Msg(line);
                 }
                 catch (Exception ex) { MelonLogger.Warning("  reflection threw: " + ex.Message); }
             }
@@ -651,7 +651,7 @@ namespace Si_RTS_AI.Planning
             try
             {
                 cortex.Construct(cd, pos, rot);
-                MelonLogger.Msg($"[TECH] queued research '{cd.ObjectInfo?.DisplayName}' on Cortex — cost={cd.ResourceCost}");
+                RtsLog.Msg($"[TECH] queued research '{cd.ObjectInfo?.DisplayName}' on Cortex — cost={cd.ResourceCost}");
                 return true;
             }
             catch (Exception ex) { MelonLogger.Warning("[TECH] FireResearchOnCortex threw: " + ex.Message); return false; }
@@ -756,7 +756,7 @@ namespace Si_RTS_AI.Planning
                             //
                             // Read off the live CD so balance changes are picked
                             // up (DrMuck: "no hard coded value reference").
-                            MelonLogger.Msg("[TECH] cataloged Research CD: '" + n + "' cost=" + TryGetCost(opt) +
+                            RtsLog.Msg("[TECH] cataloged Research CD: '" + n + "' cost=" + TryGetCost(opt) +
                                             " takes=" + TryGetBuildS(opt).ToString("F0") + "s" +
                                             " minTier=" + TryGetMinTier(opt) +
                                             " (team=" + team.name + ")");
@@ -815,7 +815,7 @@ namespace Si_RTS_AI.Planning
                         if (ps.Length == 2 && ps[0].ParameterType == typeof(bool) && ps[1].ParameterType == typeof(bool))
                         {
                             _updateTierMi = m;
-                            MelonLogger.Msg("[TECH] resolved Team.UpdateTechnologyTier(bool,bool)");
+                            RtsLog.Msg("[TECH] resolved Team.UpdateTechnologyTier(bool,bool)");
                             break;
                         }
                     }
@@ -830,7 +830,7 @@ namespace Si_RTS_AI.Planning
                             {
                                 _updateTierMi = m;
                                 var ps = m.GetParameters();
-                                MelonLogger.Msg("[TECH] resolved Team.UpdateTechnologyTier (fallback overload params=" + ps.Length + ")");
+                                RtsLog.Msg("[TECH] resolved Team.UpdateTechnologyTier (fallback overload params=" + ps.Length + ")");
                                 break;
                             }
                         }

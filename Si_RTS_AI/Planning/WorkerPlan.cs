@@ -230,7 +230,7 @@ namespace Si_RTS_AI.Planning
             if (Time.time - _lastLogAt > 30f)
             {
                 _lastLogAt = Time.time;
-                MelonLogger.Msg($"[WORKERS] t={roundS:F0}s have={Have} target={Target} " +
+                RtsLog.Msg($"[WORKERS] t={roundS:F0}s have={Have} target={Target} " +
                                 $"({(BehindSchedule ? "behind" : "on track")}) duty={Duty:F2} " +
                                 $"producers={producers} wants={ProducersNeeded} " +
                                 $"yield={Yield:F2}/peak {YieldPeak:F2}" +

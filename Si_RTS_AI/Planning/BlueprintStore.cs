@@ -50,7 +50,7 @@ namespace Si_RTS_AI.Planning
                     _roundDir = Path.Combine(Config.Paths.LogDir, "blueprint",
                                              $"round-{stamp}-{Safe(map)}");
                     Directory.CreateDirectory(_roundDir);
-                    MelonLogger.Msg($"[BLUEPRINT] writing plans to {_roundDir}");
+                    RtsLog.Msg($"[BLUEPRINT] writing plans to {_roundDir}");
                 }
                 File.WriteAllText(Path.Combine(_roundDir, $"rev-{Blueprint.Revision:D4}.json"), json);
             }

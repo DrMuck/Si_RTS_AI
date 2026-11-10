@@ -107,7 +107,7 @@ namespace Si_RTS_AI.Perception
                             holdersFound = _piHolders != null;
                         }
                     }
-                    MelonLogger.Msg($"[BC/INCOME] probe: structures={structs.Count} " +
+                    RtsLog.Msg($"[BC/INCOME] probe: structures={structs.Count} " +
                                     $"matching '{bcDisplayName}'={matched} firstSeenName='{firstName}' " +
                                     $"storedOnFirstMatch={firstStored} ResourceHoldersProp=" +
                                     (holdersFound ? "found" : "NULL") +
@@ -176,7 +176,7 @@ namespace Si_RTS_AI.Perception
             {
                 // Was a silent return, which is how the meter managed to report
                 // nothing at all rather than reporting that it could not report.
-                MelonLogger.Msg($"[BC/INCOME] no team cumulative income yet " +
+                RtsLog.Msg($"[BC/INCOME] no team cumulative income yet " +
                                 $"(roundT={roundT:F0}s, bcs tracked={_bcs.Count}) — " +
                                 "cannot check attribution");
                 return;
@@ -187,7 +187,7 @@ namespace Si_RTS_AI.Perception
             foreach (var kv in _bcs)
                 if (kv.Value.Deposited > 0) earning++; else idle++;
 
-            MelonLogger.Msg($"[BC/INCOME] attributed={_attributed} teamCumulative={teamCum} " +
+            RtsLog.Msg($"[BC/INCOME] attributed={_attributed} teamCumulative={teamCum} " +
                             $"ratio={ratio:F2} bcs={_bcs.Count} earning={earning} untapped={idle}" +
                             (ratio < 0.2f
                                 ? "  <-- ATTRIBUTION NOT WORKING, do not use per-BC income"

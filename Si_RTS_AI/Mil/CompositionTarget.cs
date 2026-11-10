@@ -73,7 +73,7 @@ namespace Si_RTS_AI.Mil
             _tried = true;
             try
             {
-                if (!File.Exists(PATH)) { MelonLogger.Msg("[MIL/COMP] no " + PATH + " — composition target off"); return; }
+                if (!File.Exists(PATH)) { RtsLog.Msg("[MIL/COMP] no " + PATH + " — composition target off"); return; }
                 var rawByFaction = new Dictionary<string, Dictionary<string, float>>(StringComparer.OrdinalIgnoreCase);
                 foreach (var line in File.ReadAllLines(PATH))
                 {
@@ -104,7 +104,7 @@ namespace Si_RTS_AI.Mil
                         sb.Append(' ').Append(kv.Key).Append(' ').Append((sh * 100f).ToString("F0")).Append('%');
                     }
                     _targetByFaction[fk.Key] = shares;
-                    MelonLogger.Msg(sb.ToString());
+                    RtsLog.Msg(sb.ToString());
                 }
                 if (_targetByFaction.Count == 0) return;
                 _targetShare = _targetByFaction.TryGetValue(_faction, out var cur) ? cur : _targetShare;

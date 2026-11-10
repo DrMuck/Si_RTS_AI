@@ -61,7 +61,7 @@ namespace Si_RTS_AI.Planning
             if (source == null) return;
             if (_sources.Contains(source)) return;
             _sources.Add(source);
-            MelonLogger.Msg("[BROKER] registered source: " + source.SourceId);
+            RtsLog.Msg("[BROKER] registered source: " + source.SourceId);
         }
 
         /// <summary>
@@ -164,7 +164,7 @@ namespace Si_RTS_AI.Planning
                         Cost     = p.Cost,
                         FiredAt  = _ctx.Time,
                     });
-                    MelonLogger.Msg("[BROKER] fired " + p.SourceId + "/" + p.Kind +
+                    RtsLog.Msg("[BROKER] fired " + p.SourceId + "/" + p.Kind +
                                     " cost=" + p.Cost + " score=" + p.Score.ToString("F0") +
                                     " urgency=" + p.Urgency.ToString("F2"));
                 }

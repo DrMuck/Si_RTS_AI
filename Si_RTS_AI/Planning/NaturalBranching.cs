@@ -226,7 +226,7 @@ namespace Si_RTS_AI.Planning
                       .Append(br.WantCyst ? "BC+Cyst" : "BC only")
                       .Append(" [").Append(br.Why).Append(']');
                 }
-                MelonLogger.Msg(sb.ToString());
+                RtsLog.Msg(sb.ToString());
             }
             catch (System.Exception ex)
             {
