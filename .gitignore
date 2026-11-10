@@ -26,3 +26,8 @@ Serverdata/
 analysis/
 Screenshots/
 include/
+
+# Archives and local tool indexes
+*.zip
+*.7z
+.codebase-memory/
